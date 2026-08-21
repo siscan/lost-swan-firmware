@@ -11,6 +11,12 @@
 # objects with `ar` before linking, and Application Control policy blocks ar.exe
 # on this machine.  test/host/CMakeLists.txt likewise compiles the pure sources
 # straight into each test binary instead of building a static library.
+#
+# Smart App Control (enforced on this machine) blocks freshly linked unsigned
+# binaries by hash, essentially at random: a relink embeds a new timestamp, gets
+# a new hash, and usually passes.  ctest reports such a block as BAD_COMMAND /
+# "Not Run", never as a test failure, so the retry below only fires on blocked
+# binaries - a genuinely failing test still fails the script immediately.
 
 param([switch] $Clean)
 
@@ -49,5 +55,18 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $cmake --build $build
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-& $ctest --test-dir $build --output-on-failure
-exit $LASTEXITCODE
+for ($attempt = 1; $attempt -le 4; $attempt++) {
+    $out = & $ctest --test-dir $build --output-on-failure 2>&1
+    $out | ForEach-Object { "$_" }
+    if ($LASTEXITCODE -eq 0) { exit 0 }
+
+    $blocked = ($out | Out-String) -match 'BAD_COMMAND|Not Run'
+    if (-not $blocked) { exit $LASTEXITCODE }   # a real test failure - report it
+
+    Write-Host "Smart App Control blocked a test binary (attempt $attempt); relinking for a new hash..." -ForegroundColor Yellow
+    Remove-Item (Join-Path $build '*.exe') -Force -ErrorAction SilentlyContinue
+    & $cmake --build $build
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+}
+Write-Error "Test binaries still blocked by Smart App Control after 4 relinks. See README.md."
+exit 1

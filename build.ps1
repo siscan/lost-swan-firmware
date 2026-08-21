@@ -18,17 +18,24 @@
 # aborts the build on ordinary output.  Failures are caught via $LASTEXITCODE.
 $ErrorActionPreference = 'Continue'
 
-# winget installs Python user-scope; a shell started before that still has the
-# Windows Store stub first on PATH, which is not a usable interpreter.
-$python = "$env:LOCALAPPDATA\Programs\Python\Python313"
-if (Test-Path $python) { $env:PATH = "$python;$python\Scripts;$env:PATH" }
+# Activate once per session.  On a second call in the same shell, prepending
+# the base Python again would put it in FRONT of the already-activated IDF
+# virtualenv, and export.ps1 (seeing itself active) would not re-prepend the
+# venv - idf.py would then run under the base interpreter and die with
+# "No module named 'click'".  IDF_PYTHON_ENV_PATH is the activation marker.
+if (-not $env:IDF_PYTHON_ENV_PATH) {
+    # winget installs Python user-scope; a shell started before that still has
+    # the Windows Store stub first on PATH, which is not a usable interpreter.
+    $python = "$env:LOCALAPPDATA\Programs\Python\Python313"
+    if (Test-Path $python) { $env:PATH = "$python;$python\Scripts;$env:PATH" }
 
-$export = Join-Path $HOME 'esp\esp-idf\export.ps1'
-if (-not (Test-Path $export)) {
-    Write-Error "ESP-IDF not found at $export. See README.md > Activating the toolchain."
-    exit 1
+    $export = Join-Path $HOME 'esp\esp-idf\export.ps1'
+    if (-not (Test-Path $export)) {
+        Write-Error "ESP-IDF not found at $export. See README.md > Activating the toolchain."
+        exit 1
+    }
+    . $export *> $null
 }
-. $export *> $null
 
 # @() on both sides matters: a one-element array unwraps to a bare string, and
 # splatting a string iterates its characters (".\build.ps1 build" became -b -u -i...).

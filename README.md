@@ -75,15 +75,27 @@ It uses the CMake and Ninja that `install.ps1` already put under
 `~/.espressif/tools` — no separate CMake install — plus the user-scope MinGW-w64
 GCC from winget. No Visual Studio, nothing needing admin.
 
-Two machine constraints are baked into that script and into
-`test/host/CMakeLists.txt`:
+Three machine constraints are baked into that script and into
+`test/host/CMakeLists.txt` — all one root cause: **Smart App Control is
+enforced on this machine** (`HKLM:...\CI\Policy\VerifiedAndReputablePolicyState
+= 1`) and blocks unsigned binaries it has no reputation for:
 
-- An **Application Control policy blocks `ar.exe`** (and WinLibs' own bundled
-  `cmake.exe`). So the suite compiles the pure sources straight into each test
-  executable rather than building a static library, and uses the **Ninja**
-  generator — MinGW Makefiles archives objects with `ar` before linking and can
-  never work here.
+- **`ar.exe` is permanently blocked** (WinLibs' bundled `cmake.exe` too). So the
+  suite compiles the pure sources straight into each test executable rather
+  than building a static library, and uses the **Ninja** generator — MinGW
+  Makefiles archives objects with `ar` before linking and can never work here.
+- **Freshly linked test binaries are blocked at random, by hash.** The verdict
+  is cached per hash (moving the file changes nothing), but a relink embeds a
+  new timestamp, gets a new hash, and usually passes. ctest reports a blocked
+  binary as `BAD_COMMAND` / `Not Run` — not as a test failure — and
+  `test-host.ps1` detects exactly that and relinks, up to 4 attempts. A real
+  test failure is never retried.
 - The winget tools are not on the inherited PATH, so the script locates them.
+
+The clean fix would be turning Smart App Control off (Settings → Privacy &
+security → Windows Security → App & browser control) — a decision for Nico, not
+the firmware: it needs admin, and **once off it cannot be re-enabled without
+reinstalling Windows**. The retry loop makes the tests reliable without it.
 
 On a machine without those constraints the plain form in CLAUDE.md works as-is:
 
