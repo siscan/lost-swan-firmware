@@ -1,0 +1,8 @@
+# LOST Swan — 8 MB flash (N8R8).  Dual OTA + LittleFS for web UI and audio.
+# Name,     Type, SubType, Offset,   Size
+nvs,        data, nvs,     ,         24K
+otadata,    data, ota,     ,         8K
+phy_init,   data, phy,     ,         4K
+ota_0,      app,  ota_0,   0x20000,  2560K
+ota_1,      app,  ota_1,   ,         2560K
+storage,    data, spiffs,  ,         2048K

@@ -1,0 +1,4 @@
+dependencies:
+  idf: ">=5.5"
+  # WS2812 on the DevKitC-1 status LED.  Reason in README.md.
+  espressif/led_strip: "^3.0.0"

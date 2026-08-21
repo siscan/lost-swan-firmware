@@ -1,0 +1,35 @@
+# LOST Swan split-flap — documented IDF options only (CLAUDE.md: menuconfig for
+# documented options).  Every line here has a reason.
+
+CONFIG_IDF_TARGET="esp32c5"
+
+# --- Motion: the step ISR must survive a flash-cache stall (NVS/OTA writes).
+# Spec 5.2.  Without these the ISR is in flash and drops steps mid-write.
+CONFIG_GPTIMER_ISR_IRAM_SAFE=y
+CONFIG_GPTIMER_CTRL_FUNC_IN_IRAM=y
+
+# --- 1 kHz motion control tick needs a 1 ms FreeRTOS tick.
+CONFIG_FREERTOS_HZ=1000
+
+# --- Console on USB-Serial-JTAG (CLAUDE.md toolchain section).
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+
+# --- Flash / partitions
+CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+# --- Watchdogs (spec 12).  Motion control task subscribes explicitly.
+CONFIG_ESP_TASK_WDT_INIT=y
+CONFIG_ESP_TASK_WDT_TIMEOUT_S=5
+
+# --- C++17 for application code (CLAUDE.md).
+CONFIG_COMPILER_CXX_EXCEPTIONS=n
+CONFIG_COMPILER_OPTIMIZATION_PERF=y
+
+# NOT enabled yet, deliberately:
+#   CONFIG_SPIRAM             — N8R8 has 8 MB PSRAM but nothing in Phase 1 needs
+#                               it; enabling untested PSRAM only adds boot risk.
+#   CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE — Phase 4 (spec 10.4).  Turning it on
+#                               before the "mark valid" path exists bricks-loops
+#                               every flash.
