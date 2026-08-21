@@ -1,0 +1,5 @@
+# Line endings are normalised to LF in the repository.  tools/gen_ring_table.py
+# writes LF; without this, a CRLF checkout would make the generated header show
+# as modified and break the "git diff empty after regeneration" check.
+* text=auto eol=lf
+*.png binary
