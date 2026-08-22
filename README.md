@@ -12,14 +12,50 @@ Target: ESP32-C5-DevKitC-1-N8R8 (XIAO ESP32-C5 map behind a board define).
 - Code: **Phase 1 complete; all exit criteria met.** Nothing has been flashed or
   measured on hardware — `docs/BRINGUP.md` tracks that separately.
 
-| Phase 1 exit criterion | status |
+| gate | status |
 |---|---|
-| `set-target esp32c5` + `build` clean | passes — 304 KB, 88% of the app partition free, zero warnings |
-| XIAO board map builds | passes — 282 KB |
-| host tests green | 2/2 pass |
+| `set-target esp32c5` + `build` clean | passes — zero warnings, both board maps |
+| host tests green | 3/3 pass, including the Phase 1.5 simulated-axis suite |
 | `git diff` empty after `gen_ring_table.py` | clean — regeneration is byte-identical |
-| motion cross-task handoff explicit | done — spinlock + request mailbox + atomics, no store-ordering |
+| motion cross-task handoff explicit | done — see `docs/MOTION_SYNC.md` |
+| CI | GitHub Actions on ubuntu — see below |
 | flashed to hardware | **not done — board not arrived** |
+
+## CI — the reliability source of truth
+
+`.github/workflows/ci.yml` runs on every push to `master` and every pull
+request, on **ubuntu**, where
+none of the Windows dev machine's constraints exist:
+
+| job | what |
+|---|---|
+| `ring-table` | `python3 tools/gen_ring_table.py --check` — the committed generated header must match the manifest |
+| `host-tests` | native CMake build + ctest of all three pure-logic suites, including the simulated-axis suite |
+| `firmware` | both board maps (`devkitc1`, `xiao`) built inside Espressif's official `espressif/idf:v5.5.5` Docker image |
+
+**Linux CI is the source of truth for reliability.** The Smart-App-Control
+retry in `test-host.ps1` is local convenience only — a suite that needs the
+retry locally is still a clean pass, but a suite that fails on CI is a real
+failure regardless of what the Windows machine says. While `ar.exe` is blocked
+here, host test builds stay free of static libraries (`test/host/CMakeLists.txt`
+compiles the pure sources straight into each test executable), which costs
+nothing on any platform.
+
+## Phase 1.5 — the simulated-axis suite
+
+`test/host/test_axis_sim.cpp` drives the **real** control tick
+(`components/motion/axis_control.cpp` — the same code the firmware links) and
+the **real** step-ISR helpers against a modeled drum (272000/33 µsteps per
+revolution, configurable Hall window width and per-edge jitter). It asserts:
+homing from any start angle including inside the magnet window; the full 50×50
+`go` matrix with mid-move re-basing across the edge, judged by the *drum's*
+mechanical angle rather than the firmware's own bookkeeping; slip of 30 µsteps
+→ minor resync, 100 → major, 200 → fault followed by a successful automatic
+re-home; negative and >1-revolution calibration offsets normalising; an
+8369-µstep drum (the stale 68/26 gearing) logging a major resync every
+revolution and never faulting; and mailbox ordering — commands in separate
+control periods all apply in order, two commands in one period apply exactly
+the newer one whole.
 
 ## Pinned versions
 
@@ -142,17 +178,11 @@ in `test/host/check.h` cover what they need.
 
 ## How motion synchronises across tasks
 
-Three boundaries, one explicit mechanism each — no store-ordering convention
-(CLAUDE.md Phase 1 exit criterion). All of it is in `components/motion/motion.cpp`:
-
-| boundary | mechanism |
-|---|---|
-| step ISR ↔ control task | `portMUX` spinlock over a DRAM-only `AxisIsr` struct. The ISR cannot take a lock, so the task side takes it — that disables interrupts and excludes the ISR. |
-| any task → control task | per-axis **request mailbox**, written and drained under the same spinlock. The control task is the only writer of the FSM, so a command can never race a state transition. |
-| control task → any task | `std::atomic` with explicit `memory_order_relaxed`, for published state and diagnostics. Anything needing a consistent multi-field view (position vs target vs velocity) goes through the spinlock instead. |
-
-`AxisIsr` is a separate struct from `Axis` on purpose, so the IRAM/DRAM boundary
-is visible in the type system rather than asserted in a comment.
+The full contract - ownership table, atomics and memory orders, critical
+sections, IRAM/DRAM placement - is one page: **`docs/MOTION_SYNC.md`**.  The
+control logic itself is the pure core `components/motion/axis_control.cpp`
+(host-tested by the simulated-axis suite); `motion.cpp` is the IDF shell that
+owns every lock, the ISR, and the task.
 
 ## Notes
 

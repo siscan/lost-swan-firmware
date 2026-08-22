@@ -293,10 +293,16 @@ edge to the blank flap sitting correctly; from NVS), `index` (ring index
 currently displayed).
 
 - Position of index *i* in the current revolution: `hall_abs + cal_offset + T(i)`.
-- Targets are always expressed relative to the **most recent** Hall edge. If a
-  move crosses home, the target is provisionally `hall_abs + cal_offset + T(50 + i)`;
-  when the edge actually arrives mid-move, `hall_abs` updates and the remaining
-  distance is recomputed as `hall_abs_new + cal_offset + T(i)`.
+- Targets are always expressed relative to the **most recent** Hall edge, via
+  the **reduced anchor offset** `E(i) = (cal_offset + T(i)) mod one revolution`
+  — cal_offset is an arbitrary assembly value in [0, rev), so cal + T(i) can
+  exceed a revolution, and the un-reduced form is wrong: a mid-move edge
+  rebase would place the target past the *next* edge, which would rebase it
+  again, and the move would never terminate (found by adversarial review;
+  pinned by test_axis_sim).  A move that has not yet reached `hall_abs + E(i)`
+  targets it directly; one that has wraps forward one nominal revolution.
+  When an edge arrives mid-move, the target rebases to `hall_abs_new + E(i)`,
+  clamped forward (reverse is mechanically forbidden).
 - Result: rounding error never exceeds ½ µstep, and the 0.42 µstep/rev residue
   is absorbed at every edge. Nothing accumulates.
 
@@ -658,6 +664,17 @@ Each phase ends with a flashable build and a bench checklist.
 
 1. **Skeleton + motion core** — IDF project, pin map, config/NVS, CLI, step
    ISR, axis FSM, homing, edge verification, calibration; host tests for §3/§5.3.
+1.5. **Simulated-axis suite + CI** — the control core extracted pure
+   (`axis_control.cpp`) and driven on the host against a modeled drum
+   (272000/33 µsteps/rev, configurable Hall window, jitter, slip, wrong
+   gearing): homing from any start angle incl. inside the magnet window, the
+   full 50×50 `go` matrix with mid-move re-basing, slip classification
+   (minor/major/fault→auto-rehome), cal normalisation, the 8369-drum
+   signature, mailbox ordering.  GitHub Actions (`.github/workflows/ci.yml`)
+   runs the host suites natively on ubuntu and builds both board maps in
+   Espressif's official `espressif/idf:v5.5.5` image — **Linux CI is the
+   reliability source of truth**; the Windows SAC-retry is local convenience.
+   Sync contract: `docs/MOTION_SYNC.md`.
 2. **Frame + modes + simulator** — clock, message, countdown scheduler, reveal
    choreography, time service.
 3. **Web UI** — Terminal, Modes, Calibrate, Settings, Diagnostics, Update.
@@ -745,3 +762,47 @@ reason, so nothing gets re-litigated.
   ESP-IDF dropped MSys/Mingw support at v4.0 and `install.sh` refuses with
   "MSys/Mingw is not supported"; the working path is `install.ps1` /
   `export.ps1`. Recorded in README.md.
+- 2026-08-21 — **Phase 1 accepted.** Three follow-ups executed before Phase 2:
+  (1) repo pushed to GitHub with CI — host suites native on ubuntu, both board
+  maps in `espressif/idf:v5.5.5` Docker; **Linux CI is the reliability source
+  of truth**, the Windows Smart-App-Control retry in `test-host.ps1` is local
+  convenience, and host builds stay free of static libraries while `ar.exe`
+  is blocked there. (2) **Phase 1.5**: the motion control core was extracted
+  pure (`components/motion/axis_control.{h,cpp}`; `motion.cpp` is now an IDF
+  shell with no control logic) so the *real* control tick and the *real*
+  ISR helpers run on the host against a modeled drum — spec §15 item 1.5
+  lists the assertions. (3) `docs/MOTION_SYNC.md` records the ownership /
+  atomics / critical-section / IRAM-DRAM contract; changes to motion must
+  keep it true.
+- 2026-08-21 — **Adversarial review of Phase 1.5 (40 agents, findings verified
+  by independent refuters); outcomes:**
+  - **Critical, fixed:** the §5.3 recompute rule as previously written never
+    terminated when `cal_offset + T(dest)` exceeded one revolution — every
+    Hall edge re-added a revolution to the target (any cal > 164 made index 49
+    unreachable; mid-range cal broke half the ring). Two verifiers reproduced
+    it by simulation. Fix: the edge-anchor offset is reduced modulo one
+    nominal revolution (`edge_anchor_offset` in motion_math.h); §5.3 rewritten;
+    regression tests cover cal ∈ {200, 4000, 8142, 8241} and a full-cal sweep
+    of the reduction invariant. The bug predates the pure-core refactor.
+  - **Major, fixed:** a Stop drained during a homing pass either spuriously
+    faulted (Seek) or falsely completed homing at the wrong position (Settle).
+    Stop now aborts homing to UNHOMED honestly, and cancels a pending
+    staggered home. Pinned by test.
+  - **Test gaps, closed:** the EdgeVerdict::Fault classification branch was
+    never exercised (a +200 slip faults via the missed-edge timeout instead —
+    both are correct paths, but only one was covered); a new negative-slip
+    test hits classification directly. Mid-move re-basing was never verified
+    under a disturbed drum (all slip tests were open-loop); a new test injects
+    slip during a wrapping `go` and asserts the landing is correct relative to
+    the drum. Home with `delay_ticks = 0` parked the axis silently; now
+    clamped to 1.
+  - **Decisions:** open-loop stepping (`step`/`spin`) may clear a latched
+    FAULT — it is the bench un-jamming tool (spec §13); `go` from FAULT stays
+    rejected so nothing false is displayed. `enter_fault` no longer hard-stops
+    before the auto re-home; the ramp converges onto homing speed (smooth,
+    forward-only-safe). Resuming the interrupted frame after a successful
+    re-home is the Phase 2 frame scheduler's job — the core publishes the
+    homed event; noted so §5.4's "resume the current frame" lands there.
+  - Docs corrected to match code (MOTION_SYNC critical-section count,
+    `dda_tick` inlining guarantee, README CI trigger wording), and the honest
+    scope of the host-side mailbox verification recorded in MOTION_SYNC.

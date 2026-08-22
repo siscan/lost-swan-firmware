@@ -91,10 +91,14 @@ CLAUDE.md
 README.md                      build/flash instructions, pinned versions, pin map
 docs/FIRMWARE_SPEC.md          the spec (source of truth for behaviour)
 docs/BRINGUP.md                bench checklists + results as they come in
+docs/MOTION_SYNC.md            motion ownership/atomics/critical-section contract
 docs/ref/                      README.md (mechanical v6), BOM.md, manifest.json — supplied by Nico
+.github/workflows/ci.yml       CI: host tests native, both boards in espressif/idf docker
+build.ps1 / test-host.ps1      the documented build/test commands on this machine
 main/                          app_main.cpp, task wiring
 components/swan_hal/           pin map, GPIO bank writes, I2S init, LED (ESP-IDF owns the name `hal`)
-components/motion/             step ISR, axis FSM, homing, edge check, calibration
+components/motion/             axis_control.{h,cpp}: pure control core (host-tested);
+                               motion.cpp: IDF shell (ISR, task, locks, GPIO)
 components/ring/               ring table (generated), index math — host-testable
 components/frame/              frame scheduler
 components/modes/              clock, message, countdown — host-testable
@@ -132,10 +136,11 @@ test/host/                     unit tests
 
 ## Current phase
 
-**Phase 1 — scaffold written, nothing compiled.** Exit criteria before any
-Phase 2 work: toolchain installed, `idf.py build` clean, host tests passing,
-`python tools/gen_ring_table.py` reproducing the committed table with an
-empty `git diff`, and the cross-task state handoff in motion made explicit
-(atomics with memory order or a critical section — not store-ordering
-discipline). Then Phase 2 per spec §15, noting the §7.3 countdown is now a
-deadline model and the §7.1 WiFi glyph sits on the centre column.
+**Phase 1 accepted; Phase 1.5 (simulated-axis suite + CI) done. Next: Phase 2**
+per spec §15 — frame + modes + simulator, noting the §7.3 countdown is a
+deadline model, the §7.1 WiFi glyph sits on the centre column, and the ring
+becomes the runtime `ring.json` file (spec §4) with the compiled table as
+fallback. Motion changes must keep `docs/MOTION_SYNC.md` true and the
+simulated-axis suite green; Linux CI is the reliability source of truth.
+Nothing has run on hardware yet — the board has not arrived; the gear ratio
+(85/33 vs the stale 68/26 prose) is settled by bench step 4, not by code.
