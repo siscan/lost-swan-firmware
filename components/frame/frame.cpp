@@ -1,5 +1,7 @@
 #include "frame/frame.h"
 
+#include <cstddef>
+
 #include "ring/ring.h"
 
 namespace swan {

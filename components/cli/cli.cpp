@@ -12,12 +12,30 @@
 #include "freertos/task.h"
 #include "hal/gpio_bank.h"
 #include "hal/pins.h"
+#include "modes/mode_manager.h"
 #include "motion/motion.h"
 #include "ring/ring.h"
+#include "ring/ring_store.h"
 
 namespace swan {
 namespace cli {
 namespace {
+
+ModeManager* g_mm = nullptr;
+int64_t (*g_utc_ms)() = nullptr;
+
+bool modes_ready() {
+    if (g_mm == nullptr || g_utc_ms == nullptr) {
+        std::printf("modes not available\n");
+        return false;
+    }
+    return true;
+}
+
+int print_result(ModeManager::Result r) {
+    std::printf("%s\n", r.ok ? "ok" : r.err);
+    return r.ok ? 0 : 1;
+}
 
 bool parse_long(const char* s, long& out) {
     char* end = nullptr;
@@ -249,22 +267,134 @@ int cmd_save(int, char**) {
     return err == ESP_OK ? 0 : 1;
 }
 
-// The real frame scheduler (simultaneous starts, mode arbitration) is Phase 2;
-// this is enough to walk the ring on the bench.
+// display.frame through the dispatcher (spec 10.2a) - the same path every
+// other transport uses.  Falls back to raw motion::go before bind_modes.
 int cmd_frame(int argc, char** argv) {
     if (argc != N_COLUMNS + 1) {
         std::printf("usage: frame <c0> <c1> <c2> <c3> <c4>   (tokens, _ for blank, #n raw)\n");
         return 1;
     }
-    int idx[N_COLUMNS];
+    Frame f;
+    const RingSet& ring = ring_store::get();
     for (int i = 0; i < N_COLUMNS; ++i) {
-        idx[i] = ring_index_for_token(argv[i + 1]);
-        if (idx[i] == RING_INVALID) {
+        const int idx = ring.col(i).index_for_token(argv[i + 1]);
+        if (idx < 0) {
             std::printf("no ring slot named '%s'\n", argv[i + 1]);
             return 1;
         }
+        f.idx[static_cast<size_t>(i)] = idx;
     }
-    for (int i = 0; i < N_COLUMNS; ++i) motion::go(i, idx[i]);
+    if (g_mm != nullptr && g_utc_ms != nullptr) {
+        return print_result(g_mm->cmd_display_frame(f, g_utc_ms()));
+    }
+    for (int i = 0; i < N_COLUMNS; ++i) motion::go(i, f.idx[static_cast<size_t>(i)]);
+    return 0;
+}
+
+int cmd_mode(int argc, char** argv) {
+    if (!modes_ready()) return 1;
+    if (argc != 2) {
+        std::printf("usage: mode clock|message|countdown   (now: %s, countdown %s)\n",
+                    mode_name(g_mm->mode()), cd_phase_name(g_mm->cd_phase()));
+        return 1;
+    }
+    Mode m;
+    if (std::strcmp(argv[1], "clock") == 0) m = Mode::Clock;
+    else if (std::strcmp(argv[1], "message") == 0) m = Mode::Message;
+    else if (std::strcmp(argv[1], "countdown") == 0) m = Mode::Countdown;
+    else {
+        std::printf("unknown mode '%s'\n", argv[1]);
+        return 1;
+    }
+    return print_result(g_mm->cmd_mode_set(m, g_utc_ms()));
+}
+
+int cmd_msg(int argc, char** argv) {
+    if (!modes_ready()) return 1;
+    if (argc < N_COLUMNS + 1) {
+        std::printf("usage: msg <c0>..<c4> [dwell_s] [hold]\n");
+        return 1;
+    }
+    std::array<std::string, N_COLUMNS> toks;
+    for (int i = 0; i < N_COLUMNS; ++i) toks[static_cast<size_t>(i)] = argv[i + 1];
+    long dwell = 0;
+    bool hold = false;
+    if (argc > N_COLUMNS + 1) parse_long(argv[N_COLUMNS + 1], dwell);
+    if (argc > N_COLUMNS + 2) hold = std::strcmp(argv[N_COLUMNS + 2], "hold") == 0;
+    return print_result(
+        g_mm->cmd_message_set(toks, static_cast<int>(dwell), hold, g_utc_ms()));
+}
+
+int cmd_countdown(int argc, char** argv) {
+    if (!modes_ready()) return 1;
+    if (argc < 2) {
+        std::printf("usage: countdown execute <numbers...>|start|reset|cancel|target <epoch>\n");
+        return 1;
+    }
+    const int64_t now = g_utc_ms();
+    if (std::strcmp(argv[1], "execute") == 0) {
+        std::string numbers;
+        for (int i = 2; i < argc; ++i) {
+            if (!numbers.empty()) numbers += ' ';
+            numbers += argv[i];
+        }
+        return print_result(g_mm->cmd_countdown_execute(numbers, now));
+    }
+    if (std::strcmp(argv[1], "start") == 0) return print_result(g_mm->cmd_countdown_start(now));
+    if (std::strcmp(argv[1], "reset") == 0) return print_result(g_mm->cmd_countdown_reset(now));
+    if (std::strcmp(argv[1], "cancel") == 0) return print_result(g_mm->cmd_countdown_cancel(now));
+    if (std::strcmp(argv[1], "target") == 0 && argc == 3) {
+        long long epoch = 0;
+        char* end = nullptr;
+        epoch = std::strtoll(argv[2], &end, 10);
+        if (end == argv[2] || *end != '\0') return 1;
+        return print_result(g_mm->cmd_countdown_set_target(epoch, now));
+    }
+    std::printf("unknown countdown command '%s'\n", argv[1]);
+    return 1;
+}
+
+int cmd_preset(int argc, char** argv) {
+    if (!modes_ready()) return 1;
+    if (argc != 2) {
+        std::printf("usage: preset qmarks|blank|reveal|wifi\n");
+        return 1;
+    }
+    return print_result(g_mm->cmd_preset(argv[1], g_utc_ms()));
+}
+
+int cmd_h24(int argc, char** argv) {
+    if (!modes_ready()) return 1;
+    if (argc != 2) {
+        std::printf("usage: h24 0|1\n");
+        return 1;
+    }
+    long v;
+    if (!parse_long(argv[1], v)) return 1;
+    const auto r = g_mm->cmd_clock_format(v != 0, g_utc_ms());
+    // Persist the format with the rest of the app config.
+    config::AppConfig app;
+    config::load_app(app);
+    app.modes.h24 = (v != 0);
+    config::save_app(app);
+    return print_result(r);
+}
+
+int cmd_tz(int argc, char** argv) {
+    if (!modes_ready()) return 1;
+    if (argc != 2) {
+        std::printf("usage: tz <posix-tz>   e.g. tz PST8PDT,M3.2.0,M11.1.0\n");
+        return 1;
+    }
+    if (!g_mm->set_tz(argv[1])) {
+        std::printf("rejected: not a valid POSIX TZ string with M-rules\n");
+        return 1;
+    }
+    config::AppConfig app;
+    config::load_app(app);
+    app.tz = argv[1];
+    config::save_app(app);
+    std::printf("ok\n");
     return 0;
 }
 
@@ -326,6 +456,11 @@ void reg(const char* cmd, const char* help, esp_console_cmd_func_t fn) {
 
 }  // namespace
 
+void bind_modes(ModeManager* mm, int64_t (*utc_ms_fn)()) {
+    g_mm = mm;
+    g_utc_ms = utc_ms_fn;
+}
+
 esp_err_t start() {
     esp_console_repl_t* repl = nullptr;
     esp_console_repl_config_t repl_cfg = ESP_CONSOLE_REPL_CONFIG_DEFAULT();
@@ -350,6 +485,12 @@ esp_err_t start() {
     reg("save", "persist the current config to NVS", cmd_save);
     reg("frame", "frame <c0>..<c4> - set all five columns", cmd_frame);
     reg("ring", "ring [token] - list the ring table", cmd_ring);
+    reg("mode", "mode clock|message|countdown", cmd_mode);
+    reg("msg", "msg <c0>..<c4> [dwell_s] [hold]", cmd_msg);
+    reg("countdown", "countdown execute <numbers>|start|reset|cancel|target <epoch>", cmd_countdown);
+    reg("preset", "preset qmarks|blank|reveal|wifi", cmd_preset);
+    reg("h24", "h24 0|1 - clock format (persisted)", cmd_h24);
+    reg("tz", "tz <posix-tz> - timezone (persisted)", cmd_tz);
     reg("stats", "per-column counters and state", cmd_stats);
     reg("reboot", "restart the device", cmd_reboot);
 

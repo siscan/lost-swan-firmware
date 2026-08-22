@@ -7,11 +7,22 @@
 // only place the short forms appear.
 #pragma once
 
+#include <string>
+
 #include "esp_err.h"
+#include "modes/mode_manager.h"
 #include "motion/motion.h"
 
 namespace swan {
 namespace config {
+
+// Everything Phase 2 persists beyond motion: clock/message/countdown settings
+// plus the time service (spec 11).
+struct AppConfig {
+    ModesConfig modes;                          // clock.h24, msg.dwell_s, countdown.*
+    std::string tz = "PST8PDT,M3.2.0,M11.1.0";  // time.tz [Q2: default US Pacific]
+    std::string ntp = "pool.ntp.org";           // time.ntp
+};
 
 // Opens NVS, initialising the partition if it is new or was reformatted.
 esp_err_t init();
@@ -20,6 +31,11 @@ esp_err_t init();
 // defaults rather than failing.
 esp_err_t load(MotionParams& p);
 esp_err_t save(const MotionParams& p);
+esp_err_t load_app(AppConfig& c);
+esp_err_t save_app(const AppConfig& c);
+
+// The countdown deadline store (spec 7.3): one write per set, never per tick.
+CountdownStore& countdown_store();
 
 // Factory reset of the swan namespace.
 esp_err_t erase_all();
