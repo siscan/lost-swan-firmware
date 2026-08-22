@@ -14,6 +14,31 @@ constexpr int64_t SCHEDULE_MARGIN_MS = 700;
 constexpr int64_t STEP_FORWARD_MS = 5000;
 constexpr int64_t STEP_BACKWARD_MS = -1000;
 
+int clamp_granularity(int g) { return g < 1 ? 1 : (g > 60 ? 60 : g); }
+
+// The displayed time: minute floored to the granularity, seconds dropped.
+LocalTime floor_to(const LocalTime& lt, int g) {
+    LocalTime out = lt;
+    out.minute = (lt.minute / g) * g;
+    out.second = 0;
+    return out;
+}
+
+// Identifies the displayed window.  Built from the LOCAL floored time, so it
+// is correct for zones whose offset is not a whole multiple of the
+// granularity (India's +5:30 against a 15-minute grid, say).
+int64_t local_key(const LocalTime& lt) {
+    return (((static_cast<int64_t>(lt.year) * 12 + lt.month) * 31 + lt.day) * 24 + lt.hour) *
+               60 + lt.minute;
+}
+
+// UTC ms of the next granularity boundary after now.
+int64_t next_boundary_ms(int64_t utc_ms, const LocalTime& now, int g) {
+    const int into = now.minute % g;
+    const int64_t ahead_s = static_cast<int64_t>(g - into) * 60 - now.second;
+    return ((utc_ms / 1000) + ahead_s) * 1000;
+}
+
 }  // namespace
 
 const char* mode_name(Mode m) {
@@ -69,7 +94,7 @@ bool ModeManager::set_tz(std::string_view posix_tz) {
     if (!TimeZone::parse(posix_tz, tz)) return false;
     const std::lock_guard<std::mutex> lock(mu_);
     tz_ = tz;
-    rendered_minute_ = RENDER_NONE;  // re-render with the new zone
+    rendered_key_ = RENDER_NONE;  // re-render with the new zone
     return true;
 }
 
@@ -124,7 +149,7 @@ void ModeManager::enter_mode(Mode m, int64_t utc_ms) {
 
     if (mode_ != m) prev_mode_ = mode_;
     mode_ = m;
-    rendered_minute_ = RENDER_NONE;  // clock re-renders on entry
+    rendered_key_ = RENDER_NONE;  // clock re-renders on entry
     cd_shown_ = SHOWN_NONE;          // countdown re-renders on entry
     cd_scheduled_land_ = 0;
     tick_locked(utc_ms);
@@ -162,7 +187,7 @@ void ModeManager::handle_time_step(int64_t delta_ms) {
     // countdown target) is absolute and needs nothing.
     msg_until_ms_ += delta_ms;
     if (invalid_since_ms_ >= 0) invalid_since_ms_ += delta_ms;
-    rendered_minute_ = RENDER_NONE;
+    rendered_key_ = RENDER_NONE;
     cd_scheduled_land_ = 0;
     sched_.cancel_pending();  // its start time lived in the old timebase
     if (cd_.phase == CdPhase::Running) cd_shown_ = SHOWN_NONE;  // re-render now
@@ -179,33 +204,37 @@ void ModeManager::tick_clock(int64_t utc_ms) {
         // All blank after homing; the WiFi glyph on the centre column once the
         // grace expires.  A drop AFTER a successful sync never shows the glyph
         // (time_.valid() is sticky).
-        if (grace_over != wifi_glyph_ || rendered_minute_ == RENDER_NONE) {
+        if (grace_over != wifi_glyph_ || rendered_key_ == RENDER_NONE) {
             wifi_glyph_ = grace_over;
-            rendered_minute_ = RENDER_SPECIAL;
-            sched_.show(grace_over ? render_wifi(ring_) : render_blank(ring_), utc_ms);
+            rendered_key_ = RENDER_SPECIAL;
+            issue(grace_over ? render_wifi(ring_, last_frame_) : render_blank(ring_, last_frame_),
+                  utc_ms);
         }
         return;
     }
     wifi_glyph_ = false;
 
-    // Render at second 0 of every local minute (offsets are whole minutes, so
-    // local second-0 == UTC second-0).
-    const int64_t minute = utc_ms / 60000;
-    if (minute == rendered_minute_) return;
-    const bool fresh_entry = (rendered_minute_ < 0);
-    rendered_minute_ = minute;
+    // The rings are descending, so a clock tick is the expensive direction.
+    // clock.granularity_min floors the displayed minute; at 1 minute the
+    // display costs ~39,500 flips/day, at 15 about ~5,900 (spec 7.1).
+    const int g = clamp_granularity(cfg_.granularity_min);
+    const LocalTime now = tz_.to_local(utc_ms / 1000);
+    const LocalTime shown = floor_to(now, g);
+    const int64_t key = local_key(shown);
+    if (key == rendered_key_) return;
+    const bool fresh_entry = (rendered_key_ < 0);
+    rendered_key_ = key;
 
-    const LocalTime lt = tz_.to_local(utc_ms / 1000);
     if (!cfg_.clock_land_on_tick || fresh_entry) {
-        // Show the current minute now - on entry even in land-on-tick mode,
+        // Show the current window now - on entry even in land-on-tick mode,
         // otherwise the display would sit stale until the next boundary.
-        sched_.show(render_clock(ring_, lt, cfg_.h24), utc_ms);
+        issue(render_clock(ring_, shown, cfg_.h24, last_frame_), utc_ms);
     }
     if (cfg_.clock_land_on_tick) {
-        // Land the NEXT minute's frame on its boundary.
-        const int64_t next_boundary = (minute + 1) * 60000;
-        const LocalTime nx = tz_.to_local(next_boundary / 1000);
-        sched_.show(render_clock(ring_, nx, cfg_.h24), utc_ms, next_boundary);
+        // Land the NEXT window's frame on its boundary.
+        const int64_t next_ms = next_boundary_ms(utc_ms, now, g);
+        const LocalTime nx = floor_to(tz_.to_local(next_ms / 1000), g);
+        issue(render_clock(ring_, nx, cfg_.h24, last_frame_), utc_ms, next_ms);
     }
 }
 
@@ -272,7 +301,7 @@ void ModeManager::enter_reveal_silently() {
 }
 
 Frame ModeManager::reveal_frame() const {
-    Frame f = render_blank(ring_);
+    Frame f = render_blank(ring_, last_frame_);
     for (int i = 0; i < N_COLUMNS; ++i) {
         const int idx = cfg_.reveal[static_cast<size_t>(i)];
         if (idx >= 0 && idx < ring_.col(i).slot_count()) f.idx[static_cast<size_t>(i)] = idx;
@@ -281,11 +310,13 @@ Frame ModeManager::reveal_frame() const {
 }
 
 void ModeManager::tick_countdown(int64_t utc_ms) {
+    cd_step_s_ = (cfg_.seconds_mode == SecondsMode::Seconds) ? 1 : 10;
+
     if (cd_.phase == CdPhase::Idle) {
         // Idle countdown: a static 108:00 until started (spec 10.2a mode.set).
         if (cd_shown_ != COUNTDOWN_S) {
             cd_shown_ = COUNTDOWN_S;
-            sched_.show(render_countdown(ring_, COUNTDOWN_S), utc_ms);
+            issue(render_countdown(ring_, COUNTDOWN_S, cfg_.seconds_mode, last_frame_), utc_ms);
         }
         return;
     }
@@ -310,27 +341,33 @@ void ModeManager::tick_countdown(int64_t utc_ms) {
     }
 
     if (cd_.phase == CdPhase::Running) {
-        const int shown = static_cast<int>((rem_ms / 1000) / 10) * 10;
+        const int step = cd_step_s_;
+        const int shown = static_cast<int>((rem_ms / 1000) / step) * step;
 
         if (cd_shown_ < 0) {
             // Entry / resume: show the current window immediately.
             cd_shown_ = shown;
-            sched_.show(render_countdown(ring_, shown), utc_ms);
+            issue(render_countdown(ring_, shown, cfg_.seconds_mode, last_frame_), utc_ms);
         } else if (!cfg_.cd_land_on_tick && shown != cd_shown_) {
             cd_shown_ = shown;
-            sched_.show(render_countdown(ring_, shown), utc_ms);
+            issue(render_countdown(ring_, shown, cfg_.seconds_mode, last_frame_), utc_ms);
         }
 
         if (cfg_.cd_land_on_tick && shown > 0) {
             // The frame for the next window lands exactly when rem hits
-            // `shown` (the terminal screen is the reference - spec 7.3).
+            // `shown` (the terminal screen is the reference - spec 7.3).  In
+            // seconds mode a wrap can need longer than the one-second window;
+            // FrameScheduler::show then starts it immediately and it lands a
+            // little late rather than never, catching up on the next tick
+            // because forward-only moves just extend (spec 7.3 timing note).
             const int64_t land = target_ms - static_cast<int64_t>(shown) * 1000;
             if (cd_scheduled_land_ != land) {
-                const Frame next = render_countdown(ring_, shown - 10);
+                const Frame next =
+                    render_countdown(ring_, shown - step, cfg_.seconds_mode, last_frame_);
                 if (utc_ms + sched_.lead_ms(next) + SCHEDULE_MARGIN_MS >= land) {
-                    sched_.show(next, utc_ms, land);
+                    issue(next, utc_ms, land);
                     cd_scheduled_land_ = land;
-                    cd_shown_ = shown - 10;
+                    cd_shown_ = shown - step;
                 }
             }
         }
@@ -346,7 +383,7 @@ void ModeManager::tick_countdown(int64_t utc_ms) {
     }
     if (cd_.phase == CdPhase::Zero && cd_shown_ != 0) {
         cd_shown_ = 0;
-        sched_.show(render_countdown(ring_, 0), utc_ms);  // 000:00
+        issue(render_countdown(ring_, 0, cfg_.seconds_mode, last_frame_), utc_ms);  // 000:00
     }
 
     const int64_t since_zero = utc_ms - target_ms;
@@ -368,7 +405,7 @@ void ModeManager::tick_countdown(int64_t utc_ms) {
     if (cd_.phase == CdPhase::Reveal) {
         if (cd_shown_ != SHOWN_REVEAL) {
             cd_shown_ = SHOWN_REVEAL;
-            sched_.show(reveal_frame(), utc_ms);  // convergence lands it post-spin
+            issue(reveal_frame(), utc_ms);  // convergence lands it post-spin
         }
         // No auto-return unless configured (spec 7.3).
         if (cfg_.failure_timeout_s > 0 &&
@@ -382,6 +419,13 @@ void ModeManager::tick_countdown(int64_t utc_ms) {
 
 void ModeManager::persist() { store_.save(cd_); }
 
+void ModeManager::issue(const Frame& f, int64_t utc_ms, int64_t land_at_ms) {
+    // Record what the columns will be showing BEFORE handing it over: the next
+    // render searches forward from here to pick column 5's slot.
+    last_frame_ = f;
+    sched_.show(f, utc_ms, land_at_ms);
+}
+
 // ---------------------------------------------------------------------------
 // Commands (spec 10.2a)
 // ---------------------------------------------------------------------------
@@ -394,7 +438,7 @@ ModeManager::Result ModeManager::cmd_mode_set(Mode m, int64_t utc_ms) {
             return {false, "no message set"};
         }
         enter_mode(Mode::Message, utc_ms);
-        sched_.show(msg_frame_, utc_ms);
+        issue(msg_frame_, utc_ms);
         return {true, nullptr};
     }
     enter_mode(m, utc_ms);
@@ -406,7 +450,8 @@ ModeManager::Result ModeManager::cmd_message_set(
     const std::lock_guard<std::mutex> lock(mu_);
     Frame f;
     for (int i = 0; i < N_COLUMNS; ++i) {
-        const int idx = ring_.col(i).index_for_token(tokens[static_cast<size_t>(i)]);
+        const int idx = ring_.col(i).index_for_token(tokens[static_cast<size_t>(i)],
+                                                     last_frame_.idx[static_cast<size_t>(i)]);
         if (idx < 0) return {false, "unknown token"};
         f.idx[static_cast<size_t>(i)] = idx;
     }
@@ -415,7 +460,7 @@ ModeManager::Result ModeManager::cmd_message_set(
     msg_hold_ = hold;
     msg_until_ms_ = utc_ms + static_cast<int64_t>(dwell_s > 0 ? dwell_s : cfg_.msg_dwell_s) * 1000;
     enter_mode(Mode::Message, utc_ms);
-    sched_.show(msg_frame_, utc_ms);
+    issue(msg_frame_, utc_ms);
     return {true, nullptr};
 }
 
@@ -456,9 +501,9 @@ ModeManager::Result ModeManager::cmd_countdown_set_target(int64_t target_utc, in
 ModeManager::Result ModeManager::cmd_preset(std::string_view name, int64_t utc_ms) {
     const std::lock_guard<std::mutex> lock(mu_);
     Frame f;
-    if (name == "qmarks") f = render_qmarks(ring_);
-    else if (name == "blank") f = render_blank(ring_);
-    else if (name == "wifi") f = render_wifi(ring_);
+    if (name == "qmarks") f = render_qmarks(ring_, last_frame_);
+    else if (name == "blank") f = render_blank(ring_, last_frame_);
+    else if (name == "wifi") f = render_wifi(ring_, last_frame_);
     else if (name == "reveal") f = reveal_frame();
     else return {false, "unknown preset"};
 
@@ -467,7 +512,7 @@ ModeManager::Result ModeManager::cmd_preset(std::string_view name, int64_t utc_m
     msg_live_ = true;
     msg_hold_ = true;
     enter_mode(Mode::Message, utc_ms);
-    sched_.show(msg_frame_, utc_ms);
+    issue(msg_frame_, utc_ms);
     return {true, nullptr};
 }
 
@@ -481,7 +526,7 @@ ModeManager::Result ModeManager::cmd_display_frame(const Frame& f, int64_t utc_m
             return {false, "index out of range"};
         }
     }
-    sched_.show(f, utc_ms);
+    issue(f, utc_ms);
     // It may have displaced a scheduled land-on-tick boundary; let the
     // countdown re-derive it rather than silently skip that window.
     cd_scheduled_land_ = 0;
@@ -492,7 +537,7 @@ ModeManager::Result ModeManager::cmd_display_frame(const Frame& f, int64_t utc_m
 ModeManager::Result ModeManager::cmd_clock_format(bool h24, int64_t utc_ms) {
     const std::lock_guard<std::mutex> lock(mu_);
     cfg_.h24 = h24;
-    rendered_minute_ = RENDER_NONE;  // re-render immediately in the new format
+    rendered_key_ = RENDER_NONE;  // re-render immediately in the new format
     if (mode_ == Mode::Clock) tick_locked(utc_ms);
     return {true, nullptr};
 }

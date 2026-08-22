@@ -1,14 +1,20 @@
 #!/usr/bin/env python3
-"""Generate the ring artifacts from docs/ref/manifest.json (spec 4).
+"""Generate the ring artifacts from the two ring manifests (spec 4).
+
+Inputs (docs/ref/, supplied by the mechanical pipeline):
+  manifest_cols1234.json   ring A - columns 1-4, single descending digit block
+  manifest_col5.json       ring B - column 5, TWO descending digit blocks
 
 Emits BOTH:
   data/ring.json                                - the runtime table (uploaded
                                                   to LittleFS; the web UI can
                                                   replace it without reflash)
-  components/ring/include/ring/ring_table.h     - the compiled-in fallback
+  components/ring/include/ring/ring_table.h     - the compiled-in fallback,
+                                                  one table per ring plus the
+                                                  per-column assignment
 
-Nobody edits either output by hand.  manifest.json is the frozen output of
-prodcol.build_ring() and wins over every other description of the ring.
+Nobody edits either output by hand.  The manifests are the frozen output of the
+flap pipeline and win over every other description of the ring.
 
 Usage:  python tools/ringgen.py [--check]
 
@@ -22,9 +28,15 @@ import pathlib
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-MANIFEST = ROOT / "docs" / "ref" / "manifest.json"
+MAN_A = ROOT / "docs" / "ref" / "manifest_cols1234.json"
+MAN_B = ROOT / "docs" / "ref" / "manifest_col5.json"
 OUT_HEADER = ROOT / "components" / "ring" / "include" / "ring" / "ring_table.h"
 OUT_JSON = ROOT / "data" / "ring.json"
+
+N_COLUMNS = 5
+# Which manifest drives which column (0-based).  Cols 1-4 share ring A; col 5
+# is a distinct part with its own ring.
+COLUMN_RING = ["A", "A", "A", "A", "B"]
 
 CATEGORY_ENUM = {
     "blank": "Blank",
@@ -34,9 +46,10 @@ CATEGORY_ENUM = {
     "wifi": "Wifi",
 }
 
-# Colour schemes for the simulator, from the manifest's column_groups prose:
-# cols 1-3 black card / white digits / red glyphs; cols 4-5 white card for
-# non-glyph slots, red card for glyphs, black ink throughout.
+# Colour schemes for the simulator, from the manifests' part_note.  Cols 1-3
+# are the minutes group (black card throughout, white inverted digits, red
+# glyphs); cols 4-5 are the seconds group (white clock card, red glyph card,
+# black ink).
 SCHEMES = {
     "minutes": {"card": {"default": "#181818"},
                 "ink": {"default": "#e8e4da", "glyph": "#b03a2e"}},
@@ -45,55 +58,111 @@ SCHEMES = {
 }
 COLUMN_SCHEMES = ["minutes", "minutes", "minutes", "seconds", "seconds"]
 
+# The roles each column must be able to satisfy.  Mirrors RingSet::validate_roles
+# in components/ring/ring_runtime.cpp - a mismatch there is a build-time bug.
+# Column 1 carries AM/PM (spec 7.1); the centre column carries the WiFi glyph.
+AMPM_COLUMN = 0
+WIFI_COLUMN = N_COLUMNS // 2
+
 
 def c_string(s):
     return s.replace("\\", "\\\\").replace('"', '\\"')
 
 
-def validate(manifest):
-    consts = manifest["constants"]
-    slots = manifest["slots"]
-    n = consts["slot_count"]
+def die(msg):
+    sys.exit("ringgen: " + msg)
+
+
+def load(path, name):
+    with path.open(encoding="utf-8") as f:
+        man = json.load(f)
+    slots = man["slots"]
+    n = man["constants"]["slot_count"]
     if len(slots) != n:
-        sys.exit(f"manifest: slot_count={n} but {len(slots)} slot entries")
+        die(f"{name}: slot_count={n} but {len(slots)} entries")
     for i, s in enumerate(slots):
         if s["index"] != i:
-            sys.exit(f"manifest: slot {i} has index {s['index']}; must be dense and ordered")
+            die(f"{name}: slot {i} has index {s['index']}; must be dense and ordered")
         if s["category"] not in CATEGORY_ENUM:
-            sys.exit(f"manifest: slot {i} has unknown category {s['category']!r}")
-    qmark = [s["index"] for s in slots if s["char_id"] == "qmark"]
-    if len(qmark) != 1:
-        sys.exit(f"manifest: expected exactly one 'qmark' slot, found {qmark}")
-    return qmark[0]
+            die(f"{name}: slot {i} has unknown category {s['category']!r}")
+        if not s["char_id"]:
+            die(f"{name}: slot {i} has an empty char_id")
+    if man["constants"].get("direction") != "descending":
+        die(f"{name}: direction is not 'descending' - spec 4 requires it")
+    return man
 
 
-def build_header(manifest, qmark):
-    consts = manifest["constants"]
-    slots = manifest["slots"]
-    digit_first, digit_last = consts["digit_block"]
-    am_slot, pm_slot = consts["ampm_slots"]
+def digit_slots(man):
+    """digit -> [slot, ...] in slot order."""
+    out = {}
+    for s in man["slots"]:
+        if s["category"] == "digit":
+            out.setdefault(int(s["char_id"]), []).append(s["index"])
+    return out
 
+
+def role_slots(man, category, char_id=None):
+    return [s["index"] for s in man["slots"]
+            if s["category"] == category and (char_id is None or s["char_id"].lower() == char_id)]
+
+
+def fwd(a, b, n):
+    return (b - a) % n
+
+
+def check_descending(man, name):
+    """Every digit decrement must cost exactly one flip forward - that is what
+    'descending' means for a one-way ring, and the countdown depends on it."""
+    ds, n = digit_slots(man), man["constants"]["slot_count"]
+    for d in range(1, 10):
+        if d not in ds or (d - 1) not in ds:
+            die(f"{name}: digits are not complete 0-9")
+        for src in ds[d]:
+            if min(fwd(src, t, n) for t in ds[d - 1]) != 1:
+                die(f"{name}: {d}->{d - 1} from slot {src} is not 1 flip - ring is not descending")
+
+
+def check_roles(man_for_col, name_for_col):
+    """Fail generation if a column cannot render something it will be asked for."""
+    for col in range(N_COLUMNS):
+        man, name = man_for_col[col], name_for_col[col]
+        need = {"blank": role_slots(man, "blank"),
+                "question": role_slots(man, "glyph", "qmark")}
+        for d in range(10):
+            need[f"digit {d}"] = digit_slots(man).get(d, [])
+        if col == AMPM_COLUMN:
+            need["AM"] = role_slots(man, "ampm", "am")
+            need["PM"] = role_slots(man, "ampm", "pm")
+        if col == WIFI_COLUMN:
+            need["wifi"] = role_slots(man, "wifi")
+        for role, slots in need.items():
+            if not slots:
+                die(f"column {col + 1} ({name}) cannot render role '{role}'")
+
+
+def build_header(mans, meta):
     L = []
     L.append("// GENERATED FILE - DO NOT EDIT.")
-    L.append("// Source:     docs/ref/manifest.json")
+    L.append("// Source:     docs/ref/manifest_cols1234.json, docs/ref/manifest_col5.json")
     L.append("// Regenerate: python tools/ringgen.py")
     L.append("//")
-    L.append("// Ring frozen: " + manifest["frozen"])
-    L.append("// Integrity:   " + manifest["integrity"]["column5_flap_manifest_crosscheck"])
+    L.append("// Ring version: " + meta["ring_version"] + "  (frozen " + meta["frozen"] + ")")
+    L.append("// Direction:    descending - one forward flip DECREMENTS the digit,")
+    L.append("//               so a countdown tick is 1 flip and a clock tick is the")
+    L.append("//               expensive direction (spec 4, spec 7.1 wear table).")
+    L.append("//")
+    L.append("// This is the compiled FALLBACK.  The live table is data/ring.json in")
+    L.append("// LittleFS; no code may reference a slot index directly - look roles up")
+    L.append("// through RingTable/RingSet, which handle column 5's two digit blocks.")
     L.append("#pragma once")
     L.append("")
     L.append('#include "ring/ring_category.h"')
     L.append("")
     L.append("namespace swan {")
     L.append("")
-    L.append(f"inline constexpr int RING_SLOT_COUNT  = {consts['slot_count']};")
-    L.append(f"inline constexpr int RING_HOME_SLOT   = {consts['home_slot']};")
-    L.append(f"inline constexpr int RING_DIGIT_FIRST = {digit_first};")
-    L.append(f"inline constexpr int RING_DIGIT_LAST  = {digit_last};")
-    L.append(f"inline constexpr int RING_AM_SLOT     = {am_slot};")
-    L.append(f"inline constexpr int RING_PM_SLOT     = {pm_slot};")
-    L.append(f"inline constexpr int RING_WIFI_SLOT   = {consts['wifi_slot']};")
-    L.append(f"inline constexpr int RING_QMARK_SLOT  = {qmark};")
+    L.append(f"inline constexpr int RING_SLOT_COUNT   = {mans['A']['constants']['slot_count']};")
+    L.append(f"inline constexpr int RING_HOME_SLOT    = {mans['A']['constants']['home_slot']};")
+    L.append(f"inline constexpr int RING_COLUMN_COUNT = {N_COLUMNS};")
     L.append("")
     L.append("struct RingSlot {")
     L.append("    const char*  char_id;   // token accepted by the message parser")
@@ -101,11 +170,22 @@ def build_header(manifest, qmark):
     L.append("    RingCategory category;")
     L.append("};")
     L.append("")
-    L.append("inline constexpr RingSlot RING_TABLE[RING_SLOT_COUNT] = {")
-    for s in slots:
-        L.append('    /* {:2d} */ {{ "{}", "{}", RingCategory::{} }},'.format(
-            s["index"], c_string(s["char_id"]), c_string(s["label"]),
-            CATEGORY_ENUM[s["category"]]))
+
+    for key, cname, applies in (("A", "RING_TABLE_A", "columns 1-4"),
+                                ("B", "RING_TABLE_B", "column 5")):
+        man = mans[key]
+        L.append(f"// Ring {key} - {applies}.  {man['applies_to']}")
+        L.append(f"inline constexpr RingSlot {cname}[RING_SLOT_COUNT] = {{")
+        for s in man["slots"]:
+            L.append('    /* {:2d} */ {{ "{}", "{}", RingCategory::{} }},'.format(
+                s["index"], c_string(s["char_id"]), c_string(s["label"]),
+                CATEGORY_ENUM[s["category"]]))
+        L.append("};")
+        L.append("")
+
+    L.append("// Which compiled table each column falls back to.")
+    L.append("inline constexpr const RingSlot* RING_TABLE_FOR_COLUMN[RING_COLUMN_COUNT] = {")
+    L.append("    " + ", ".join("RING_TABLE_" + r for r in COLUMN_RING) + ",")
     L.append("};")
     L.append("")
     L.append("}  // namespace swan")
@@ -113,18 +193,30 @@ def build_header(manifest, qmark):
     return "\n".join(L)
 
 
-def build_ring_json(manifest):
-    slots = [{"i": s["index"], "id": s["char_id"], "label": s["label"],
-              "cat": s["category"]} for s in manifest["slots"]]
+def slots_doc(man):
+    return [{"i": s["index"], "id": s["char_id"], "label": s["label"], "cat": s["category"]}
+            for s in man["slots"]]
+
+
+def build_ring_json(mans, meta):
+    columns = []
+    for col in range(N_COLUMNS):
+        entry = {"scheme": COLUMN_SCHEMES[col]}
+        # Columns whose ring differs from the shared table carry their own
+        # (spec 4 columns[i].ring).  Cols 1-4 use the shared table.
+        if COLUMN_RING[col] != "A":
+            entry["ring"] = slots_doc(mans[COLUMN_RING[col]])
+        columns.append(entry)
+
     doc = {
-        "schema": 1,
-        "generated_from": "docs/ref/manifest.json",
-        "frozen": manifest["frozen"],
-        "slot_count": manifest["constants"]["slot_count"],
-        "slots": slots,
-        # Per-column: scheme for the simulator; a column may also carry its own
-        # "slots" array here (per-column ring, spec 4) - none do by default.
-        "columns": [{"scheme": s} for s in COLUMN_SCHEMES],
+        "schema": 2,
+        "generated_from": ["docs/ref/manifest_cols1234.json", "docs/ref/manifest_col5.json"],
+        "ring_version": meta["ring_version"],
+        "frozen": meta["frozen"],
+        "direction": "descending",
+        "slot_count": mans["A"]["constants"]["slot_count"],
+        "slots": slots_doc(mans["A"]),
+        "columns": columns,
         "schemes": SCHEMES,
     }
     return json.dumps(doc, indent=1, ensure_ascii=False) + "\n"
@@ -147,12 +239,20 @@ def main():
     ap.add_argument("--check", action="store_true")
     args = ap.parse_args()
 
-    with MANIFEST.open(encoding="utf-8") as f:
-        manifest = json.load(f)
-    qmark = validate(manifest)
+    mans = {"A": load(MAN_A, "manifest_cols1234"), "B": load(MAN_B, "manifest_col5")}
+    for key, name in (("A", "manifest_cols1234"), ("B", "manifest_col5")):
+        check_descending(mans[key], name)
 
-    emit(OUT_HEADER, build_header(manifest, qmark), args.check)
-    emit(OUT_JSON, build_ring_json(manifest), args.check)
+    man_for_col = [mans[COLUMN_RING[c]] for c in range(N_COLUMNS)]
+    name_for_col = ["ring " + COLUMN_RING[c] for c in range(N_COLUMNS)]
+    check_roles(man_for_col, name_for_col)
+
+    if mans["A"]["ring_version"] != mans["B"]["ring_version"]:
+        die("the two manifests are different ring versions")
+    meta = {"ring_version": mans["A"]["ring_version"], "frozen": mans["A"]["frozen"]}
+
+    emit(OUT_HEADER, build_header(mans, meta), args.check)
+    emit(OUT_JSON, build_ring_json(mans, meta), args.check)
 
 
 if __name__ == "__main__":

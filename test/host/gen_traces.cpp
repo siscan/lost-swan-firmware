@@ -130,8 +130,8 @@ std::string read_all(const char* path) {
 }
 
 int64_t base_utc() {
-    // 2026-01-15 18:57:55Z = 10:57:55 PST - three minute rollovers incl. the
-    // 10:59 -> 11:00 wrap are minutes away.
+    // 2026-01-15 18:57:55Z = 10:57:55 PST - the 11:00 quarter boundary is two
+    // minutes away, and 11:15 follows inside the clock scenario's window.
     return (TimeZone::days_from_civil(2026, 1, 15) * 86400 + 18 * 3600 + 57 * 60 + 55) * 1000;
 }
 
@@ -170,20 +170,35 @@ int main(int argc, char** argv) {
                  "window.SWAN_RING = %s;\n\nwindow.SWAN_TRACES = {\n",
                  ring_json.c_str());
 
-    {  // Clock: three minute rollovers including the 10:59 -> 11:00 hour wrap.
+    {  // Clock at the default 15-minute granularity: the hour rollover and
+       // the following quarter.  The rings descend, so a clock tick is the
+       // expensive direction - hence the granularity (spec 7.1 wear table).
         Rig r;
         r.begin(base_utc());
-        r.run_for(4 * 60 * 1000);
-        emit(out, "clock", "Clock 10:57 -> 11:01 AM, incl. the hour rollover", r.rec);
+        r.run_for(19 * 60 * 1000);
+        emit(out, "clock", "Clock at 15-min granularity: 11:00 then 11:15", r.rec);
         std::fprintf(out, ",\n");
     }
-    {  // Countdown start: the Numbers, then 45 s of 10 s boundaries.
+    {  // Countdown in seconds mode: live one-flip ticks on column 5 and the
+       // 16-flip 0->9 wrap onto its second digit block.
         Rig r;
         r.begin(base_utc());
         r.mm.cmd_countdown_execute(ModeManager::THE_NUMBERS, r.time.utc_ms);
         r.note_mode();
-        r.run_for(45 * 1000);
-        emit(out, "countdown", "Execute -> 108:00, boundaries landing on the tick", r.rec);
+        r.run_for(25 * 1000);
+        emit(out, "countdown", "MMM:SS live seconds, incl. the 16-flip 0->9 wrap", r.rec);
+        std::fprintf(out, ",\n");
+    }
+    {  // The same countdown in the original MMM:S0 scheme, for comparison.
+        Rig r;
+        ModesConfig cfg;
+        cfg.seconds_mode = SecondsMode::Tens;
+        r.mm.set_config(cfg);
+        r.begin(base_utc());
+        r.mm.cmd_countdown_start(r.time.utc_ms);
+        r.note_mode();
+        r.run_for(35 * 1000);
+        emit(out, "tens", "Countdown MMM:S0 - column 5 parked, 10 s windows", r.rec);
         std::fprintf(out, ",\n");
     }
     {  // Zero choreography with a named-glyph reveal.

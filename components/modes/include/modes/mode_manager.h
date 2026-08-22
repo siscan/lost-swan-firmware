@@ -55,6 +55,13 @@ public:
 
 struct ModesConfig {
     bool h24 = false;                  // clock.h24
+    // clock.granularity_min (spec 7.1).  The rings are descending, so a clock
+    // tick is the expensive direction; at 1 minute the display costs ~39,500
+    // flips/day against ~5,900 at 15.  Clamped to 1..60.
+    int granularity_min = 15;
+    // countdown.seconds_mode (spec 7.3).  Live seconds are affordable now
+    // that a decrement is 1 flip and column 5's wrap is 16.
+    SecondsMode seconds_mode = SecondsMode::Seconds;
     int wifi_grace_s = 15;             // WIFI_GLYPH_GRACE_S (spec 7.1)
     int msg_dwell_s = 600;             // msg.dwell_s
     bool clock_land_on_tick = false;   // clock.land_on_tick
@@ -64,7 +71,8 @@ struct ModesConfig {
     int failure_timeout_s = 0;         // countdown.failure_timeout_s
     int32_t alarm_flaps_s = 25;        // motion.flaps_s_alarm
     // countdown.reveal[5]: ring indices; -1 = unset -> blank (Nico has not
-    // picked the glyphs yet - decision log).
+    // picked the glyphs yet - decision log).  NOTE: an index means a
+    // different character on column 5, whose ring differs - see spec 11.
     std::array<int, N_COLUMNS> reveal{-1, -1, -1, -1, -1};
 };
 
@@ -136,9 +144,17 @@ private:
     Mode mode_ = Mode::Clock;
     Mode prev_mode_ = Mode::Clock;
 
-    // Clock state.
-    int64_t rendered_minute_ = -1;  // floor(utc/60) of the last rendered frame,
-                                    // or the sentinels RENDER_NONE / RENDER_SPECIAL
+    // The frame currently displayed (or being moved to).  Renderers need it:
+    // the rings are one-way and column 5 has two slots per digit, so the slot
+    // that renders a character depends on where the column is now.  Starts on
+    // the home slot, which is where homing leaves every column.
+    Frame last_frame_ = Frame{{RING_HOME_SLOT, RING_HOME_SLOT, RING_HOME_SLOT,
+                               RING_HOME_SLOT, RING_HOME_SLOT}};
+    void issue(const Frame& f, int64_t utc_ms, int64_t land_at_ms = 0);
+
+    // Clock state.  The key is the floored LOCAL time actually displayed, so
+    // granularity and sub-hour UTC offsets both behave.
+    int64_t rendered_key_ = -1;
     static constexpr int64_t RENDER_NONE = -1;
     static constexpr int64_t RENDER_SPECIAL = -2;  // blank/wifi frame is up
     int64_t invalid_since_ms_ = -1;
@@ -157,6 +173,7 @@ private:
     static constexpr int SHOWN_REVEAL = -2;
     CdPersist cd_;
     int cd_shown_ = SHOWN_NONE;
+    int cd_step_s_ = 10;  // seconds per countdown display window
     int64_t cd_scheduled_land_ = 0;
     bool cue_warn4_ = false, cue_warn1_ = false, cue_zero_ = false;
     bool spin_started_ = false;

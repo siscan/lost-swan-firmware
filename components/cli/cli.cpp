@@ -140,9 +140,13 @@ int cmd_go(int argc, char** argv) {
     if (!parse_col(argv[1], col, false)) return 1;
 
     // The RUNTIME table for this column (ring.json when loaded, else the
-    // compiled fallback) - never the compiled constants directly.
+    // compiled fallback) - never the compiled constants directly.  Resolved
+    // from where the column is now: column 5 has two slots per digit and the
+    // nearest one going forward wins.
     const RingTable& table = ring_store::get().col(col);
-    int index = table.index_for_token(argv[2]);
+    AxisInfo cur;
+    motion::info(col, cur);
+    int index = table.index_for_token(argv[2], cur.index);
     if (index < 0) {
         long v;
         if (!parse_long(argv[2], v) || v < 0 || v >= table.slot_count()) {
@@ -280,7 +284,9 @@ int cmd_frame(int argc, char** argv) {
     Frame f;
     const RingSet& ring = ring_store::get();
     for (int i = 0; i < N_COLUMNS; ++i) {
-        const int idx = ring.col(i).index_for_token(argv[i + 1]);
+        AxisInfo cur;
+        motion::info(i, cur);
+        const int idx = ring.col(i).index_for_token(argv[i + 1], cur.index);
         if (idx < 0) {
             std::printf("no ring slot named '%s'\n", argv[i + 1]);
             return 1;
@@ -435,8 +441,9 @@ int cmd_ring(int argc, char** argv) {
                     table.slot(i).label.c_str(), ring_category_name(table.slot(i).cat));
         return 0;
     }
-    std::printf("source: %s\n",
-                ring_store::get().loaded_from_json() ? "ring.json" : "compiled");
+    std::printf("source: %s   descending: %s\n",
+                ring_store::get().loaded_from_json() ? "ring.json" : "compiled",
+                table.is_descending() ? "yes" : "NO");
     for (int i = 0; i < table.slot_count(); ++i) {
         std::printf("%2d  %-12s %-28s %s\n", i, table.slot(i).id.c_str(),
                     table.slot(i).label.c_str(), ring_category_name(table.slot(i).cat));

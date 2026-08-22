@@ -31,7 +31,6 @@ set(SWAN_PURE_SRC
     ${SWAN_ROOT}/components/frame/frame.cpp
     ${SWAN_ROOT}/components/modes/render.cpp
     ${SWAN_ROOT}/components/modes/mode_manager.cpp
-    ${SWAN_ROOT}/components/ring/ring.cpp
     ${SWAN_ROOT}/components/ring/ring_runtime.cpp
     ${SWAN_ROOT}/components/ring/json_lite.cpp
     ${SWAN_ROOT}/components/motion/axis_control.cpp)
