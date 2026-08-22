@@ -172,13 +172,17 @@ void test_post_spin_convergence() {
     sched.show(f, 0);
     port.gos.clear();
 
+    port.instant = false;  // a spin takes time; columns stay Moving
     sched.spin_all(25, 6);
     CHECK_EQ(port.spins.size(), static_cast<size_t>(N_COLUMNS));
     CHECK_EQ(port.spins[0].flaps_s, 25);
 
-    // While spinning (Moving), no interference.
+    // While spinning (Moving), no interference - and the published index
+    // stays at the last settled value, like the real axis.
+    CHECK_EQ(port.cols[0].index, 13);
     sched.tick(1000);
     CHECK_EQ(port.gos.size(), 0u);
+    port.instant = true;
 
     // Unknown index costs a full wrap in the lead computation.
     CHECK_EQ(sched.lead_ms(f), move_duration_ms(RING_SLOT_COUNT - 1, 15, 82000));
@@ -193,6 +197,48 @@ void test_post_spin_convergence() {
     CHECK(sched.settled());
 }
 
+// --------------------------------------------------------------------------
+// Non-instant moves: columns sit in Moving for a while, as on hardware.
+// Convergence must not spam a Moving column, replacement must re-issue only
+// where the destination differs, and lead_ms must measure from a Moving
+// column's destination.
+// --------------------------------------------------------------------------
+void test_non_instant_moves() {
+    FakePort port;
+    port.instant = false;
+    FrameScheduler sched(port, {15, 82000});
+
+    Frame f;
+    f.idx = {7, 8, 9, 10, 11};
+    sched.show(f, 0);
+    CHECK_EQ(port.gos.size(), 5u);  // all columns commanded (all start at 0)
+    for (const auto& c : port.cols) CHECK(c.state == AxisState::Moving);
+
+    // No convergence spam while every column is Moving to the right place.
+    for (int64_t t = 10; t < 500; t += 10) sched.tick(t);
+    CHECK_EQ(port.gos.size(), 5u);
+    CHECK(!sched.settled());
+
+    // lead_ms measures a Moving column from its DESTINATION: col 0 is going
+    // to 7, so a frame wanting 9 costs 2 flips from there.
+    Frame g;
+    g.idx = {9, 8, 9, 10, 11};
+    CHECK_EQ(sched.lead_ms(g), move_duration_ms(2, 15, 82000));
+
+    // Replacement mid-move: only the column whose destination differs is
+    // re-issued; the rest are already Moving to the right index.
+    sched.show(g, 600);
+    CHECK_EQ(port.gos.size(), 6u);
+    CHECK_EQ(port.gos.back().col, 0);
+    CHECK_EQ(port.gos.back().index, 9);
+
+    // Moves complete; the scheduler settles without further commands.
+    port.finish_moves();
+    sched.tick(700);
+    CHECK_EQ(port.gos.size(), 6u);
+    CHECK(sched.settled());
+}
+
 }  // namespace
 
 void run_tests() {
@@ -201,4 +247,5 @@ void run_tests() {
     test_replacement();
     test_resume_after_rehome();
     test_post_spin_convergence();
+    test_non_instant_moves();
 }

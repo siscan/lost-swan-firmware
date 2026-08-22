@@ -37,8 +37,10 @@ public:
 
     // Local wall-clock -> UTC epoch, honouring DST at that local time.  In the
     // spring-forward gap the (nonexistent) time maps as standard time; in the
-    // fall-back overlap the DST (earlier) instant wins.  Fine for cue/schedule
-    // math; the display only ever converts UTC -> local.
+    // fall-back overlap the DST-side twin wins - the earlier instant in
+    // ordinary zones, the later one in negative-DST zones such as Europe/
+    // Dublin's "IST-1GMT0,...".  Fine for cue/schedule math; the display only
+    // ever converts UTC -> local.
     int64_t from_local(int year, int month, int day, int hour, int minute, int second) const;
 
     bool has_dst() const { return has_dst_; }

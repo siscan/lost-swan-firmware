@@ -139,10 +139,13 @@ int cmd_go(int argc, char** argv) {
     int col;
     if (!parse_col(argv[1], col, false)) return 1;
 
-    int index = ring_index_for_token(argv[2]);
-    if (index == RING_INVALID) {
+    // The RUNTIME table for this column (ring.json when loaded, else the
+    // compiled fallback) - never the compiled constants directly.
+    const RingTable& table = ring_store::get().col(col);
+    int index = table.index_for_token(argv[2]);
+    if (index < 0) {
         long v;
-        if (!parse_long(argv[2], v) || !ring_index_valid(static_cast<int>(v))) {
+        if (!parse_long(argv[2], v) || v < 0 || v >= table.slot_count()) {
             std::printf("no ring slot named '%s'\n", argv[2]);
             return 1;
         }
@@ -154,7 +157,7 @@ int cmd_go(int argc, char** argv) {
         std::printf("%s\n", esp_err_to_name(err));
         return 1;
     }
-    std::printf("col %d -> %d (%s)\n", col, index, ring_label(index));
+    std::printf("col %d -> %d (%s)\n", col, index, table.slot(index).label.c_str());
     return 0;
 }
 
@@ -419,19 +422,24 @@ int cmd_stats(int, char**) {
 }
 
 int cmd_ring(int argc, char** argv) {
+    // The shared runtime table (a column with its own ring differs; the
+    // Calibrate page's per-column walk arrives in Phase 3).
+    const RingTable& table = ring_store::get().col(0);
     if (argc == 2) {
-        const int i = ring_index_for_token(argv[1]);
-        if (i == RING_INVALID) {
+        const int i = table.index_for_token(argv[1]);
+        if (i < 0) {
             std::printf("no ring slot named '%s'\n", argv[1]);
             return 1;
         }
-        std::printf("%2d  %-12s %-28s %s\n", i, ring_char_id(i), ring_label(i),
-                    ring_category_name(ring_category(i)));
+        std::printf("%2d  %-12s %-28s %s\n", i, table.slot(i).id.c_str(),
+                    table.slot(i).label.c_str(), ring_category_name(table.slot(i).cat));
         return 0;
     }
-    for (int i = 0; i < RING_SLOT_COUNT; ++i) {
-        std::printf("%2d  %-12s %-28s %s\n", i, ring_char_id(i), ring_label(i),
-                    ring_category_name(ring_category(i)));
+    std::printf("source: %s\n",
+                ring_store::get().loaded_from_json() ? "ring.json" : "compiled");
+    for (int i = 0; i < table.slot_count(); ++i) {
+        std::printf("%2d  %-12s %-28s %s\n", i, table.slot(i).id.c_str(),
+                    table.slot(i).label.c_str(), ring_category_name(table.slot(i).cat));
     }
     return 0;
 }

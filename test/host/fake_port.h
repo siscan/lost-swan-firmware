@@ -59,9 +59,15 @@ struct FakePort final : MotionPort {
     bool spin(int i, int32_t flaps_s, int seconds) override {
         spins.push_back({now_ms, i, flaps_s, seconds});
         C& c = cols[static_cast<size_t>(i)];
+        // Mirrors the real axis: during an open-loop move the published index
+        // stays at the last settled value; it becomes unknown on ARRIVAL
+        // (index <- dest_index == RING_INVALID).
         c.state = AxisState::Moving;
-        c.index = RING_INVALID;  // open loop: display unknown
         c.dest = RING_INVALID;
+        if (instant) {
+            c.state = AxisState::Idle;
+            c.index = RING_INVALID;
+        }
         return true;
     }
 

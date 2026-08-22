@@ -58,7 +58,7 @@ const N = RING.slot_count;
 // --- per-column ring + colour scheme -------------------------------------
 function colTable(i) {
   const c = (RING.columns || [])[i] || {};
-  return c.slots || RING.slots;          // per-column ring override (spec 4)
+  return c.ring || c.slots || RING.slots;  // per-column ring override (spec 4)
 }
 function colScheme(i) {
   const c = (RING.columns || [])[i] || {};
@@ -156,7 +156,7 @@ let sock = null;
 function play(name) {
   if (sock) sock.close();
   cols.forEach((c, i) => { clearInterval(c.timer); paint(i, 0); });
-  cueLbl.textContent = ""; skipLbl.textContent = "";
+  cueLbl.textContent = ""; skipLbl.textContent = ""; modeLbl.textContent = "";
   descLbl.textContent = TRACES[name].desc;
   document.querySelectorAll("#bar button").forEach(b =>
       b.classList.toggle("active", b.dataset.n === name));

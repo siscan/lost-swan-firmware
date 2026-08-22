@@ -1,11 +1,18 @@
 #include "modes/mode_manager.h"
 
+#include <cstdint>
+
 namespace swan {
 namespace {
 
 // Land-on-tick boundaries are scheduled this far ahead of "lead needed" so a
 // coarse tick cadence cannot miss the start instant.
 constexpr int64_t SCHEDULE_MARGIN_MS = 700;
+
+// A tick-to-tick jump outside this window cannot come from the 20 Hz cadence;
+// it is an SNTP step (first sync jumping years, or a resync correction).
+constexpr int64_t STEP_FORWARD_MS = 5000;
+constexpr int64_t STEP_BACKWARD_MS = -1000;
 
 }  // namespace
 
@@ -47,43 +54,118 @@ bool ModeManager::numbers_valid(std::string_view s) {
     return i == s.size();
 }
 
+void ModeManager::set_config(const ModesConfig& c) {
+    const std::lock_guard<std::mutex> lock(mu_);
+    cfg_ = c;
+}
+
+ModesConfig ModeManager::config() const {
+    const std::lock_guard<std::mutex> lock(mu_);
+    return cfg_;
+}
+
 bool ModeManager::set_tz(std::string_view posix_tz) {
     TimeZone tz;
     if (!TimeZone::parse(posix_tz, tz)) return false;
+    const std::lock_guard<std::mutex> lock(mu_);
     tz_ = tz;
-    rendered_minute_ = -1;  // re-render with the new zone
+    rendered_minute_ = RENDER_NONE;  // re-render with the new zone
     return true;
 }
 
+Mode ModeManager::mode() const {
+    const std::lock_guard<std::mutex> lock(mu_);
+    return mode_;
+}
+CdPhase ModeManager::cd_phase() const {
+    const std::lock_guard<std::mutex> lock(mu_);
+    return cd_.phase;
+}
+int64_t ModeManager::cd_target() const {
+    const std::lock_guard<std::mutex> lock(mu_);
+    return cd_.target_utc;
+}
+bool ModeManager::wifi_glyph_shown() const {
+    const std::lock_guard<std::mutex> lock(mu_);
+    return wifi_glyph_;
+}
+
 void ModeManager::begin(int64_t utc_ms) {
+    const std::lock_guard<std::mutex> lock(mu_);
+
     CdPersist p;
     if (store_.load(p) && p.phase != CdPhase::Idle && p.target_utc > 0) {
-        // A live countdown survives a power cycle (spec 7.3).  Re-derive the
-        // phase from the deadline rather than trusting a stale stored phase.
         cd_ = p;
-        countdown_arm(p.target_utc, utc_ms);
-        enter_mode(Mode::Countdown, utc_ms);
-        return;
+        if (time_.valid()) {
+            countdown_resume(utc_ms);
+            enter_mode(Mode::Countdown, utc_ms);
+            return;
+        }
+        // Before the first SNTP sync the clock reads 1970; comparing the
+        // stored 2026 deadline against it would mis-derive everything.  Boot
+        // as a clock (blank / WiFi glyph) and resume when validity arrives.
+        pending_resume_ = true;
     }
     enter_mode(Mode::Clock, utc_ms);
 }
 
 void ModeManager::enter_mode(Mode m, int64_t utc_ms) {
+    // Leaving the countdown after zero ends the run: the reveal holds only
+    // while the mode does (spec 7.3 "until the mode is changed"), and a
+    // finished run left in NVS would replay the failure choreography on the
+    // next boot - possibly days later.  A RUNNING deadline survives the mode
+    // switch: it is the shared clock the terminal prop renders too.
+    if (mode_ == Mode::Countdown && m != Mode::Countdown &&
+        (cd_.phase == CdPhase::Zero || cd_.phase == CdPhase::Spin ||
+         cd_.phase == CdPhase::Reveal)) {
+        cd_.phase = CdPhase::Idle;
+        persist();
+    }
+
     if (mode_ != m) prev_mode_ = mode_;
     mode_ = m;
-    rendered_minute_ = -1;   // clock re-renders on entry
-    cd_shown_ = -1;          // countdown re-renders on entry
+    rendered_minute_ = RENDER_NONE;  // clock re-renders on entry
+    cd_shown_ = SHOWN_NONE;          // countdown re-renders on entry
     cd_scheduled_land_ = 0;
-    tick(utc_ms);
+    tick_locked(utc_ms);
 }
 
 void ModeManager::tick(int64_t utc_ms) {
+    const std::lock_guard<std::mutex> lock(mu_);
+    tick_locked(utc_ms);
+}
+
+void ModeManager::tick_locked(int64_t utc_ms) {
+    if (last_tick_ms_ != INT64_MIN) {
+        const int64_t delta = utc_ms - last_tick_ms_;
+        if (delta > STEP_FORWARD_MS || delta < STEP_BACKWARD_MS) handle_time_step(delta);
+    }
+    last_tick_ms_ = utc_ms;
+
+    if (pending_resume_ && time_.valid()) {
+        pending_resume_ = false;
+        countdown_resume(utc_ms);
+        enter_mode(Mode::Countdown, utc_ms);
+        return;  // enter_mode already ticked
+    }
+
     switch (mode_) {
         case Mode::Clock:     tick_clock(utc_ms); break;
         case Mode::Message:   tick_message(utc_ms); break;
         case Mode::Countdown: tick_countdown(utc_ms); break;
     }
     sched_.tick(utc_ms);
+}
+
+void ModeManager::handle_time_step(int64_t delta_ms) {
+    // Wall-clock-relative state shifts with the step; deadline state (the
+    // countdown target) is absolute and needs nothing.
+    msg_until_ms_ += delta_ms;
+    if (invalid_since_ms_ >= 0) invalid_since_ms_ += delta_ms;
+    rendered_minute_ = RENDER_NONE;
+    cd_scheduled_land_ = 0;
+    sched_.cancel_pending();  // its start time lived in the old timebase
+    if (cd_.phase == CdPhase::Running) cd_shown_ = SHOWN_NONE;  // re-render now
 }
 
 // ---------------------------------------------------------------------------
@@ -97,11 +179,10 @@ void ModeManager::tick_clock(int64_t utc_ms) {
         // All blank after homing; the WiFi glyph on the centre column once the
         // grace expires.  A drop AFTER a successful sync never shows the glyph
         // (time_.valid() is sticky).
-        const bool want_glyph = grace_over;
-        if (want_glyph != wifi_glyph_ || rendered_minute_ == -1) {
-            wifi_glyph_ = want_glyph;
-            rendered_minute_ = -2;  // not a real minute; forces re-render on sync
-            sched_.show(want_glyph ? render_wifi(ring_) : render_blank(ring_), utc_ms);
+        if (grace_over != wifi_glyph_ || rendered_minute_ == RENDER_NONE) {
+            wifi_glyph_ = grace_over;
+            rendered_minute_ = RENDER_SPECIAL;
+            sched_.show(grace_over ? render_wifi(ring_) : render_blank(ring_), utc_ms);
         }
         return;
     }
@@ -111,17 +192,20 @@ void ModeManager::tick_clock(int64_t utc_ms) {
     // local second-0 == UTC second-0).
     const int64_t minute = utc_ms / 60000;
     if (minute == rendered_minute_) return;
+    const bool fresh_entry = (rendered_minute_ < 0);
     rendered_minute_ = minute;
 
     const LocalTime lt = tz_.to_local(utc_ms / 1000);
-    // Moves START on the tick by default (clock.land_on_tick = false).
+    if (!cfg_.clock_land_on_tick || fresh_entry) {
+        // Show the current minute now - on entry even in land-on-tick mode,
+        // otherwise the display would sit stale until the next boundary.
+        sched_.show(render_clock(ring_, lt, cfg_.h24), utc_ms);
+    }
     if (cfg_.clock_land_on_tick) {
-        // Optional: land the NEXT minute's frame on its boundary.
+        // Land the NEXT minute's frame on its boundary.
         const int64_t next_boundary = (minute + 1) * 60000;
         const LocalTime nx = tz_.to_local(next_boundary / 1000);
         sched_.show(render_clock(ring_, nx, cfg_.h24), utc_ms, next_boundary);
-    } else {
-        sched_.show(render_clock(ring_, lt, cfg_.h24), utc_ms);
     }
 }
 
@@ -130,6 +214,7 @@ void ModeManager::tick_clock(int64_t utc_ms) {
 // ---------------------------------------------------------------------------
 void ModeManager::tick_message(int64_t utc_ms) {
     if (!msg_hold_ && utc_ms >= msg_until_ms_) {
+        msg_live_ = false;
         enter_mode(prev_mode_, utc_ms);
     }
 }
@@ -140,17 +225,50 @@ void ModeManager::tick_message(int64_t utc_ms) {
 void ModeManager::countdown_arm(int64_t target_utc, int64_t utc_ms) {
     cd_.target_utc = target_utc;
     ++cd_.seq;
-    cd_.phase = (target_utc * 1000 > utc_ms) ? CdPhase::Running : CdPhase::Zero;
-    cd_shown_ = -1;
+    cd_shown_ = SHOWN_NONE;
     cd_scheduled_land_ = 0;
     cue_warn4_ = cue_warn1_ = cue_zero_ = false;
-    spin_started_ = reveal_shown_ = false;
-    // Cues strictly in the future only: resuming with 90 s left must not
-    // replay the 4-minute warning.
+    spin_started_ = false;
     const int64_t rem_s = target_utc - utc_ms / 1000;
-    if (rem_s <= 240) cue_warn4_ = true;
-    if (rem_s <= 60) cue_warn1_ = true;
+    if (rem_s > 0) {
+        cd_.phase = CdPhase::Running;
+        // Cues strictly in the future only.
+        if (rem_s <= 240) cue_warn4_ = true;
+        if (rem_s <= 60) cue_warn1_ = true;
+    } else {
+        // A deadline already in the past (terminal prop peer, or clock steps):
+        // the zero moment happened without us - land on the reveal without
+        // re-running the alarm or the spin.
+        enter_reveal_silently();
+    }
     persist();
+}
+
+void ModeManager::countdown_resume(int64_t utc_ms) {
+    // cd_ already holds the persisted record.  No seq bump, no re-persist.
+    cd_shown_ = SHOWN_NONE;
+    cd_scheduled_land_ = 0;
+    cue_warn4_ = cue_warn1_ = cue_zero_ = false;
+    spin_started_ = false;
+
+    const int64_t rem_s = cd_.target_utc - utc_ms / 1000;
+    if (rem_s > 0) {
+        cd_.phase = CdPhase::Running;
+        if (rem_s <= 240) cue_warn4_ = true;  // never replay past cues
+        if (rem_s <= 60) cue_warn1_ = true;
+    } else {
+        // The zero moment is in the past - whether we died during Running,
+        // Zero, Spin or Reveal, the choreography belongs to that moment and
+        // must not replay.  Wake straight into the reveal.
+        enter_reveal_silently();
+    }
+}
+
+void ModeManager::enter_reveal_silently() {
+    cd_.phase = CdPhase::Reveal;
+    cue_zero_ = true;      // the cue fired (or should have) at the real zero
+    spin_started_ = true;  // ditto the spin
+    cd_shown_ = SHOWN_NONE;  // forces the reveal frame to render
 }
 
 Frame ModeManager::reveal_frame() const {
@@ -187,7 +305,7 @@ void ModeManager::tick_countdown(int64_t utc_ms) {
         }
         if (rem_ms <= 0) {
             cd_.phase = CdPhase::Zero;
-            persist();  // a reboot after zero must wake into the zero state
+            persist();  // a reboot after zero must wake into the reveal
         }
     }
 
@@ -220,11 +338,15 @@ void ModeManager::tick_countdown(int64_t utc_ms) {
     }
 
     // Zero choreography (spec 7.3 / Q4): 000:00, hold, alarm spin, reveal.
+    // Rendering keys off cd_shown_, so re-entering the mode mid-choreography
+    // re-renders instead of leaving the previous mode's frame up.
     if (!cue_zero_) {
         cue_zero_ = true;
         cues_.on_cue(Cue::SystemFailure);
+    }
+    if (cd_.phase == CdPhase::Zero && cd_shown_ != 0) {
         cd_shown_ = 0;
-        sched_.show(render_countdown(ring_, 0), utc_ms);  // ensure 000:00
+        sched_.show(render_countdown(ring_, 0), utc_ms);  // 000:00
     }
 
     const int64_t since_zero = utc_ms - target_ms;
@@ -240,11 +362,12 @@ void ModeManager::tick_countdown(int64_t utc_ms) {
     }
     if (cd_.phase == CdPhase::Spin && since_zero >= hold_ms + spin_ms) {
         cd_.phase = CdPhase::Reveal;
+        cd_shown_ = SHOWN_NONE;
         persist();
     }
     if (cd_.phase == CdPhase::Reveal) {
-        if (!reveal_shown_) {
-            reveal_shown_ = true;
+        if (cd_shown_ != SHOWN_REVEAL) {
+            cd_shown_ = SHOWN_REVEAL;
             sched_.show(reveal_frame(), utc_ms);  // convergence lands it post-spin
         }
         // No auto-return unless configured (spec 7.3).
@@ -263,12 +386,24 @@ void ModeManager::persist() { store_.save(cd_); }
 // Commands (spec 10.2a)
 // ---------------------------------------------------------------------------
 ModeManager::Result ModeManager::cmd_mode_set(Mode m, int64_t utc_ms) {
+    const std::lock_guard<std::mutex> lock(mu_);
+    if (m == Mode::Message) {
+        // Message mode without a live message would show nothing (or bounce
+        // straight back on an expired dwell).
+        if (!msg_live_ || (!msg_hold_ && utc_ms >= msg_until_ms_)) {
+            return {false, "no message set"};
+        }
+        enter_mode(Mode::Message, utc_ms);
+        sched_.show(msg_frame_, utc_ms);
+        return {true, nullptr};
+    }
     enter_mode(m, utc_ms);
     return {true, nullptr};
 }
 
 ModeManager::Result ModeManager::cmd_message_set(
     const std::array<std::string, N_COLUMNS>& tokens, int dwell_s, bool hold, int64_t utc_ms) {
+    const std::lock_guard<std::mutex> lock(mu_);
     Frame f;
     for (int i = 0; i < N_COLUMNS; ++i) {
         const int idx = ring_.col(i).index_for_token(tokens[static_cast<size_t>(i)]);
@@ -276,6 +411,7 @@ ModeManager::Result ModeManager::cmd_message_set(
         f.idx[static_cast<size_t>(i)] = idx;
     }
     msg_frame_ = f;
+    msg_live_ = true;
     msg_hold_ = hold;
     msg_until_ms_ = utc_ms + static_cast<int64_t>(dwell_s > 0 ? dwell_s : cfg_.msg_dwell_s) * 1000;
     enter_mode(Mode::Message, utc_ms);
@@ -290,27 +426,35 @@ ModeManager::Result ModeManager::cmd_countdown_execute(std::string_view numbers,
 }
 
 ModeManager::Result ModeManager::cmd_countdown_start(int64_t utc_ms) {
+    const std::lock_guard<std::mutex> lock(mu_);
+    // "now + 6480" is meaningless before the first sync; a start issued on
+    // the 1970 clock would detonate the alarm the moment SNTP steps time.
+    if (!time_.valid()) return {false, "time not synced"};
     countdown_arm(utc_ms / 1000 + COUNTDOWN_S, utc_ms);
     enter_mode(Mode::Countdown, utc_ms);  // countdown overrides whatever runs
     return {true, nullptr};
 }
 
 ModeManager::Result ModeManager::cmd_countdown_cancel(int64_t utc_ms) {
+    const std::lock_guard<std::mutex> lock(mu_);
     cd_.phase = CdPhase::Idle;
-    cd_shown_ = -1;
+    cd_shown_ = SHOWN_NONE;
     persist();
-    if (mode_ == Mode::Countdown) tick(utc_ms);
+    if (mode_ == Mode::Countdown) tick_locked(utc_ms);
     return {true, nullptr};
 }
 
 ModeManager::Result ModeManager::cmd_countdown_set_target(int64_t target_utc, int64_t utc_ms) {
+    const std::lock_guard<std::mutex> lock(mu_);
     if (target_utc <= 0) return {false, "bad epoch"};
+    if (!time_.valid()) return {false, "time not synced"};
     countdown_arm(target_utc, utc_ms);
     enter_mode(Mode::Countdown, utc_ms);
     return {true, nullptr};
 }
 
 ModeManager::Result ModeManager::cmd_preset(std::string_view name, int64_t utc_ms) {
+    const std::lock_guard<std::mutex> lock(mu_);
     Frame f;
     if (name == "qmarks") f = render_qmarks(ring_);
     else if (name == "blank") f = render_blank(ring_);
@@ -320,6 +464,7 @@ ModeManager::Result ModeManager::cmd_preset(std::string_view name, int64_t utc_m
 
     // A preset behaves like a held message: it stays until the mode changes.
     msg_frame_ = f;
+    msg_live_ = true;
     msg_hold_ = true;
     enter_mode(Mode::Message, utc_ms);
     sched_.show(msg_frame_, utc_ms);
@@ -327,6 +472,7 @@ ModeManager::Result ModeManager::cmd_preset(std::string_view name, int64_t utc_m
 }
 
 ModeManager::Result ModeManager::cmd_display_frame(const Frame& f, int64_t utc_ms) {
+    const std::lock_guard<std::mutex> lock(mu_);
     // Raw frame for props and tests - deliberately does NOT change the mode;
     // the active mode may overwrite it at its next render (spec 10.2a).
     for (int i = 0; i < N_COLUMNS; ++i) {
@@ -336,13 +482,18 @@ ModeManager::Result ModeManager::cmd_display_frame(const Frame& f, int64_t utc_m
         }
     }
     sched_.show(f, utc_ms);
+    // It may have displaced a scheduled land-on-tick boundary; let the
+    // countdown re-derive it rather than silently skip that window.
+    cd_scheduled_land_ = 0;
+    if (cd_.phase == CdPhase::Running) cd_shown_ = SHOWN_NONE;
     return {true, nullptr};
 }
 
 ModeManager::Result ModeManager::cmd_clock_format(bool h24, int64_t utc_ms) {
+    const std::lock_guard<std::mutex> lock(mu_);
     cfg_.h24 = h24;
-    rendered_minute_ = -1;  // re-render immediately in the new format
-    if (mode_ == Mode::Clock) tick(utc_ms);
+    rendered_minute_ = RENDER_NONE;  // re-render immediately in the new format
+    if (mode_ == Mode::Clock) tick_locked(utc_ms);
     return {true, nullptr};
 }
 

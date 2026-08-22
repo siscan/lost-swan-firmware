@@ -66,8 +66,11 @@ struct Parser {
                             else return fail("bad \\u digit");
                         }
                         i += 4;
-                        // UTF-8 encode (surrogate pairs unsupported; ringgen
-                        // emits none - reject rather than mangle).
+                        // UTF-8 encode.  A NUL escape is rejected rather than
+                        // decoded: it would smuggle a NUL past the control-char
+                        // check into C-string consumers.  Surrogate pairs are
+                        // rejected too - ringgen emits none.
+                        if (v == 0) return fail("NUL escape rejected");
                         if (v >= 0xD800 && v <= 0xDFFF) return fail("surrogates unsupported");
                         if (v < 0x80) {
                             out += static_cast<char>(v);

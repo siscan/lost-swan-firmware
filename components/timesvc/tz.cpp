@@ -40,7 +40,9 @@ struct Cursor {
     }
 
     // [+|-]hh[:mm[:ss]] -> seconds; POSIX sign kept (positive = west).
-    bool offset(int32_t& out) {
+    // Zone offsets cap at 24 h; M-rule transition times may reach +-167 h -
+    // real tzdb strings use it (Asia/Jerusalem "M3.4.4/26", Gaza "/48").
+    bool offset(int32_t& out, int max_hours = 24) {
         int sign = 1;
         if (peek() == '-') {
             sign = -1;
@@ -58,7 +60,7 @@ struct Cursor {
                 if (!number(sec, 2)) return false;
             }
         }
-        if (h > 24 || m > 59 || sec > 59) return false;
+        if (h > max_hours || m > 59 || sec > 59) return false;
         out = sign * (h * 3600 + m * 60 + sec);
         return true;
     }
@@ -105,14 +107,20 @@ bool TimeZone::parse(std::string_view tz, TimeZone& out, std::string* err) {
 
     if (c.done()) return true;  // no DST
 
-    if (c.peek() != ',') {  // dst name follows
-        if (!c.name(out.dst_name_)) return fail("bad dst name");
-        // Optional explicit dst offset; default one hour ahead of std.
-        if (!c.done() && c.peek() != ',') {
-            if (!c.offset(out.dst_offset_)) return fail("bad dst offset");
-        } else {
-            out.dst_offset_ = out.std_offset_ - 3600;
-        }
+    if (c.peek() == ',') {
+        // Rules without a dst designation are not POSIX; accepting them would
+        // leave dst_offset_ at 0 (UTC) and shift the whole DST half of the
+        // year by hours, silently.  Refuse rather than guess - same policy as
+        // the converse case below.
+        return fail("transition rules without a dst name");
+    }
+
+    if (!c.name(out.dst_name_)) return fail("bad dst name");
+    // Optional explicit dst offset; default one hour ahead of std.
+    if (!c.done() && c.peek() != ',') {
+        if (!c.offset(out.dst_offset_)) return fail("bad dst offset");
+    } else {
+        out.dst_offset_ = out.std_offset_ - 3600;
     }
 
     if (c.done()) {
@@ -135,7 +143,7 @@ bool TimeZone::parse(std::string_view tz, TimeZone& out, std::string* err) {
         if (c.peek() == '/') {
             ++c.i;
             int32_t t = 0;
-            if (!c.offset(t)) return fail("bad rule time");
+            if (!c.offset(t, 167)) return fail("bad rule time");  // tzdb extension
             r.at = t;
         }
         return true;

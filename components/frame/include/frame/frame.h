@@ -76,6 +76,11 @@ public:
     // the columns back on it (or on a reveal frame shown right after).
     void spin_all(int32_t flaps_s, int seconds);
 
+    // Drops a scheduled-but-not-started frame.  Used when the timebase steps
+    // (SNTP resync): the pending start instant lived in the old timebase and
+    // the mode re-derives its schedule.
+    void cancel_pending() { have_pending_ = false; }
+
     // Call frequently (>= a few Hz).  Starts a pending frame whose time has
     // come and converges columns: any Idle column not displaying its desired
     // index is re-issued - this is what resumes the frame after an automatic

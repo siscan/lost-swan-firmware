@@ -53,6 +53,7 @@ void test_json_parser() {
         "",           "{",       "[1,",     R"({"a"})",   R"({"a":})",
         "01x",        "1.5",     "1e3",     "tru",        R"("unterminated)",
         "[1] garbage", R"({"a":1,})", "\"\\u12\"", "\"\x01\"",
+        "\"\\u0000\"",  // NUL escape would smuggle a terminator into C strings
     };
     for (const char* b : bad) {
         err.clear();
@@ -113,53 +114,87 @@ void test_generated_ring_json(const char* path) {
 }
 
 // --------------------------------------------------------------------------
-// Fluidity: a reordered ring and a per-column override still resolve by role.
+// Fluidity: a reordered full-size ring and a per-column override still resolve
+// by role.  Tables must be exactly RING_SLOT_COUNT slots - the drums are
+// physical - so the fixtures are generated from the compiled table.
 // --------------------------------------------------------------------------
+std::string slots_json(int rotate_digits_by, bool drop_pm) {
+    // The compiled ring with the digit block rotated by `rotate_digits_by`
+    // (so digit d sits at slot RING_DIGIT_FIRST + (d + rot) % 10), optionally
+    // with PM replaced by a glyph to exercise the failure contract.
+    std::string out = "[";
+    for (int i = 0; i < RING_SLOT_COUNT; ++i) {
+        int src = i;
+        if (i >= RING_DIGIT_FIRST && i <= RING_DIGIT_LAST) {
+            const int d = (i - RING_DIGIT_FIRST + rotate_digits_by) % 10;
+            src = RING_DIGIT_FIRST + d;
+        }
+        const char* id = RING_TABLE[src].char_id;
+        const char* cat = ring_category_name(RING_TABLE[src].category);
+        if (drop_pm && src == RING_PM_SLOT) {
+            id = "notpm";
+            cat = "glyph";
+        }
+        out += "{\"i\":";
+        out += std::to_string(i);
+        out += ",\"id\":\"";
+        out += id;
+        out += "\",\"cat\":\"";
+        out += cat;
+        out += "\"},";
+    }
+    out.back() = ']';
+    return out;
+}
+
 void test_reordered_and_per_column() {
-    // A 6-slot toy ring with digits out of the manifest's positions.
-    const char* toy = R"({
-      "slot_count": 6,
-      "slots": [
-        {"i":0,"id":"blank","label":"blank","cat":"blank"},
-        {"i":1,"id":"7","label":"digit 7","cat":"digit"},
-        {"i":2,"id":"qmark","label":"?","cat":"glyph"},
-        {"i":3,"id":"wifi","label":"wifi","cat":"wifi"},
-        {"i":4,"id":"AM","label":"AM","cat":"ampm"},
-        {"i":5,"id":"0","label":"digit 0","cat":"digit"}],
-      "columns": [
-        {"scheme":"minutes"},
-        {"scheme":"minutes","slots":[
-          {"i":0,"id":"blank","cat":"blank"},
-          {"i":1,"id":"0","cat":"digit"},
-          {"i":2,"id":"7","cat":"digit"}]}
-      ]})";
+    // Shared ring: digits rotated by 3; column 1 override (spec key "ring"):
+    // digits rotated by 5; column 2 override via the "slots" alias.
+    std::string doc = "{\"slots\":" + slots_json(3, true) +
+                      ",\"columns\":[{},{\"ring\":" + slots_json(5, false) +
+                      "},{\"slots\":" + slots_json(1, false) + "}]}";
 
     RingSet set;
     std::string err;
-    CHECK(set.load_json(toy, &err));
+    if (!set.load_json(doc, &err)) {
+        CHECK(false);
+        std::printf("  load failed: %s\n", err.c_str());
+        return;
+    }
 
-    // Shared table on col 0: roles found wherever they live.
-    CHECK_EQ(set.col(0).index_for_role(Role::Digit, 7), 1);
-    CHECK_EQ(set.col(0).index_for_role(Role::Digit, 0), 5);
-    CHECK_EQ(set.col(0).index_for_role(Role::Question), 2);
-    CHECK_EQ(set.col(0).index_for_role(Role::Wifi), 3);
-    CHECK_EQ(set.col(0).index_for_role(Role::Am), 4);
-    CHECK_EQ(set.col(0).index_for_role(Role::Pm), -1);  // absent here
+    // Shared table: digit d found at its rotated slot, other roles unmoved.
+    for (int d = 0; d <= 9; ++d) {
+        CHECK_EQ(set.col(0).index_for_role(Role::Digit, d),
+                 RING_DIGIT_FIRST + ((d + 10 - 3) % 10));
+    }
+    CHECK_EQ(set.col(0).index_for_role(Role::Question), RING_QMARK_SLOT);
+    CHECK_EQ(set.col(0).index_for_role(Role::Wifi), RING_WIFI_SLOT);
+    CHECK_EQ(set.col(0).index_for_role(Role::Pm), -1);  // dropped in this table
 
-    // Column 1 carries its own ring.
-    CHECK_EQ(set.col(1).slot_count(), 3);
-    CHECK_EQ(set.col(1).index_for_role(Role::Digit, 7), 2);
-    CHECK_EQ(set.col(1).index_for_role(Role::Digit, 0), 1);
-    // Columns 2..4 fall back to the shared table.
-    CHECK_EQ(set.col(2).index_for_role(Role::Digit, 7), 1);
+    // Column overrides: "ring" (spec 4) and the "slots" alias both work.
+    CHECK_EQ(set.col(1).index_for_role(Role::Digit, 0), RING_DIGIT_FIRST + 5);
+    CHECK_EQ(set.col(1).index_for_role(Role::Pm), RING_PM_SLOT);
+    CHECK_EQ(set.col(2).index_for_role(Role::Digit, 0), RING_DIGIT_FIRST + 9);
+    // Columns without an override fall back to the shared table.
+    CHECK_EQ(set.col(3).index_for_role(Role::Digit, 0), RING_DIGIT_FIRST + 7);
 
     // The spec 4 failure contract: unknown role -> blank + diagnostic.
     bool diag = false;
-    CHECK_EQ(set.index_for_role(0, Role::Pm, 0, &diag), 0);
+    CHECK_EQ(set.index_for_role(0, Role::Pm, 0, &diag), RING_HOME_SLOT);
     CHECK(diag);
     diag = false;
-    CHECK_EQ(set.index_for_role(0, Role::Digit, 7, &diag), 1);
+    CHECK_EQ(set.index_for_role(1, Role::Pm, 0, &diag), RING_PM_SLOT);
     CHECK(!diag);
+
+    // A table of the wrong size is rejected outright: the drum has exactly
+    // RING_SLOT_COUNT flaps and T(i) is compiled for that geometry.
+    RingSet wrong;
+    CHECK(!wrong.load_json(R"({"slots":[
+        {"i":0,"id":"blank","cat":"blank"},
+        {"i":1,"id":"0","cat":"digit"},
+        {"i":2,"id":"1","cat":"digit"}]})", &err));
+    CHECK(!wrong.loaded_from_json());
+    CHECK_EQ(wrong.col(0).slot_count(), RING_SLOT_COUNT);  // fallback active
 }
 
 // --------------------------------------------------------------------------

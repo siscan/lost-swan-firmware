@@ -53,8 +53,15 @@ void test_parse() {
     CHECK(TimeZone::parse("<+0330>-3:30", tz, &err));   // quoted name, minutes
     CHECK(!tz.has_dst());
 
+    // tzdb extension: rule times beyond 24 h (Asia/Jerusalem, Gaza).
+    CHECK(TimeZone::parse("IST-2IDT,M3.4.4/26,M10.5.0", tz, &err));
+    CHECK(TimeZone::parse("EET-2EEST,M3.4.4/48,M10.4.4/49", tz, &err));
+
     // Rejections.
     CHECK(!TimeZone::parse("", tz, &err));
+    // Rules without a dst designation would leave dst_offset at 0 (UTC) and
+    // silently shift the DST half of the year - refuse, don't guess.
+    CHECK(!TimeZone::parse("PST8,M3.2.0,M11.1.0", tz, &err));
     CHECK(!TimeZone::parse("PST", tz, &err));               // no offset
     CHECK(!TimeZone::parse("PST8PDT", tz, &err));           // dst without rules
     CHECK(!TimeZone::parse("PST8PDT,J60,J300", tz, &err));  // J-form unsupported

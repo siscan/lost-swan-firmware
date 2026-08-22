@@ -846,3 +846,44 @@ reason, so nothing gets re-litigated.
     go/spin/cue/mode events; `web/sim/index.html` replays them through a
     MockSocket speaking the intended Phase 3 `/ws` shape.  CI diffs the
     committed traces against a fresh run, so they cannot go stale silently.
+- 2026-08-21 — **Adversarial review of Phase 2 (73 agents, refuter-verified);
+  29 findings confirmed, collapsed into six root causes, all fixed or
+  contracted:**
+  - **Critical, fixed:** a finished countdown was never cleared from NVS and
+    resume re-armed the choreography — any later power blip replayed the
+    system-failure alarm and the 6 s spin, days after the run.  Now: leaving
+    countdown mode after zero persists Idle (the reveal holds only while the
+    mode does, per §7.3); any resume or set_target with the deadline in the
+    past wakes **silently into the reveal** — cues and the spin belong to the
+    real zero moment and never replay.  Pinned by tests.
+  - **Major, fixed — pre-sync clock:** deadline commands (`execute`/`start`/
+    `set_target`) are rejected until SNTP has synced ("time not synced"), and
+    a persisted countdown's resume is **deferred** until validity arrives —
+    comparing a 2026 deadline against the 1970 boot clock mis-derived
+    everything.  An SNTP **time step** mid-run is now detected (any tick
+    delta a 20 Hz cadence cannot produce): the message dwell keeps its
+    remaining time, the clock re-renders, land-on-tick boundaries re-derive;
+    the countdown needs nothing — its target is absolute.
+  - **Major, fixed — concurrency:** ModeManager state was mutated from the
+    CLI task while the 20 Hz modes task ticked.  Every public entry point now
+    serializes on an internal std::mutex (FreeRTOS mutex with priority
+    inheritance on target).  `ring_store::reload()` stays boot-or-modes-task
+    only — contract in the header; the Phase 3 upload handler must dispatch
+    it through the command path.
+  - **Major, fixed — ring size:** `ring.json` with any slot count other than
+    50 is now rejected (the drum is physical and `T(i)` is compiled for it);
+    per-column overrides use the spec's `columns[i].ring` key (`slots`
+    accepted as an alias).  The CLI's `go`/`ring` commands now resolve through
+    the runtime table per column, not the compiled constants.
+  - **Fixed — scheduler:** a spinning (open-loop) column's stale index no
+    longer poisons `lead_ms` — an unknowable position budgets the full wrap.
+    `mode.set message` with no live message is rejected instead of showing
+    nothing; `display.frame` no longer silently eats a scheduled countdown
+    boundary; `clock.land_on_tick` renders the current minute on entry.
+  - **Minors, fixed:** TZ rules-without-dst-name rejected (was a silent
+    multi-hour error); tzdb rule times to ±167 h accepted (Jerusalem/Gaza
+    strings); the backslash-u0000 escape rejected in JSON (would smuggle a
+    NUL into C strings); fall-back overlap comment corrected for negative-DST
+    zones; the host FakePort now mirrors real open-loop index semantics and a
+    non-instant-move test exercises the Moving paths; the simulator records
+    the initial mode event and resets its mode label.

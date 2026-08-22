@@ -408,6 +408,121 @@ void test_numbers_validation() {
     CHECK(!ModeManager::numbers_valid("hurley"));
 }
 
+// --------------------------------------------------------------------------
+// Regressions from the phase 2 adversarial review.
+// --------------------------------------------------------------------------
+
+// A finished countdown must not haunt later boots: leaving the mode after
+// zero persists Idle, and a resume with the target in the past wakes straight
+// into the reveal - no replayed alarm, no replayed spin.
+void test_finished_countdown_never_replays() {
+    Rig r;
+    r.begin_at(utc_ms(2026, 1, 15, 17, 0, 0));
+    const int64_t target = r.time.utc_ms / 1000 + 20;
+    CHECK(r.mm.cmd_countdown_set_target(target, r.time.utc_ms).ok);
+    r.run_to(target * 1000 + 12 * 1000);
+    CHECK(r.mm.cd_phase() == CdPhase::Reveal);
+
+    // Reboot two days later, still in reveal per NVS: silent reveal - the
+    // choreography belongs to the real zero moment and must not replay.
+    Rig r2;
+    r2.store = r.store;
+    ModeManager mm2{r2.ring, r2.sched, r2.time, r2.store, r2.cues};
+    mm2.set_config(ModesConfig{});
+    r2.begin_at(0);  // begin_at sets fields; use a fresh helper time below
+    r2.time.utc_ms = (target + 2 * 86400) * 1000;
+    r2.port.now_ms = r2.time.utc_ms;
+    mm2.begin(r2.time.utc_ms);
+    CHECK(mm2.mode() == Mode::Countdown);
+    CHECK(mm2.cd_phase() == CdPhase::Reveal);
+    CHECK_EQ(r2.cues.recs.size(), 0u);   // no SystemFailure replay
+    CHECK_EQ(r2.port.spins.size(), 0u);  // no spin replay
+    // The reveal frame IS rendered (display not left frozen).
+    CHECK_EQ(r2.shown().idx[0], RING_HOME_SLOT);  // reveal unset -> blanks
+
+    // Natural exit ends the run durably: switching to clock persists Idle...
+    CHECK(mm2.cmd_mode_set(Mode::Clock, r2.time.utc_ms).ok);
+    CHECK(r2.store.stored.phase == CdPhase::Idle);
+
+    // ...so the NEXT boot is a plain clock.
+    Rig r3;
+    r3.store = r2.store;
+    ModeManager mm3{r3.ring, r3.sched, r3.time, r3.store, r3.cues};
+    mm3.set_config(ModesConfig{});
+    r3.time.utc_ms = (target + 3 * 86400) * 1000;
+    r3.port.now_ms = r3.time.utc_ms;
+    mm3.begin(r3.time.utc_ms);
+    CHECK(mm3.mode() == Mode::Clock);
+}
+
+// Deadline commands are meaningless on the pre-sync 1970 clock; the resume of
+// a persisted countdown is deferred until time becomes valid.
+void test_time_validity_gating() {
+    // Commands: rejected while time is invalid.
+    Rig r;
+    r.time.is_valid = false;
+    r.begin_at(1000);  // "1970"
+    CHECK(!r.mm.cmd_countdown_start(r.time.utc_ms).ok);
+    CHECK(!r.mm.cmd_countdown_execute(ModeManager::THE_NUMBERS, r.time.utc_ms).ok);
+    CHECK(!r.mm.cmd_countdown_set_target(1787000000, r.time.utc_ms).ok);
+    CHECK(r.mm.mode() == Mode::Clock);
+
+    // Resume: store holds a live 2026 deadline, boot clock reads 1970.
+    Rig r2;
+    r2.store.have = true;
+    r2.store.stored = {CdPhase::Running, utc_ms(2026, 1, 15, 18, 0, 0) / 1000 + 300, 1};
+    r2.time.is_valid = false;
+    r2.begin_at(1000);
+    CHECK(r2.mm.mode() == Mode::Clock);  // deferred, not mis-derived
+
+    // SNTP lands: time steps to 2026 and validity arrives -> countdown
+    // resumes Running with the real remaining time.
+    r2.time.is_valid = true;
+    r2.time.utc_ms = utc_ms(2026, 1, 15, 18, 0, 0);
+    r2.port.now_ms = r2.time.utc_ms;
+    r2.mm.tick(r2.time.utc_ms);
+    CHECK(r2.mm.mode() == Mode::Countdown);
+    CHECK(r2.mm.cd_phase() == CdPhase::Running);
+    CHECK_EQ(r2.cues.recs.size(), 0u);  // 300 s left: no cue yet, none replayed
+}
+
+// An SNTP step must not eat a showing message: the dwell keeps its remaining
+// time across the jump.
+void test_time_step_preserves_message_dwell() {
+    Rig r;
+    r.begin_at(utc_ms(2026, 1, 15, 17, 0, 0));
+    std::array<std::string, N_COLUMNS> toks = {"ankh", "_", "_", "_", "eye"};
+    CHECK(r.mm.cmd_message_set(toks, 60, false, r.time.utc_ms).ok);
+    r.run_to(r.time.utc_ms + 10 * 1000);
+    CHECK(r.mm.mode() == Mode::Message);
+
+    // A 2-hour resync step.  ~50 s of dwell must survive it.
+    r.time.utc_ms += 2 * 3600 * 1000;
+    r.port.now_ms = r.time.utc_ms;
+    r.mm.tick(r.time.utc_ms);
+    CHECK(r.mm.mode() == Mode::Message);
+    r.run_to(r.time.utc_ms + 40 * 1000);
+    CHECK(r.mm.mode() == Mode::Message);   // 50 of 60 s remain
+    r.run_to(r.time.utc_ms + 15 * 1000);
+    CHECK(r.mm.mode() == Mode::Clock);     // and then it expires normally
+}
+
+// mode.set message with nothing to show is an error, not a blank display or
+// an instant bounce.
+void test_mode_set_message_requires_message() {
+    Rig r;
+    r.begin_at(utc_ms(2026, 1, 15, 17, 0, 30));
+    CHECK(!r.mm.cmd_mode_set(Mode::Message, r.time.utc_ms).ok);
+    CHECK(r.mm.mode() == Mode::Clock);
+
+    // With a held message it re-enters and re-shows.
+    std::array<std::string, N_COLUMNS> toks = {"eye", "_", "_", "_", "_"};
+    CHECK(r.mm.cmd_message_set(toks, 0, true, r.time.utc_ms).ok);
+    CHECK(r.mm.cmd_mode_set(Mode::Clock, r.time.utc_ms).ok);
+    CHECK(r.mm.cmd_mode_set(Mode::Message, r.time.utc_ms).ok);
+    CHECK_EQ(r.shown().idx[0], ring_index_for_token("eye"));
+}
+
 }  // namespace
 
 void run_tests() {
@@ -421,4 +536,8 @@ void run_tests() {
     test_countdown_reveal_and_timeout();
     test_countdown_persistence_and_resume();
     test_arbitration();
+    test_finished_countdown_never_replays();
+    test_time_validity_gating();
+    test_time_step_preserves_message_dwell();
+    test_mode_set_message_requires_message();
 }

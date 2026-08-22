@@ -10,8 +10,12 @@ namespace {
 // Forward flip distance from a (possibly unknown) display position.
 int flips_from(const MotionPort::Col& c, int target) {
     int from = RING_INVALID;
-    if (c.state == AxisState::Moving && ring_index_valid(c.dest_index)) {
-        from = c.dest_index;  // a replacement move continues from there
+    if (c.state == AxisState::Moving) {
+        // A closed-loop move is measured from its destination (a replacement
+        // continues from there).  An open-loop move (spin) has no destination
+        // and the stale index is a lie - the position is unknowable until it
+        // settles, so budget the full wrap.
+        from = ring_index_valid(c.dest_index) ? c.dest_index : RING_INVALID;
     } else if (ring_index_valid(c.index)) {
         from = c.index;
     }

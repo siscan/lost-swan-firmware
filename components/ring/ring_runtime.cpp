@@ -173,19 +173,35 @@ bool RingSet::load_json(std::string_view text, std::string* err) {
     }
     std::vector<RingTable::Slot> parsed;
     if (!slots_from_json(*slots, parsed, err)) return false;
+    // The physical drums carry exactly N_RING flaps and the motion targets
+    // T(i) are compiled for that geometry - a table of any other size would
+    // command positions that do not exist on the hardware.
+    if (parsed.size() != static_cast<size_t>(RING_SLOT_COUNT)) {
+        if (err) {
+            *err = "table has " + std::to_string(parsed.size()) + " slots; the drum has " +
+                   std::to_string(RING_SLOT_COUNT);
+        }
+        return false;
+    }
     auto shared = RingTable::from_slots(std::move(parsed), err);
     if (!shared) return false;
 
-    // Optional per-column overrides: columns[i].slots (spec 4).
+    // Optional per-column overrides: columns[i].ring (spec 4; "slots" is
+    // accepted as an alias for symmetry with the top-level key).
     std::array<std::shared_ptr<const RingTable>, N_COLUMNS> per{};
     if (const json::Value* cols = root.get("columns")) {
         const auto* arr = cols->as_array();
         if (arr != nullptr) {
             for (size_t i = 0; i < arr->size() && i < N_COLUMNS; ++i) {
-                const json::Value* ov = (*arr)[i].get("slots");
+                const json::Value* ov = (*arr)[i].get("ring");
+                if (ov == nullptr) ov = (*arr)[i].get("slots");
                 if (ov == nullptr) continue;
                 std::vector<RingTable::Slot> colslots;
                 if (!slots_from_json(*ov, colslots, err)) return false;
+                if (colslots.size() != static_cast<size_t>(RING_SLOT_COUNT)) {
+                    if (err) *err = "column " + std::to_string(i) + " table has the wrong size";
+                    return false;
+                }
                 per[i] = RingTable::from_slots(std::move(colslots), err);
                 if (!per[i]) return false;
             }

@@ -92,7 +92,11 @@ struct Rig {
         port.inner.now_ms = utc_ms;
         rec.t0 = utc_ms;
         mm.begin(utc_ms);
-        note_mode();
+        // Always record the starting mode - note_mode()'s empty-events check
+        // is defeated by the go events begin() itself records.
+        last_mode = mm.mode();
+        rec.add(port.inner.now_ms,
+                std::string("{\"e\":\"mode\",\"name\":\"") + mode_name(last_mode) + "\"}");
     }
 
     void note_mode() {
