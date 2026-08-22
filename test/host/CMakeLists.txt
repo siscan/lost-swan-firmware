@@ -61,3 +61,9 @@ foreach(t ${SWAN_TESTS})
     target_link_libraries(${t} PRIVATE swan_test_cfg)
     add_test(NAME ${t} COMMAND ${t} ${${t}_ARGS})
 endforeach()
+
+# Not a test: the trace generator for the browser simulator (web/sim).
+# Run manually after mode/frame changes:
+#   build/host/gen_traces data/ring.json web/sim/traces.js
+add_executable(gen_traces gen_traces.cpp ${SWAN_PURE_SRC})
+target_link_libraries(gen_traces PRIVATE swan_test_cfg)

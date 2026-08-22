@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>LOST Swan — split-flap simulator</title>
+<!--
+  The five-column simulator (spec 14): renders the ring from ring.json (embedded
+  in traces.js) and replays traces recorded from the REAL ModeManager and
+  FrameScheduler by test/host/gen_traces.cpp.  Nothing here re-implements mode
+  logic; the page only animates what the firmware logic decided.
+
+  Open directly from disk - no server needed.  The MockSocket below delivers
+  the same JSON events a WebSocket at /ws will push in Phase 3.
+
+  Regenerate traces after mode/frame changes:
+      build/host/gen_traces data/ring.json web/sim/traces.js
+-->
+<style>
+  :root { --bg:#0b0f0d; --panel:#141a16; --text:#c8d2c4; --dim:#6a7a6a; --acc:#87a05a; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+         font-family:"Courier New", monospace; padding:24px; }
+  h1 { font-size:16px; letter-spacing:.25em; color:var(--acc); font-weight:normal; }
+  #bar { display:flex; gap:8px; flex-wrap:wrap; margin:14px 0; align-items:center; }
+  button { background:var(--panel); color:var(--text); border:1px solid #2c352c;
+           font:inherit; padding:6px 12px; cursor:pointer; }
+  button.active, button:hover { border-color:var(--acc); color:var(--acc); }
+  #display { display:flex; gap:14px; margin:26px 0; justify-content:center; }
+  .gap { width:26px; }
+  .col { width:110px; height:150px; perspective:400px; }
+  .card { width:100%; height:100%; border-radius:6px; display:flex; align-items:center;
+          justify-content:center; font-size:64px; font-weight:bold; position:relative;
+          box-shadow:0 4px 14px #0009, inset 0 -1px 0 #fff2;
+          transition:transform 40ms linear; }
+  .card::after { content:""; position:absolute; left:0; right:0; top:50%; height:2px;
+                 background:#0007; }
+  .card.small { font-size:20px; letter-spacing:.05em; text-transform:uppercase; }
+  .card.flip { transform:scaleY(.12); }
+  #status { display:flex; gap:22px; color:var(--dim); font-size:13px; min-height:20px; }
+  #cue { color:#d8b04a; } #skip { color:var(--dim); } #modelbl { color:var(--acc); }
+  #desc { color:var(--dim); font-size:13px; margin-top:4px; }
+</style>
+</head>
+<body>
+<h1>DHARMA · SWAN · SPLIT-FLAP SIMULATOR</h1>
+<div id="desc"></div>
+<div id="bar"></div>
+<div id="display"></div>
+<div id="status">
+  <span id="modelbl"></span><span id="clock"></span><span id="cue"></span><span id="skip"></span>
+</div>
+<script src="traces.js"></script>
+<script>
+"use strict";
+const RING = window.SWAN_RING, TRACES = window.SWAN_TRACES;
+const N = RING.slot_count;
+
+// --- per-column ring + colour scheme -------------------------------------
+function colTable(i) {
+  const c = (RING.columns || [])[i] || {};
+  return c.slots || RING.slots;          // per-column ring override (spec 4)
+}
+function colScheme(i) {
+  const c = (RING.columns || [])[i] || {};
+  return (RING.schemes || {})[c.scheme] || { card: { default: "#222" }, ink: { default: "#eee" } };
+}
+function colours(i, slot) {
+  const s = colScheme(i), glyph = slot.cat === "glyph";
+  return { card: (glyph && s.card.glyph) || s.card.default,
+           ink:  (glyph && s.ink.glyph)  || s.ink.default };
+}
+function face(slot) {
+  if (slot.cat === "blank") return { text: "", small: false };
+  if (slot.cat === "digit" || slot.cat === "ampm") return { text: slot.id, small: slot.id.length > 1 };
+  if (slot.cat === "wifi") return { text: "☷", small: false };  // placeholder mark
+  return { text: slot.id, small: true };  // glyphs render as their name
+}
+
+// --- columns --------------------------------------------------------------
+const disp = document.getElementById("display");
+const cols = [];
+for (let i = 0; i < 5; i++) {
+  if (i === 3) { const g = document.createElement("div"); g.className = "gap"; disp.appendChild(g); }
+  const el = document.createElement("div");
+  el.className = "col";
+  const card = document.createElement("div");
+  card.className = "card";
+  el.appendChild(card);
+  disp.appendChild(el);
+  cols.push({ card, idx: 0, timer: null });
+  paint(i, 0);
+}
+function paint(i, idx) {
+  const slot = colTable(i)[idx], c = colours(i, slot), f = face(slot);
+  const card = cols[i].card;
+  card.style.background = c.card;
+  card.style.color = c.ink;
+  card.textContent = f.text;
+  card.classList.toggle("small", f.small);
+  cols[i].idx = idx;
+}
+// Animate (to - cur) mod N forward flips at the commanded rate - one-way ring.
+function flipTo(i, to, flaps) {
+  const per = Math.max(28, 1000 / (flaps || 15));
+  clearInterval(cols[i].timer);
+  cols[i].timer = setInterval(() => {
+    if (cols[i].idx === to) { clearInterval(cols[i].timer); return; }
+    const next = (cols[i].idx + 1) % N;
+    cols[i].card.classList.add("flip");
+    setTimeout(() => { paint(i, next); cols[i].card.classList.remove("flip"); }, 20);
+  }, per);
+}
+function spin(i, flaps, secs) {
+  const per = Math.max(28, 1000 / (flaps || 25));
+  clearInterval(cols[i].timer);
+  let left = (secs * 1000) / per;
+  cols[i].timer = setInterval(() => {
+    cols[i].card.classList.add("flip");
+    const next = (cols[i].idx + 1) % N;
+    setTimeout(() => { paint(i, next); cols[i].card.classList.remove("flip"); }, 18);
+    if (--left <= 0) clearInterval(cols[i].timer);
+  }, per);
+}
+
+// --- MockSocket: replays a trace with the /ws message shape ---------------
+// Long idle gaps are compressed to keep the replay watchable; the skip chip
+// shows how much simulated time was jumped.
+class MockSocket {
+  constructor(trace) { this.trace = trace; this.onmessage = null; this.stop = false; }
+  close() { this.stop = true; }
+  run() {
+    const ev = this.trace.events;
+    let i = 0, simT = 0;
+    const step = () => {
+      if (this.stop || i >= ev.length) return;
+      const gap = ev[i].t - simT;
+      const wait = Math.min(gap, 1500);
+      if (gap > 1500) skipLbl.textContent = "⏩ +" + Math.round((gap - wait) / 1000) + "s";
+      else skipLbl.textContent = "";
+      simT = ev[i].t;
+      setTimeout(() => {
+        if (this.stop) return;
+        this.onmessage({ data: JSON.stringify(ev[i]) });
+        i += 1;
+        step();
+      }, wait);
+    };
+    step();
+  }
+}
+
+// --- wiring ----------------------------------------------------------------
+const modeLbl = document.getElementById("modelbl"), cueLbl = document.getElementById("cue"),
+      skipLbl = document.getElementById("skip"), descLbl = document.getElementById("desc");
+let sock = null;
+function play(name) {
+  if (sock) sock.close();
+  cols.forEach((c, i) => { clearInterval(c.timer); paint(i, 0); });
+  cueLbl.textContent = ""; skipLbl.textContent = "";
+  descLbl.textContent = TRACES[name].desc;
+  document.querySelectorAll("#bar button").forEach(b =>
+      b.classList.toggle("active", b.dataset.n === name));
+  sock = new MockSocket(TRACES[name]);
+  sock.onmessage = (m) => {
+    const e = JSON.parse(m.data);
+    if (e.e === "go") flipTo(e.col, e.idx, e.flaps);
+    else if (e.e === "spin") spin(e.col, e.flaps, e.secs);
+    else if (e.e === "mode") modeLbl.textContent = "mode: " + e.name;
+    else if (e.e === "cue") {
+      cueLbl.textContent = "♪ " + e.name;
+      setTimeout(() => { cueLbl.textContent = ""; }, 2500);
+    }
+  };
+  sock.run();
+}
+const bar = document.getElementById("bar");
+for (const name of Object.keys(TRACES)) {
+  const b = document.createElement("button");
+  b.textContent = name; b.dataset.n = name;
+  b.onclick = () => play(name);
+  bar.appendChild(b);
+}
+play(Object.keys(TRACES)[0]);
+</script>
+</body>
+</html>
