@@ -45,12 +45,22 @@ the simulated-axis suite). The control tick is the **sole writer of the FSM**,
 so command validation there is authoritative; the checks in the public API are
 advisory, for immediate CLI feedback.
 
-**(3) control tick → tasks — relaxed atomics.** Everything published
-(`state`, `index`, counters…) is a single value that is independently
-meaningful; none of them publishes ownership of other memory, so
-`memory_order_relaxed` is sufficient and no fence is needed. Anything that
-needs a *consistent multi-field view* (position vs target vs velocity) must go
-through the spinlock instead — that is why `info()` takes it. A
+**(3) control tick → tasks — relaxed atomics under a seqlock.** Every
+published field (`state`, `index`, counters…) is stored relaxed and is
+independently meaningful on its own. **No consumer may read two or more of
+them and treat them as a consistent pair** — relaxed stores to different
+atomics may be observed in either order. Readers that need a pair (`state` +
+`index` for "settled at index i"; `revs` + `hall_to_hall` for "the length of
+revolution N"; `state` + `hall_valid` for the `go` pre-check) use
+`axis_read_published()`, which brackets the loads with `AxisCtl::seq`: the
+control tick increments `seq` (acq_rel) on entry to `axis_control_tick` and
+again (release) on exit, so a reader that sees the same even `seq` before and
+after its loads has a view from one tick. Retry is rare — the writer holds
+the odd state for microseconds, once a millisecond. `info()`, the `go`
+pre-check and the Phase 2 frame scheduler all go through it; `cal_offset` is
+written by the calibration API outside the bracket and is a single value.
+Anything needing ISR-side consistency (position vs target vs velocity) still
+goes through the spinlock — that is why `info()` takes both. A
 `static_assert` requires all these atomics to be lock-free: a libatomic
 fallback would take a lock the ISR could interrupt.
 

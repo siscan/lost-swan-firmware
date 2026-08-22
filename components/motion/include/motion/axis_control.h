@@ -99,11 +99,17 @@ struct Request {
 
 // ---------------------------------------------------------------------------
 // (3) Control-side state.  The atomics are published by the control tick (the
-// sole writer of the FSM) and read by anyone; std::memory_order_relaxed
-// everywhere, because each value is independently meaningful - see
-// docs/MOTION_SYNC.md.  The plain fields are control-tick private.
+// sole writer of the FSM) and read by anyone.  Each is stored relaxed and is
+// independently meaningful; a reader that needs TWO OR MORE of them as a
+// consistent pair (state + index, revs + hall_to_hall, ...) must go through
+// axis_read_published(), which brackets them with the `seq` seqlock the tick
+// maintains - see docs/MOTION_SYNC.md.  The plain fields are tick-private.
 // ---------------------------------------------------------------------------
 struct AxisCtl {
+    // Seqlock: odd while axis_control_tick is writing.  acq_rel on entry keeps
+    // the tick's stores after it; release on exit keeps them before it.
+    std::atomic<uint32_t> seq{0};
+
     std::atomic<AxisState> state{AxisState::Unhomed};
     std::atomic<int> index{RING_INVALID};
     std::atomic<int> dest_index{RING_INVALID};
@@ -171,9 +177,29 @@ struct TickEvents {
 // One control tick for one axis: drain the (already snapshotted) request,
 // process a Hall edge if one arrived, run the FSM, compute the velocity.
 // The request must have been removed from the mailbox in the SAME critical
-// section as the snapshot - see motion.cpp / MOTION_SYNC.md.
+// section as the snapshot - see motion.cpp / MOTION_SYNC.md.  Brackets its
+// publication with the seqlock.
 IsrWrite axis_control_tick(AxisCtl& a, const IsrSnap& in, const Request& req,
                            const MotionParams& p, TickEvents& ev);
+
+// A mutually consistent view of everything the control tick publishes - all
+// fields from the same tick.  This is the ONLY sanctioned way to read two or
+// more of the AxisCtl atomics together.  Retries while a tick is mid-write
+// (rare: the writer runs for microseconds once a millisecond).
+struct AxisPublished {
+    AxisState state;
+    int index;
+    int dest_index;
+    bool hall_valid;
+    uint32_t revs;
+    uint32_t resync_minor;
+    uint32_t resync_major;
+    uint32_t faults;
+    int32_t last_hall_err;
+    int32_t hall_to_hall;
+    int32_t cal_offset;  // written by the cal API, not the tick; single value
+};
+AxisPublished axis_read_published(const AxisCtl& a);
 
 // Calibration offsets are stored normalised into [0, one revolution): index 0
 // only has a position modulo one revolution, and the homing settle phase

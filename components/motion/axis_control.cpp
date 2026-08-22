@@ -186,8 +186,16 @@ void apply_request(TickCtx& c, const Request& r) {
 
 }  // namespace
 
+// RAII seqlock bracket for the tick's publication window.
+struct PublishGuard {
+    AxisCtl& a;
+    explicit PublishGuard(AxisCtl& ax) : a(ax) { a.seq.fetch_add(1, std::memory_order_acq_rel); }
+    ~PublishGuard() { a.seq.fetch_add(1, std::memory_order_release); }
+};
+
 IsrWrite axis_control_tick(AxisCtl& a, const IsrSnap& in, const Request& req,
                            const MotionParams& p, TickEvents& ev) {
+    const PublishGuard guard(a);
     TickCtx c{a, in, p, ev, in.target, false};
 
     if (req.kind != ReqKind::None) apply_request(c, req);
@@ -251,6 +259,28 @@ IsrWrite axis_control_tick(AxisCtl& a, const IsrSnap& in, const Request& req,
         w.velocity = ramp_next_velocity(c.tgt - in.pos, in.velocity, rp);
     }
     return w;
+}
+
+AxisPublished axis_read_published(const AxisCtl& a) {
+    AxisPublished out;
+    for (;;) {
+        const uint32_t s1 = a.seq.load(std::memory_order_acquire);
+        if (s1 & 1u) continue;  // tick in progress
+        out.state = a.state.load(RLX);
+        out.index = a.index.load(RLX);
+        out.dest_index = a.dest_index.load(RLX);
+        out.hall_valid = a.hall_valid.load(RLX);
+        out.revs = a.revs.load(RLX);
+        out.resync_minor = a.resync_minor.load(RLX);
+        out.resync_major = a.resync_major.load(RLX);
+        out.faults = a.faults.load(RLX);
+        out.last_hall_err = a.last_hall_err.load(RLX);
+        out.hall_to_hall = a.hall_to_hall.load(RLX);
+        out.cal_offset = a.cal_offset.load(RLX);
+        std::atomic_thread_fence(std::memory_order_acquire);
+        const uint32_t s2 = a.seq.load(std::memory_order_relaxed);
+        if (s1 == s2) return out;
+    }
 }
 
 int32_t normalize_cal(int32_t usteps) {

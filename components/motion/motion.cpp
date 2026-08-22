@@ -277,10 +277,11 @@ esp_err_t home(int col) {
 esp_err_t go(int col, int index) {
     if (!valid_col(col) || !ring_index_valid(index)) return ESP_ERR_INVALID_ARG;
 
-    const AxisCtl& a = g_ctl[col];
-    const AxisState s = a.state.load(RLX);
-    if (s != AxisState::Idle && s != AxisState::Moving) return ESP_ERR_INVALID_STATE;
-    if (!a.hall_valid.load(RLX)) return ESP_ERR_INVALID_STATE;  // no home reference
+    // Advisory pre-check (the control tick re-validates authoritatively); the
+    // two fields are read as a consistent pair via the seqlock.
+    const AxisPublished a = axis_read_published(g_ctl[col]);
+    if (a.state != AxisState::Idle && a.state != AxisState::Moving) return ESP_ERR_INVALID_STATE;
+    if (!a.hall_valid) return ESP_ERR_INVALID_STATE;  // no home reference
 
     Request r;
     r.kind = ReqKind::Go;
@@ -340,17 +341,21 @@ void info(int col, AxisInfo& out) {
     out.hall_level = g_isr[col].hall_active;
     portEXIT_CRITICAL(&g_lock);
 
-    out.state = a.state.load(RLX);
-    out.index = a.index.load(RLX);
-    out.dest_index = a.dest_index.load(RLX);
-    out.cal_offset = a.cal_offset.load(RLX);
-    out.hall_valid = a.hall_valid.load(RLX);
-    out.revs = a.revs.load(RLX);
-    out.resync_minor = a.resync_minor.load(RLX);
-    out.resync_major = a.resync_major.load(RLX);
-    out.faults = a.faults.load(RLX);
-    out.last_hall_err = a.last_hall_err.load(RLX);
-    out.hall_to_hall = a.hall_to_hall.load(RLX);
+    // Everything the control tick publishes, as one consistent view: a caller
+    // that sees revs == N gets the hall_to_hall of revolution N, and one that
+    // sees Idle gets the index that Idle settled on.
+    const AxisPublished pub = axis_read_published(a);
+    out.state = pub.state;
+    out.index = pub.index;
+    out.dest_index = pub.dest_index;
+    out.cal_offset = pub.cal_offset;
+    out.hall_valid = pub.hall_valid;
+    out.revs = pub.revs;
+    out.resync_minor = pub.resync_minor;
+    out.resync_major = pub.resync_major;
+    out.faults = pub.faults;
+    out.last_hall_err = pub.last_hall_err;
+    out.hall_to_hall = pub.hall_to_hall;
     // Derived from the step count rather than counted per move, so it stays
     // exact across wraps and open-loop stepping.
     out.flips_total =
