@@ -1,0 +1,58 @@
+# CI - the reliability source of truth (Linux; no Smart App Control, no ar.exe
+# block).  The Windows dev machine's SAC-retry in test-host.ps1 is local
+# convenience only.
+#
+# Jobs:
+#   ring-table  - the committed generated header must match the manifest
+#   host-tests  - native build of the pure-logic suites, incl. the
+#                 simulated-axis suite (Phase 1.5)
+#   firmware    - both board maps, in Espressif's official IDF v5.5.5 image
+name: ci
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  ring-table:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generated ring table is current
+        run: python3 tools/gen_ring_table.py --check
+
+  host-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S test/host -B build/host
+      - name: Build
+        run: cmake --build build/host
+      - name: Run
+        run: ctest --test-dir build/host --output-on-failure
+
+  firmware:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        board: [devkitc1, xiao]
+    container:
+      image: espressif/idf:v5.5.5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build (${{ matrix.board }})
+        shell: bash
+        run: |
+          # The runner checks out as a different uid than the container user.
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          . $IDF_PATH/export.sh
+          idf.py -DSWAN_BOARD=${{ matrix.board }} set-target esp32c5
+          idf.py -DSWAN_BOARD=${{ matrix.board }} build
+      - name: Size
+        shell: bash
+        run: |
+          . $IDF_PATH/export.sh
+          idf.py size
