@@ -85,10 +85,12 @@ void test_plan_target() {
     CHECK_EQ(plan_target(hall, cal, pos0, 0), pos0);
 
     // A move that goes "backwards" on the ring is a forward wrap: from index 40
-    // to index 5 the target is index 5 of the next revolution.
+    // to index 5 the target is index 5 of the next revolution (to within the
+    // 1-ustep rounding of the nominal-revolution wrap).
     const int64_t pos40 = index_position(hall, cal, 40);
     const int64_t t = plan_target(hall, cal, pos40, 5);
-    CHECK_EQ(t, hall + cal + ring_target_usteps(55));
+    const int64_t wrap_err = t - (hall + cal + ring_target_usteps(55));
+    CHECK(wrap_err >= -1 && wrap_err <= 1);
     CHECK(t > pos40);
     // ...and it costs exactly (5 - 40) mod 50 = 15 flips of travel.
     CHECK_EQ(ring_forward_distance(40, 5), 15);
@@ -100,11 +102,37 @@ void test_plan_target() {
             const int64_t tgt = plan_target(hall, cal, pos, to);
             CHECK(tgt >= pos);
             const int flips = ring_forward_distance(from, to);
-            // Distance must match the flip count to within the rounding of the
-            // two endpoints (at most 1 ustep).
+            // Distance matches the flip count to within endpoint rounding plus
+            // the nominal-revolution wrap (each contributes at most 1 ustep;
+            // any residue is absorbed at the next Hall edge).
             const int64_t nominal = ring_target_usteps(from + flips) - ring_target_usteps(from);
             const int64_t err = (tgt - pos) - nominal;
-            CHECK(err <= 1 && err >= -1);
+            CHECK(err <= 2 && err >= -2);
+        }
+    }
+}
+
+// The anchor offset cal + T(to) reduced into [0, one revolution).  Without
+// this reduction, a mid-move edge rebase with cal + T(to) > rev pushed the
+// target past the NEXT edge and go() never terminated (see test_axis_sim).
+void test_edge_anchor_offset() {
+    CHECK_EQ(edge_anchor_offset(0, 0), 0);
+    CHECK_EQ(edge_anchor_offset(40, 5), 40 + ring_target_usteps(5));
+    CHECK_EQ(edge_anchor_offset(8142, 1), 65);    // 8142 + 165 - 8242
+    CHECK_EQ(edge_anchor_offset(200, 49), 36);    // 200 + 8078 - 8242
+    CHECK_EQ(edge_anchor_offset(8241, 49), 8077); // wraps once, not twice
+
+    // The invariant the termination proof rests on: for EVERY legal cal and
+    // dest, the anchor offset is sub-revolution, so a rebased target can never
+    // recede across successive edges.
+    for (int32_t cal = 0; cal < 8242; cal += 97) {
+        for (int to = 0; to < RING_SLOT_COUNT; ++to) {
+            const int64_t e = edge_anchor_offset(cal, to);
+            CHECK(e >= 0 && e < USTEPS_PER_SPOOL_REV_NOMINAL);
+            // And retarget_on_edge built on it stays within one revolution of
+            // the edge (before the forward clamp).
+            const int64_t t = retarget_on_edge(1000000, cal, 1000000, to);
+            CHECK(t - 1000000 < USTEPS_PER_SPOOL_REV_NOMINAL);
         }
     }
 }
@@ -274,6 +302,7 @@ void run_tests() {
     test_ring_target();
     test_no_accumulation();
     test_plan_target();
+    test_edge_anchor_offset();
     test_retarget_on_edge();
     test_edge_classification();
     test_dda_rate();
