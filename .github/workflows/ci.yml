@@ -32,6 +32,10 @@ jobs:
         run: cmake --build build/host
       - name: Run
         run: ctest --test-dir build/host --output-on-failure
+      - name: Simulator traces are current
+        run: |
+          ./build/host/gen_traces data/ring.json /tmp/traces.js
+          diff /tmp/traces.js web/sim/traces.js
 
   firmware:
     runs-on: ubuntu-latest

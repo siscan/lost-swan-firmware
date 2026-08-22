@@ -9,15 +9,16 @@ Target: ESP32-C5-DevKitC-1-N8R8 (XIAO ESP32-C5 map behind a board define).
 
 - **Spec v1.0** — all questions answered (spec §16); resolutions in the §17 decision log
 - Hardware: DevKitC-1 on order; **chip revision unverified** (checked on first flash)
-- Code: **Phase 1 complete; all exit criteria met.** Nothing has been flashed or
-  measured on hardware — `docs/BRINGUP.md` tracks that separately.
+- Code: **Phase 2 complete** (fluid ring, frame scheduler, modes with the
+  deadline countdown, time service, browser simulator).  Nothing has been
+  flashed or measured on hardware — `docs/BRINGUP.md` tracks that separately.
 
 | gate | status |
 |---|---|
 | `set-target esp32c5` + `build` clean | passes — zero warnings, both board maps |
-| host tests green | 3/3 pass, including the Phase 1.5 simulated-axis suite |
-| `git diff` empty after `gen_ring_table.py` | clean — regeneration is byte-identical |
-| motion cross-task handoff explicit | done — see `docs/MOTION_SYNC.md` |
+| host tests green | 7/7 suites (ring, motion math, simulated axis, ring.json, TZ/DST, frame, modes) |
+| `git diff` empty after `tools/ringgen.py` | clean — header and ring.json both regenerate byte-identically |
+| motion cross-task handoff explicit | done — see `docs/MOTION_SYNC.md`, incl. the seqlock for multi-field reads |
 | CI | GitHub Actions on ubuntu — see below |
 | flashed to hardware | **not done — board not arrived** |
 
@@ -29,8 +30,8 @@ none of the Windows dev machine's constraints exist:
 
 | job | what |
 |---|---|
-| `ring-table` | `python3 tools/gen_ring_table.py --check` — the committed generated header must match the manifest |
-| `host-tests` | native CMake build + ctest of all three pure-logic suites, including the simulated-axis suite |
+| `ring-table` | `python3 tools/gen_ring_table.py --check` — the committed header AND `data/ring.json` must match the manifest |
+| `host-tests` | native CMake build + ctest of all seven pure-logic suites, then a freshness diff of the committed simulator traces against a live `gen_traces` run |
 | `firmware` | both board maps (`devkitc1`, `xiao`) built inside Espressif's official `espressif/idf:v5.5.5` Docker image |
 
 **Linux CI is the source of truth for reliability.** The Smart-App-Control
@@ -141,14 +142,29 @@ cmake -S test/host -B build/host && cmake --build build/host && ctest --test-dir
 
 ## Ring table
 
+The generator is `tools/ringgen.py` (spec §4 name); it emits BOTH the compiled
+fallback header and `data/ring.json` (the runtime table for LittleFS).
 Regenerate after any change to `docs/ref/manifest.json`:
 
 ```powershell
-python tools/gen_ring_table.py
+python tools/ringgen.py
 ```
 
-`python tools/gen_ring_table.py --check` fails if the committed header is stale;
-run it in CI.
+`--check` fails if either committed artifact is stale; CI runs it.
+`gen_ring_table.py` remains as a forwarding shim.
+
+## Browser simulator
+
+Open `web/sim/index.html` (any static server, or file:// in most browsers).
+It renders the five columns from `ring.json` in their per-column colour
+schemes and replays traces recorded from the REAL ModeManager/FrameScheduler
+by `test/host/gen_traces.cpp` — the page animates what the firmware logic
+actually decided, through a MockSocket speaking the intended Phase 3 `/ws`
+shape.  Refresh the traces after mode/frame changes:
+
+```powershell
+buildhostgen_traces dataing.json websim	races.js
+```
 
 ## Pin map (DevKitC-1, spec §2.2)
 
@@ -172,6 +188,7 @@ either board. `pins` on the console prints the resolved map.
 | managed component | reason |
 |---|---|
 | `espressif/led_strip` | WS2812 status LED on the DevKitC-1. The XIAO path is plain GPIO and pulls nothing in. |
+| `joltwallet/littlefs` | the `storage` filesystem for `ring.json` now, web assets and audio later (spec §4/§9/§10.2). The build never invokes its host-side image packer. |
 
 Nothing else. The host tests deliberately have no test framework — three macros
 in `test/host/check.h` cover what they need.

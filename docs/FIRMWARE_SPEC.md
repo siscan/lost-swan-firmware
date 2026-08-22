@@ -806,3 +806,43 @@ reason, so nothing gets re-litigated.
   - Docs corrected to match code (MOTION_SYNC critical-section count,
     `dda_tick` inlining guarantee, README CI trigger wording), and the honest
     scope of the host-side mailbox verification recorded in MOTION_SYNC.
+- 2026-08-21 — **Phase 2 delivered** (ring, frame, modes, time, simulator).
+  Decisions and facts recorded on the way:
+  - **Seqlock precondition (Nico's gate) failed and was fixed first:** two
+    consumers read pairs of relaxed atomics as if consistent (`revs` then
+    `hall_to_hall` in the CLI; `state` then `hall_valid` in `go()`).  The
+    control tick now brackets its publication with `AxisCtl::seq`;
+    `axis_read_published()` is the only sanctioned multi-field read.
+    MOTION_SYNC boundary (3) rewritten accordingly.
+  - **Ring is runtime data** (§4 executed): `tools/ringgen.py` emits both
+    `data/ring.json` and the compiled fallback header (`gen_ring_table.py`
+    stays as a shim).  Role lookups derive from slot data, so a reordered or
+    per-column ring keeps resolving; every parse failure falls back to the
+    compiled table.  New managed component `joltwallet/littlefs` mounts the
+    `storage` partition; the build never invokes the host-side image packer —
+    `ring.json` arrives via the Phase 3 upload, fallback covers boot.
+  - **Owned POSIX-TZ engine** (`timesvc/tz.cpp`): newlib/glibc/MinGW-UCRT
+    disagree on M-rule TZ strings (UCRT cannot parse them), and DST edges
+    must be host-tested to the second.  A dst name without explicit rules is
+    rejected rather than guessed.
+  - **Frame layer** (§6): pure scheduler over a MotionPort; land-on-tick
+    starts the frame early by the longest column's modeled duration (pinned
+    against the simulated controller); convergence in tick() resumes the
+    frame after an automatic re-home — the §5.4 obligation now has an owner
+    and a test.
+  - **Countdown** (§7.3) runs on the deadline exactly as specced: cues derive
+    from `target`, resume never replays past cues, the phase re-derives from
+    the deadline at boot, one NVS write per set.  **`countdown.reveal`
+    remains unset → the reveal frame is all blanks** until Nico picks the
+    five glyphs (flagged, not resolved).
+  - **MMM:S0 floor semantics noted:** 108:00 is the idle face; a running
+    countdown shows it only for the start instant before rolling to 107:50 —
+    that is `floor(remaining/10)*10`, verbatim from §7.3.
+  - **WiFi is Phase 4:** until credentials exist SNTP never syncs, so a real
+    boot shows blank then the centre-column WiFi glyph after 15 s.  That is
+    §7.1 behaviour, not a defect.
+  - **Simulator** (§14): rather than re-implementing mode logic in JS, a host
+    tool (`gen_traces`) runs the real ModeManager/FrameScheduler and records
+    go/spin/cue/mode events; `web/sim/index.html` replays them through a
+    MockSocket speaking the intended Phase 3 `/ws` shape.  CI diffs the
+    committed traces against a fresh run, so they cannot go stale silently.
