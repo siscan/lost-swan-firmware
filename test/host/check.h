@@ -6,6 +6,7 @@
 #include <cstring>
 
 inline int g_failures = 0;
+inline const char* g_argv1 = nullptr;  // optional data-file path from add_test
 
 #define CHECK(cond)                                                              \
     do {                                                                         \
@@ -37,7 +38,8 @@ inline int g_failures = 0;
 
 void run_tests();
 
-int main() {
+int main(int argc, char** argv) {
+    g_argv1 = argc > 1 ? argv[1] : nullptr;
     run_tests();
     if (g_failures != 0) {
         std::printf("%d failure(s)\n", g_failures);

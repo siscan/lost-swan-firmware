@@ -1,6 +1,6 @@
 // GENERATED FILE - DO NOT EDIT.
 // Source:     docs/ref/manifest.json
-// Regenerate: python tools/gen_ring_table.py
+// Regenerate: python tools/ringgen.py
 //
 // Ring frozen: 2026-08-20 — Column 5 production flaps generated from this order
 // Integrity:   50/50 flap fronts match ring order

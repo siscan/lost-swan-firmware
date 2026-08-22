@@ -1,0 +1,6 @@
+dependencies:
+  idf: ">=5.5"
+  # LittleFS for ring.json / audio / web assets (spec 4, 9, 10.2).
+  # Reason recorded in README.md.  The build never invokes the host-side image
+  # packer; files arrive via the web UI (Phase 3), so no host tool is built.
+  joltwallet/littlefs: "^1.16.0"
