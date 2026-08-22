@@ -28,6 +28,9 @@ set(SWAN_ROOT ${CMAKE_CURRENT_LIST_DIR}/../..)
 # policy blocks ar.exe on the Windows dev machine).
 set(SWAN_PURE_SRC
     ${SWAN_ROOT}/components/timesvc/tz.cpp
+    ${SWAN_ROOT}/components/frame/frame.cpp
+    ${SWAN_ROOT}/components/modes/render.cpp
+    ${SWAN_ROOT}/components/modes/mode_manager.cpp
     ${SWAN_ROOT}/components/ring/ring.cpp
     ${SWAN_ROOT}/components/ring/ring_runtime.cpp
     ${SWAN_ROOT}/components/ring/json_lite.cpp
@@ -36,6 +39,8 @@ set(SWAN_PURE_SRC
 add_library(swan_test_cfg INTERFACE)
 target_include_directories(swan_test_cfg INTERFACE
     ${SWAN_ROOT}/components/timesvc/include
+    ${SWAN_ROOT}/components/frame/include
+    ${SWAN_ROOT}/components/modes/include
     ${SWAN_ROOT}/components/ring/include
     ${SWAN_ROOT}/components/motion/include
     ${SWAN_ROOT}/components/swan_hal/include
@@ -48,7 +53,7 @@ else()
 endif()
 
 # test name -> optional data-file argument (argv[1], g_argv1 in check.h)
-set(SWAN_TESTS test_ring test_motion_math test_axis_sim test_ring_json test_tz)
+set(SWAN_TESTS test_ring test_motion_math test_axis_sim test_ring_json test_tz test_frame test_modes)
 set(test_ring_json_ARGS ${SWAN_ROOT}/data/ring.json)
 
 foreach(t ${SWAN_TESTS})

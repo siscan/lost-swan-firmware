@@ -1,0 +1,204 @@
+// Frame scheduler (spec 6): duration model vs the real controller, land-on-
+// tick lead computation, frame replacement, and resume-after-rehome.
+#include <cstring>
+
+#include "check.h"
+#include "fake_port.h"
+#include "sim_axis.h"
+
+using namespace swan;
+using namespace swan::testfakes;
+
+namespace {
+
+// --------------------------------------------------------------------------
+// The duration model is pinned against the REAL controller: simulate the
+// actual ramp+DDA (SimAxis) and compare, so a controller change that alters
+// timing breaks this test instead of silently un-syncing land-on-tick.
+// --------------------------------------------------------------------------
+void test_duration_vs_simulation() {
+    const int32_t accel = 82000;
+    for (const int32_t flaps : {15, 25}) {
+        for (const int flips : {1, 2, 5, 24, 41, 45, 49}) {
+            sim::SimAxis ax;
+            ax.ctl.cal_offset.store(40, std::memory_order_relaxed);
+            ax.params.flaps_s_normal = flaps;
+            ax.post_home();
+            if (!ax.run_until_idle()) {
+                CHECK(false);
+                return;
+            }
+            const int64_t t0 = ax.ticks;
+            ax.post_go(flips % RING_SLOT_COUNT);  // flips forward from index 0
+            CHECK(ax.run_until_idle());
+            const int64_t sim_ms = (ax.ticks - t0) / (TICK_HZ / 1000);
+
+            const int64_t model_ms = move_duration_ms(flips, flaps, accel);
+            const int64_t err = model_ms - sim_ms;
+            const int64_t tol = 30 + sim_ms / 20;  // 30 ms + 5%
+            if (err > tol || err < -tol) {
+                CHECK(false);
+                std::printf("  flips=%d flaps=%ld: model %lld ms vs sim %lld ms\n", flips,
+                            static_cast<long>(flaps), static_cast<long long>(model_ms),
+                            static_cast<long long>(sim_ms));
+            }
+        }
+    }
+    CHECK_EQ(move_duration_ms(0, 15, 82000), 0);
+}
+
+// --------------------------------------------------------------------------
+// Land-on-tick: the frame starts early by the LONGEST column's duration and
+// the whirl ends on the boundary (spec 7.3).
+// --------------------------------------------------------------------------
+void test_land_on_tick() {
+    FakePort port;
+    FrameScheduler sched(port, {15, 82000});
+
+    // Columns at various indices; worst move below is 45 flips (col 2: 5->0).
+    port.cols[0].index = 0;
+    port.cols[1].index = 40;  // -> 2: 12 flips
+    port.cols[2].index = 5;   // -> 0: 45 flips (longest)
+    port.cols[3].index = 10;  // -> 15: 5 flips
+    port.cols[4].index = 49;  // -> 49: 0 flips
+
+    Frame f;
+    f.idx = {0, 2, 0, 15, 49};
+    const int64_t lead = sched.lead_ms(f);
+    CHECK_EQ(lead, move_duration_ms(45, 15, 82000));
+
+    const int64_t land = 100000;
+    sched.show(f, 0, land);
+    CHECK(sched.pending());
+    CHECK_EQ(port.gos.size(), 0u);  // nothing starts early
+
+    // Drive time in 10 ms steps; every column must start together at land-lead.
+    for (int64_t t = 0; t <= land && sched.pending(); t += 10) {
+        port.now_ms = t;
+        sched.tick(t);
+    }
+    CHECK(!sched.pending());
+    // Cols 0 (0->0) and 4 (49->49) already show their targets - no go issued.
+    CHECK_EQ(port.gos.size(), 3u);
+    const int64_t start = port.gos[0].at_ms;
+    const int64_t expect = land - lead;
+    CHECK(start >= expect && start <= expect + 10);
+    for (const auto& g : port.gos) CHECK_EQ(g.at_ms, start);  // simultaneous
+
+    // A lead that no longer fits starts immediately instead of never.
+    port.gos.clear();
+    port.cols[2].index = 5;
+    sched.show(f, land + 5000, land + 5100);  // 100 ms to a 2.3 s move
+    CHECK(!sched.pending());
+    CHECK(port.gos.size() >= 1u);
+}
+
+// --------------------------------------------------------------------------
+// A new frame replaces a pending one (spec 6).
+// --------------------------------------------------------------------------
+void test_replacement() {
+    FakePort port;
+    FrameScheduler sched(port, {15, 82000});
+
+    Frame a;
+    a.idx = {1, 1, 1, 1, 1};
+    Frame b;
+    b.idx = {2, 2, 2, 2, 2};
+
+    sched.show(a, 0, 60000);  // pending
+    CHECK(sched.pending());
+    sched.show(b, 100, 0);  // immediate show replaces the scheduled one
+    CHECK(!sched.pending());
+    CHECK(sched.desired() == b);
+    for (int64_t t = 0; t < 70000; t += 1000) sched.tick(t);
+    for (const auto& g : port.gos) CHECK_EQ(g.index, 2);  // frame a never issued
+}
+
+// --------------------------------------------------------------------------
+// Resume after re-home (spec 5.4 / decision log): a column that faulted and
+// auto-re-homed sits Idle at index 0; the scheduler must bring it back.
+// --------------------------------------------------------------------------
+void test_resume_after_rehome() {
+    FakePort port;
+    FrameScheduler sched(port, {15, 82000});
+
+    Frame f;
+    f.idx = {7, 8, 9, 10, 11};
+    sched.show(f, 0);
+    CHECK(sched.settled());
+    port.gos.clear();
+
+    // Column 2 faults and re-homes: Homing first - the scheduler must NOT
+    // interfere mid-home.
+    port.cols[2].state = AxisState::Homing;
+    port.cols[2].index = RING_INVALID;
+    for (int64_t t = 100; t < 500; t += 50) sched.tick(t);
+    CHECK_EQ(port.gos.size(), 0u);
+
+    // Re-home lands: Idle at index 0 - not the frame's index 9.
+    port.cols[2].state = AxisState::Idle;
+    port.cols[2].index = 0;
+    sched.tick(600);
+    CHECK_EQ(port.gos.size(), 1u);
+    CHECK_EQ(port.gos[0].col, 2);
+    CHECK_EQ(port.gos[0].index, 9);
+    CHECK(sched.settled());
+
+    // A rejected go is retried until motion accepts it.
+    port.gos.clear();
+    port.accept = false;
+    port.cols[4].state = AxisState::Idle;
+    port.cols[4].index = 0;
+    sched.tick(700);
+    CHECK_EQ(port.gos.size(), 1u);
+    sched.tick(750);
+    CHECK_EQ(port.gos.size(), 2u);  // retried
+    port.accept = true;
+    sched.tick(800);
+    CHECK_EQ(port.gos.size(), 3u);
+    CHECK(sched.settled());
+}
+
+// --------------------------------------------------------------------------
+// Post-spin landing: after open-loop spinning the display index is unknown;
+// convergence issues the goes and lead_ms budgets a full wrap.
+// --------------------------------------------------------------------------
+void test_post_spin_convergence() {
+    FakePort port;
+    FrameScheduler sched(port, {15, 82000});
+
+    Frame f;
+    f.idx = {13, 14, 15, 16, 17};
+    sched.show(f, 0);
+    port.gos.clear();
+
+    sched.spin_all(25, 6);
+    CHECK_EQ(port.spins.size(), static_cast<size_t>(N_COLUMNS));
+    CHECK_EQ(port.spins[0].flaps_s, 25);
+
+    // While spinning (Moving), no interference.
+    sched.tick(1000);
+    CHECK_EQ(port.gos.size(), 0u);
+
+    // Unknown index costs a full wrap in the lead computation.
+    CHECK_EQ(sched.lead_ms(f), move_duration_ms(RING_SLOT_COUNT - 1, 15, 82000));
+
+    // Spin ends: columns Idle with unknown index -> convergence re-issues all.
+    for (auto& c : port.cols) {
+        c.state = AxisState::Idle;
+        c.index = RING_INVALID;
+    }
+    sched.tick(7000);
+    CHECK_EQ(port.gos.size(), static_cast<size_t>(N_COLUMNS));
+    CHECK(sched.settled());
+}
+
+}  // namespace
+
+void run_tests() {
+    test_duration_vs_simulation();
+    test_land_on_tick();
+    test_replacement();
+    test_resume_after_rehome();
+    test_post_spin_convergence();
+}
