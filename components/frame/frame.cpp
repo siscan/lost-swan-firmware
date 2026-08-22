@@ -1,0 +1,119 @@
+#include "frame/frame.h"
+
+#include "ring/ring.h"
+
+namespace swan {
+namespace {
+
+// Forward flip distance from a (possibly unknown) display position.
+int flips_from(const MotionPort::Col& c, int target) {
+    int from = RING_INVALID;
+    if (c.state == AxisState::Moving && ring_index_valid(c.dest_index)) {
+        from = c.dest_index;  // a replacement move continues from there
+    } else if (ring_index_valid(c.index)) {
+        from = c.index;
+    }
+    if (from == RING_INVALID) return RING_SLOT_COUNT - 1;  // unknown: full wrap
+    return ring_forward_distance(from, target);
+}
+
+}  // namespace
+
+int64_t move_duration_ms(int flips, int32_t flaps_s, int32_t accel) {
+    if (flips <= 0) return 0;
+    const int64_t d = ring_target_usteps(flips);          // usteps
+    const int64_t v = flaps_s_to_usteps_s(flaps_s);       // usteps/s
+    if (v <= 0 || accel <= 0) return 0;
+
+    // Trapezoid: accel v/a covering v^2/2a, same to brake; cruise the rest.
+    const int64_t ramp_d = (v * v) / accel;  // both ramps together
+    if (d >= ramp_d) {
+        // t = d/v + v/a, in ms without floating point.
+        return (d * 1000) / v + (v * 1000) / accel;
+    }
+    // Triangular: t = 2*sqrt(d/a).  Integer sqrt on d*4e6/a.
+    const int64_t x = (d * 4000000) / accel;  // (2000*sqrt(d/a))^2 = 4e6*d/a
+    int64_t lo = 0, hi = 200000;              // up to 200 s
+    while (lo < hi) {
+        const int64_t mid = (lo + hi + 1) / 2;
+        if (mid * mid <= x) lo = mid;
+        else hi = mid - 1;
+    }
+    return lo;
+}
+
+int64_t FrameScheduler::lead_ms(const Frame& f) {
+    int64_t worst = 0;
+    for (int i = 0; i < N_COLUMNS; ++i) {
+        const int flips = flips_from(port_.col(i), f.idx[static_cast<size_t>(i)]);
+        const int64_t d = move_duration_ms(flips, timing_.flaps_s, timing_.accel);
+        if (d > worst) worst = d;
+    }
+    return worst;
+}
+
+void FrameScheduler::issue(const Frame& f) {
+    for (int i = 0; i < N_COLUMNS; ++i) {
+        const MotionPort::Col c = port_.col(i);
+        const int want = f.idx[static_cast<size_t>(i)];
+        const bool moving_there = c.state == AxisState::Moving && c.dest_index == want;
+        const bool showing = c.state == AxisState::Idle && c.index == want;
+        if (!moving_there && !showing) port_.go(i, want);
+    }
+}
+
+void FrameScheduler::show(const Frame& f, int64_t now_ms, int64_t land_at_ms) {
+    if (land_at_ms > now_ms) {
+        const int64_t start = land_at_ms - lead_ms(f);
+        if (start > now_ms) {
+            pending_ = f;
+            have_pending_ = true;
+            start_at_ms_ = start;
+            return;
+        }
+        // The lead no longer fits - land late rather than never.
+    }
+    have_pending_ = false;
+    desired_ = f;
+    have_desired_ = true;
+    issue(f);
+}
+
+void FrameScheduler::spin_all(int32_t flaps_s, int seconds) {
+    have_pending_ = false;  // a spin supersedes a scheduled frame
+    for (int i = 0; i < N_COLUMNS; ++i) port_.spin(i, flaps_s, seconds);
+}
+
+void FrameScheduler::tick(int64_t now_ms) {
+    if (have_pending_ && now_ms >= start_at_ms_) {
+        have_pending_ = false;
+        desired_ = pending_;
+        have_desired_ = true;
+        issue(desired_);
+    }
+    if (!have_desired_) return;
+
+    // Convergence: an Idle column that is not showing its desired index gets
+    // the frame re-issued.  This is the spec 5.4 / decision-log obligation -
+    // after an automatic re-home the column sits Idle at index 0 and this
+    // brings it back - and it also lands the post-spin choreography (index
+    // unknown after open-loop) and retries anything the mailbox rejected.
+    for (int i = 0; i < N_COLUMNS; ++i) {
+        const MotionPort::Col c = port_.col(i);
+        const int want = desired_.idx[static_cast<size_t>(i)];
+        if (c.state == AxisState::Idle && c.index != want) port_.go(i, want);
+    }
+}
+
+bool FrameScheduler::settled() {
+    if (!have_desired_ || have_pending_) return false;
+    for (int i = 0; i < N_COLUMNS; ++i) {
+        const MotionPort::Col c = port_.col(i);
+        if (c.state != AxisState::Idle || c.index != desired_.idx[static_cast<size_t>(i)]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+}  // namespace swan
