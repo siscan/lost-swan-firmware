@@ -113,6 +113,24 @@ tools/                         ring table generator, LittleFS packer, simulator
 test/host/                     unit tests
 ```
 
+## Git and GitHub — Claude manages both
+
+Claude owns version control and the GitHub side; Nico does not hand-commit.
+The rules, from 2026-08-21:
+
+- **Commit in logical groups as you go** — `<component>: <what>` messages,
+  one concern per commit, never a single end-of-task blob.
+- **Push at the end of every task.** Remote: `siscan/lost-swan-firmware`,
+  branch `master`.
+- **Never force-push or rewrite history on `master`.** No `--force`, no
+  `--force-with-lease`, no rebase/amend of anything already pushed. Fix
+  forward with a new commit.
+- **After every push, check the Actions result** (`gh run watch` /
+  `gh run list`) and **fix failures before reporting** — a task is not done
+  while CI is red. Linux CI is the reliability source of truth, so a local
+  pass does not excuse a CI failure.
+- Authentication is Nico's (`gh auth login`); never enter or handle tokens.
+
 ## Conventions
 
 - Pure logic (ring, modes, schedules, position math) has no IDF includes so
