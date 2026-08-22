@@ -29,15 +29,32 @@ constexpr int64_t index_position(int64_t hall_abs, int32_t cal_offset, int64_t i
     return hall_abs + cal_offset + ring_target_usteps(i);
 }
 
-// Forward-only target for a move to ring index `to`.  If index `to` in this
-// revolution already lies behind us, the target is provisionally its position
-// one revolution on; the real Hall edge corrects it mid-move (retarget_on_edge).
+// The sub-revolution offset from an operate edge at which ring index `to` is
+// displayed.  cal + T(to) can exceed one revolution (cal is an arbitrary
+// assembly-determined value in [0, rev)); the drum shows every index once per
+// revolution, so the anchor offset must be REDUCED into [0, rev) before use.
+// Without this reduction, a mid-move edge rebase whose cal + T(to) > rev put
+// the new target beyond the NEXT edge, which rebased it again - the target
+// receded one revolution per edge and go() never terminated.  Found by
+// adversarial review; regression tests pin it in test_axis_sim.cpp.
+//
+// The reduction uses the nominal revolution length; its <=0.42 ustep residue
+// is absorbed at the next edge like every other rounding in this file.
+constexpr int64_t edge_anchor_offset(int32_t cal_offset, int to) {
+    int64_t e = cal_offset + ring_target_usteps(to);
+    while (e >= USTEPS_PER_SPOOL_REV_NOMINAL) e -= USTEPS_PER_SPOOL_REV_NOMINAL;
+    return e;
+}
+
+// Forward-only target for a move to ring index `to`.  If that position in this
+// revolution already lies behind us, the target wraps forward one revolution;
+// the real Hall edge re-anchors it mid-move (retarget_on_edge).
 constexpr int64_t plan_target(int64_t hall_abs, int32_t cal_offset, int64_t pos_abs, int to) {
-    int64_t t = index_position(hall_abs, cal_offset, to);
-    // A single move is < 1 revolution, so one wrap always suffices; the second
-    // is insurance against a caller passing a stale pos_abs.
-    for (int wrap = 1; t < pos_abs && wrap <= 2; ++wrap) {
-        t = index_position(hall_abs, cal_offset, to + static_cast<int64_t>(RING_SLOT_COUNT) * wrap);
+    int64_t t = hall_abs + edge_anchor_offset(cal_offset, to);
+    // One wrap always suffices for a live axis; the second is insurance
+    // against a caller passing a stale pos_abs.
+    for (int wrap = 0; t < pos_abs && wrap < 2; ++wrap) {
+        t += USTEPS_PER_SPOOL_REV_NOMINAL;
     }
     return t;
 }
@@ -46,7 +63,7 @@ constexpr int64_t plan_target(int64_t hall_abs, int32_t cal_offset, int64_t pos_
 // Clamped forward - reverse is mechanically forbidden, so an overshoot stops here.
 constexpr int64_t retarget_on_edge(int64_t hall_abs_new, int32_t cal_offset, int64_t pos_abs,
                                    int to) {
-    const int64_t t = index_position(hall_abs_new, cal_offset, to);
+    const int64_t t = hall_abs_new + edge_anchor_offset(cal_offset, to);
     return t < pos_abs ? pos_abs : t;
 }
 
@@ -124,7 +141,13 @@ constexpr int32_t ramp_next_velocity(int64_t remaining, int32_t v, const RampPar
 // ---------------------------------------------------------------------------
 // DDA, evaluated in the step ISR.  v <= TICK_HZ guarantees at most one step per
 // tick, which is what lets all five axes share one bank write.
+// always_inline: called (via axis_isr_dda) from the IRAM step ISR, which must
+// never call flash-resident code - a merely-implicit inline is a hope, not a
+// guarantee (spec 5.2).
 // ---------------------------------------------------------------------------
+#if defined(__GNUC__)
+__attribute__((always_inline))
+#endif
 constexpr bool dda_tick(uint32_t& accum, int32_t v_usteps_s) {
     accum += static_cast<uint32_t>(v_usteps_s);
     if (accum >= static_cast<uint32_t>(TICK_HZ)) {
