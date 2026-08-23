@@ -58,20 +58,113 @@ void ws_remove(int fd) {
     }
 }
 
-// One queued async send.  Owns its payload; freed in the work callback.
-struct WsSend {
-    int fd;
-    std::string text;
-};
+// ---------------------------------------------------------------------------
+// Outbound queue
+// ---------------------------------------------------------------------------
+// `httpd_queue_work` posts over a UDP control socket whose mbox holds
+// CONFIG_LWIP_UDP_RECVMBOX_SIZE (6) messages, and esp_http_server guards it
+// with a counting semaphore of that size: past six outstanding jobs it returns
+// ESP_FAIL and the work never runs.  The obvious implementation - one job per
+// client per message - therefore CANNOT deliver a five-column frame.  The
+// modes task runs at priority 5 and httpd at 3 on one core, so the five `go`
+// events are posted back to back with no chance for the queue to drain, and
+// the board logs "ctrl socket queue full, work not queued" for the overflow.
+// Measured on hardware before this was fixed: a `preset.set qmarks` emitted
+// five `go` events and exactly TWO reached the browser, every single time.
+//
+// So the queue is ours, not the control socket's: messages accumulate here and
+// ONE drain job is in flight at a time, whatever the message rate and however
+// many clients are connected.  That takes the control-socket usage from
+// (messages x clients) to 1.
+constexpr size_t WS_OUT_MAX_MSGS = 24;
+constexpr size_t WS_OUT_MAX_BYTES = 8192;   // ~5 state documents; heap is 130 KB
+constexpr size_t WS_DRAIN_PER_JOB = 8;      // then re-queue, so one slow client
+                                            // cannot hold the httpd task for ever
 
-void ws_send_cb(void* arg) {
-    auto* job = static_cast<WsSend*>(arg);
-    httpd_ws_frame_t frame = {};
-    frame.type = HTTPD_WS_TYPE_TEXT;
-    frame.payload = reinterpret_cast<uint8_t*>(&job->text[0]);
-    frame.len = job->text.size();
-    if (httpd_ws_send_frame_async(g_server, job->fd, &frame) != ESP_OK) ws_remove(job->fd);
-    delete job;
+std::vector<std::string> g_ws_out;   // guarded by g_ws_mu
+size_t g_ws_out_bytes = 0;
+bool g_ws_draining = false;
+uint32_t g_ws_dropped = 0;           // published in the state payload: a silent
+                                     // drop is what made this bug invisible
+
+void ws_drain_cb(void* arg);
+
+// Caller must hold g_ws_mu.
+bool ws_kick_locked() {
+    if (g_ws_draining || g_ws_out.empty()) return false;
+    g_ws_draining = true;
+    return true;
+}
+
+void ws_queue(std::string msg) {
+    bool kick = false;
+    {
+        const std::lock_guard<std::mutex> lock(g_ws_mu);
+        if (g_ws_fds.empty()) return;
+        // Bounded both ways.  Dropping the OLDEST is the right choice: the
+        // newest message is the one that describes the display as it is now.
+        while (!g_ws_out.empty() &&
+               (g_ws_out.size() >= WS_OUT_MAX_MSGS ||
+                g_ws_out_bytes + msg.size() > WS_OUT_MAX_BYTES)) {
+            g_ws_out_bytes -= g_ws_out.front().size();
+            g_ws_out.erase(g_ws_out.begin());
+            ++g_ws_dropped;
+        }
+        g_ws_out_bytes += msg.size();
+        g_ws_out.push_back(std::move(msg));
+        kick = ws_kick_locked();
+    }
+    if (kick && httpd_queue_work(g_server, ws_drain_cb, nullptr) != ESP_OK) {
+        // Should not happen now that only one job is ever outstanding, but if
+        // it does, clear the flag so the NEXT broadcast retries rather than
+        // wedging the queue for ever.
+        const std::lock_guard<std::mutex> lock(g_ws_mu);
+        g_ws_draining = false;
+        ESP_LOGW(TAG, "ws: could not queue the drain job");
+    }
+}
+
+// Runs on the httpd task.
+void ws_drain_cb(void*) {
+    for (size_t n = 0; n < WS_DRAIN_PER_JOB; ++n) {
+        std::string msg;
+        std::vector<int> fds;
+        {
+            const std::lock_guard<std::mutex> lock(g_ws_mu);
+            if (g_ws_out.empty()) {
+                g_ws_draining = false;
+                return;
+            }
+            msg = std::move(g_ws_out.front());
+            g_ws_out.erase(g_ws_out.begin());
+            g_ws_out_bytes -= msg.size();
+            fds = g_ws_fds;
+        }
+        httpd_ws_frame_t frame = {};
+        frame.type = HTTPD_WS_TYPE_TEXT;
+        frame.payload = reinterpret_cast<uint8_t*>(&msg[0]);
+        frame.len = msg.size();
+        for (const int fd : fds) {
+            // ws_remove takes the same mutex, so it must not be called with it
+            // held - hence the send loop runs outside the critical section.
+            if (httpd_ws_send_frame_async(g_server, fd, &frame) != ESP_OK) ws_remove(fd);
+        }
+    }
+    // More to send: re-queue rather than looping, so a client that is slow to
+    // read cannot monopolise the single httpd task.
+    bool again = false;
+    {
+        const std::lock_guard<std::mutex> lock(g_ws_mu);
+        if (g_ws_out.empty()) {
+            g_ws_draining = false;
+        } else {
+            again = true;
+        }
+    }
+    if (again && httpd_queue_work(g_server, ws_drain_cb, nullptr) != ESP_OK) {
+        const std::lock_guard<std::mutex> lock(g_ws_mu);
+        g_ws_draining = false;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -276,10 +369,12 @@ esp_err_t ws_opened(httpd_req_t* req) {
     ws_add(fd);
     ESP_LOGI(TAG, "ws open, fd %d (%u client%s)", fd, static_cast<unsigned>(ws_clients()),
              ws_clients() == 1 ? "" : "s");
-    // Prime the page: the full state, and the mode it is in.
-    httpd_queue_work(g_server, ws_send_cb, new WsSend{fd, api::build_state(*g_ctx, now_ms())});
-    httpd_queue_work(g_server, ws_send_cb,
-                     new WsSend{fd, api::mode_event(g_ctx->modes.mode())});
+    // Prime the page: the full state, and the mode it is in.  This goes to
+    // every client rather than just the new one - one extra state document for
+    // the others, which they already receive at 1 Hz, in exchange for the
+    // outbound path having exactly one entry point.
+    ws_queue(api::build_state(*g_ctx, now_ms()));
+    ws_queue(api::mode_event(g_ctx->modes.mode()));
     return ESP_OK;
 }
 
@@ -339,6 +434,15 @@ esp_err_t ws_handler(httpd_req_t* req) {
 
 void on_socket_close(httpd_handle_t, int fd) {
     ws_remove(fd);
+    {
+        // Nobody left to send to: drop the backlog rather than carrying it
+        // until the next client connects and receives a burst of history.
+        const std::lock_guard<std::mutex> lock(g_ws_mu);
+        if (g_ws_fds.empty()) {
+            g_ws_out.clear();
+            g_ws_out_bytes = 0;
+        }
+    }
     close(fd);
 }
 
@@ -346,15 +450,12 @@ void on_socket_close(httpd_handle_t, int fd) {
 
 void ws_broadcast(const std::string& msg) {
     if (g_server == nullptr) return;
-    std::vector<int> fds;
-    {
-        const std::lock_guard<std::mutex> lock(g_ws_mu);
-        fds = g_ws_fds;
-    }
-    for (const int fd : fds) {
-        auto* job = new WsSend{fd, msg};
-        if (httpd_queue_work(g_server, ws_send_cb, job) != ESP_OK) delete job;
-    }
+    ws_queue(msg);
+}
+
+uint32_t ws_dropped() {
+    const std::lock_guard<std::mutex> lock(g_ws_mu);
+    return g_ws_dropped;
 }
 
 size_t ws_clients() {

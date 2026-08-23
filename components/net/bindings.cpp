@@ -120,6 +120,7 @@ api::SysInfo IdfSysInfo::get() {
     s.reset_reason = reset_reason_name(esp_reset_reason());
     const esp_app_desc_t* d = esp_app_get_description();
     s.version = d != nullptr ? d->version : "unknown";
+    s.ws_dropped = ws_dropped();
     return s;
 }
 

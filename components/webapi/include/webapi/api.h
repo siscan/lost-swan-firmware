@@ -71,6 +71,10 @@ struct SysInfo {
     uint32_t uptime_s = 0;
     std::string reset_reason = "unknown";
     std::string version = "dev";
+    // Outbound /ws messages the transport had to drop.  Published because a
+    // silent drop is exactly what hid the stale-mirror bug: the display
+    // stopped tracking and nothing anywhere said why.
+    uint32_t ws_dropped = 0;
 };
 
 class SysInfoSource {

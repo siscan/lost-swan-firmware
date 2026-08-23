@@ -25,5 +25,11 @@ void ws_broadcast(const std::string& msg);
 
 size_t ws_clients();
 
+// Outbound /ws messages dropped because the queue was full.  Published in the
+// state payload: this whole class of bug was invisible because the drop was
+// silent, and a mirror that quietly stops tracking is worse than one that says
+// it has.
+uint32_t ws_dropped();
+
 }  // namespace net
 }  // namespace swan

@@ -169,6 +169,7 @@ std::string build_state(Context& ctx, int64_t utc_ms) {
         .kv("uptime_s", static_cast<int64_t>(sys.uptime_s))
         .kv("reset", sys.reset_reason)
         .kv("version", sys.version)
+        .kv("ws_dropped", static_cast<int64_t>(sys.ws_dropped))
         .end_obj();
 
     w.end_obj();
