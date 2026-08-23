@@ -128,7 +128,11 @@ void modes_task(void*) {
         g_sched->set_timing({mp.flaps_s_normal, mp.accel});
         g_modes->tick(now);
 
-        if (swan::net::ws_clients() == 0) continue;  // nobody is looking
+        // "Nobody is looking" is about to stop meaning "no browser": a wall
+        // clock feeding a terminal prop over MQTT (Phase 4) has no browser
+        // open at all.  The gate stays - building a 1.5 KB document 20 times a
+        // second for nobody is waste - but it has to ask every consumer.
+        if (!swan::net::has_state_consumers()) continue;
 
         const swan::Mode m = g_modes->mode();
         if (m != last_mode) {
@@ -244,7 +248,7 @@ extern "C" void app_main() {
     // The stager is BOTH the ring source and the upload sink: it owns the lock
     // that makes a snapshot safe against its own swap.
     g_api = new swan::api::Context{*g_modes, *g_stager, motion_admin, cfg_sink,
-                                   sysinfo,  *g_stager, ops};
+                                   sysinfo,  *g_stager, ops, {}};
 
     xTaskCreate(status_task, "swan_status", 3072, nullptr, 2, nullptr);
     xTaskCreate(modes_task, "swan_modes", 8192, nullptr, 5, nullptr);

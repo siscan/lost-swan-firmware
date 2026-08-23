@@ -25,6 +25,11 @@ void ws_broadcast(const std::string& msg);
 
 size_t ws_clients();
 
+// Is anyone consuming the state document?  Today that is "a WebSocket client";
+// Phase 4 adds "MQTT is connected".  The modes task asks before spending 1.5 KB
+// of JSON at 20 Hz on nobody.
+bool has_state_consumers();
+
 // Outbound /ws messages dropped because the queue was full.  Published in the
 // state payload: this whole class of bug was invisible because the drop was
 // silent, and a mirror that quietly stops tracking is worse than one that says
