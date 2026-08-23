@@ -3,6 +3,7 @@
 #include <array>
 #include <vector>
 
+#include "modes/wear.h"
 #include "ring/json_lite.h"
 #include "ring/json_write.h"
 
@@ -22,10 +23,6 @@ std::string err_result(std::string_view why) {
 
 std::string result_of(ModeManager::Result r) {
     return r.ok ? ok_result() : err_result(r.err ? r.err : "rejected");
-}
-
-const char* seconds_mode_name(SecondsMode m) {
-    return m == SecondsMode::Seconds ? "seconds" : "tens";
 }
 
 // The character a column is currently showing, by name - the UI renders names,
@@ -77,6 +74,8 @@ std::string build_state(Context& ctx, int64_t utc_ms) {
         .kv("target", target)
         .kv("remaining_s", target > 0 ? (target - utc_ms / 1000) : 0)
         .kv("seconds_mode", seconds_mode_name(cfg.seconds_mode))
+        .kv("seconds_live_s", cfg.seconds_live_s)
+        .kv("live", target > 0 && (target - utc_ms / 1000) <= cfg.seconds_live_s)
         .end_obj();
 
     w.kv("time_valid", ctx.modes.time_valid());
@@ -107,6 +106,7 @@ std::string build_state(Context& ctx, int64_t utc_ms) {
         .kv("h24", cfg.h24)
         .kv("granularity_min", cfg.granularity_min)
         .kv("seconds_mode", seconds_mode_name(cfg.seconds_mode))
+        .kv("seconds_live_s", cfg.seconds_live_s)
         .kv("msg_dwell_s", cfg.msg_dwell_s)
         .kv("zero_hold_s", cfg.zero_hold_s)
         .kv("spin_s", cfg.spin_s)
@@ -187,6 +187,54 @@ std::string build_ring_doc(const RingSet& ring) {
         w.end_obj();
     }
     w.end_arr();
+    w.end_obj();
+    return w.take();
+}
+
+// ---------------------------------------------------------------------------
+// Wear
+// ---------------------------------------------------------------------------
+namespace {
+
+void write_wear(Writer& w, const WearEstimate& e) {
+    w.obj().kv("total", static_cast<int64_t>(e.total)).kv("renders",
+                                                          static_cast<int64_t>(e.renders));
+    w.key("cols").arr();
+    for (int i = 0; i < N_COLUMNS; ++i) w.num(static_cast<int64_t>(e.flips[static_cast<size_t>(i)]));
+    w.end_arr().end_obj();
+}
+
+}  // namespace
+
+std::string build_wear_doc(const RingSet& ring, bool h24, int seconds_live_s) {
+    Writer w;
+    w.obj();
+    w.kv("h24", h24);
+    w.kv("seconds_live_s", seconds_live_s);
+
+    // Walking the floored values rather than all 1440 minutes keeps this cheap
+    // enough to compute on the device: ~4,400 renders for the whole table.
+    w.key("clock").arr();
+    for (const int g : granularity_choices()) {
+        w.obj();
+        w.kv("granularity_min", g);
+        w.key("wear");
+        write_wear(w, clock_wear_per_day(ring, h24, g));
+        w.end_obj();
+    }
+    w.end_arr();
+
+    w.key("countdown").arr();
+    const SecondsMode modes[] = {SecondsMode::Minutes, SecondsMode::Tens, SecondsMode::Seconds};
+    for (const SecondsMode m : modes) {
+        w.obj();
+        w.kv("mode", seconds_mode_name(m));
+        w.key("wear");
+        write_wear(w, countdown_wear_per_run(ring, m, seconds_live_s));
+        w.end_obj();
+    }
+    w.end_arr();
+
     w.end_obj();
     return w.take();
 }
@@ -285,8 +333,18 @@ std::string do_config_set(Context& ctx, const json::Value& p, int64_t utc_ms) {
         cfg = ctx.modes.config();
     }
     if (as_int_field(p, "granularity_min", v)) {
-        if (v < 1 || v > 60) return err_result("granularity_min must be 1..60");
+        // Must divide 60.  At 7 the flooring steps 56 -> 0 across the hour, so
+        // the last window of every hour is short and the display jumps.
+        if (!granularity_valid(v)) {
+            return err_result("granularity_min must divide 60 (1 2 3 4 5 6 10 12 15 20 30 60)");
+        }
         cfg.granularity_min = v;
+    }
+    if (as_int_field(p, "seconds_live_s", v)) {
+        if (v < 0 || v > ModeManager::COUNTDOWN_S) {
+            return err_result("seconds_live_s must be 0..6480");
+        }
+        cfg.seconds_live_s = v;
     }
     if (as_int_field(p, "msg_dwell_s", v)) {
         if (v < 1 || v > 86400) return err_result("msg_dwell_s out of range");
@@ -305,10 +363,9 @@ std::string do_config_set(Context& ctx, const json::Value& p, int64_t utc_ms) {
         cfg.failure_timeout_s = v;
     }
     if (const json::Value* m = member(p, "seconds_mode")) {
-        const std::string_view s = m->as_str();
-        if (s == "seconds") cfg.seconds_mode = SecondsMode::Seconds;
-        else if (s == "tens") cfg.seconds_mode = SecondsMode::Tens;
-        else return err_result("seconds_mode must be seconds|tens");
+        if (!seconds_mode_from_name(m->as_str(), cfg.seconds_mode)) {
+            return err_result("seconds_mode must be minutes|tens|seconds");
+        }
     }
     if (const json::Value* b = member(p, "clock_land_on_tick")) cfg.clock_land_on_tick = b->boolean;
     if (const json::Value* b = member(p, "cd_land_on_tick")) cfg.cd_land_on_tick = b->boolean;

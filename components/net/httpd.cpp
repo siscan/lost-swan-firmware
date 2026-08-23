@@ -184,6 +184,14 @@ esp_err_t ring_handler(httpd_req_t* req) {
     return send_json(req, api::build_ring_doc(g_ctx->ring));
 }
 
+// Measured, not tabulated (spec 7.1): a whole day and a whole run walked
+// through the real renderers.  ~4,700 renders for the entire table, on the
+// HTTP task at priority 3 - well clear of the motion path.
+esp_err_t wear_handler(httpd_req_t* req) {
+    const ModesConfig cfg = g_ctx->modes.config();
+    return send_json(req, api::build_wear_doc(g_ctx->ring, cfg.h24, cfg.seconds_live_s));
+}
+
 esp_err_t cmd_handler(httpd_req_t* req) {
     std::string body;
     if (read_body(req, body) != ESP_OK) {
@@ -300,7 +308,7 @@ esp_err_t httpd_start(api::Context& ctx) {
 
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
     cfg.uri_match_fn = httpd_uri_match_wildcard;  // one wildcard route for the UI
-    cfg.max_uri_handlers = 8;
+    cfg.max_uri_handlers = 10;
     cfg.stack_size = 8192;   // JSON building plus a 2 KB file chunk
     cfg.lru_purge_enable = true;
     cfg.close_fn = on_socket_close;
@@ -318,6 +326,7 @@ esp_err_t httpd_start(api::Context& ctx) {
         {"/ws", HTTP_GET, ws_handler, nullptr, true, false, nullptr},
         {"/api/state", HTTP_GET, state_handler, nullptr, false, false, nullptr},
         {"/api/ring", HTTP_GET, ring_handler, nullptr, false, false, nullptr},
+        {"/api/wear", HTTP_GET, wear_handler, nullptr, false, false, nullptr},
         {"/api/cmd", HTTP_POST, cmd_handler, nullptr, false, false, nullptr},
         {"/api/ring/upload", HTTP_POST, ring_upload_handler, nullptr, false, false, nullptr},
         {"/*", HTTP_GET, static_handler, nullptr, false, false, nullptr},

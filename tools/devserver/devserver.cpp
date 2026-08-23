@@ -303,6 +303,11 @@ int main(int argc, char** argv) {
             const std::lock_guard<std::mutex> lock(dev_mu);
             return HttpResponse::json(api::build_ring_doc(ring));
         }
+        if (req.path == "/api/wear") {
+            const std::lock_guard<std::mutex> lock(dev_mu);
+            const ModesConfig mc = modes.config();
+            return HttpResponse::json(api::build_wear_doc(ring, mc.h24, mc.seconds_live_s));
+        }
         if (req.path == "/api/cmd") {
             if (req.method != "POST") return HttpResponse::text(405, "POST only");
             return HttpResponse::json(run_command(req.body));
@@ -349,7 +354,7 @@ int main(int argc, char** argv) {
     std::printf("\n  LOST Swan dev server\n");
     std::printf("  http://localhost:%d/        (UI, from %s/)\n", http_port, root.c_str());
     std::printf("  ws://localhost:%d/ws        (state push + go/spin/cue events)\n", http_port);
-    std::printf("  GET  /api/state  /api/ring\n");
+    std::printf("  GET  /api/state  /api/ring  /api/wear\n");
     std::printf("  POST /api/cmd  /api/ring/upload\n\n");
 
     // --- the device thread: 25 ms simulation + mode tick, 1 Hz heartbeat ---

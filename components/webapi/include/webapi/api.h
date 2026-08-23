@@ -107,6 +107,13 @@ std::string build_state(Context& ctx, int64_t utc_ms);
 // the 1 Hz payload.
 std::string build_ring_doc(const RingSet& ring);
 
+// Flap wear, measured by walking the REAL renderers over a whole day and a
+// whole countdown run (spec 7.1 wear table, 7.3).  Every valid granularity and
+// all three seconds modes in one document: the Settings page needs an exact
+// figure the instant a control moves, and a lookup table in JavaScript would
+// drift from the renderer the first time either changed.
+std::string build_wear_doc(const RingSet& ring, bool h24, int seconds_live_s);
+
 // Parse and dispatch one command.  `body` is {"cmd":"...","payload":...}.
 // Always returns a JSON result: {"ok":true} or {"ok":false,"err":"..."}.
 std::string handle_command(Context& ctx, std::string_view body, int64_t utc_ms);
