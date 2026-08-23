@@ -47,10 +47,20 @@ public:
     const std::vector<Value>* as_array() const { return type == Type::Array ? &items : nullptr; }
 };
 
+// The node budget for UNTRUSTED input on the device.  Every Value costs far
+// more than the two bytes that can produce it, so a byte limit alone does not
+// bound the DOM; see json_lite.cpp for the measurements behind this number.
+inline constexpr int MAX_NODES_UNTRUSTED = 700;
+
 // Parses a complete JSON document.  On failure returns false and, if err is
 // non-null, a one-line reason with the byte offset.  Limits: depth <= 16,
-// input <= 256 KB - ring.json is ~8 KB; anything bigger is not ours.
-bool parse(std::string_view text, Value& out, std::string* err = nullptr);
+// input <= 256 KB, and at most `max_nodes` values.
+//
+// The default is the device-safe budget.  A caller parsing a document IT
+// generated - a host test checking /api/ring, say - is not handling untrusted
+// input on a 128 KB heap and may raise it deliberately.
+bool parse(std::string_view text, Value& out, std::string* err = nullptr,
+           int max_nodes = MAX_NODES_UNTRUSTED);
 
 }  // namespace json
 }  // namespace swan

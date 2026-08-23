@@ -8,6 +8,7 @@
 #include <mutex>
 #include <vector>
 
+#include "esp_heap_caps.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "ring/json_write.h"
@@ -221,6 +222,32 @@ esp_err_t ring_upload_handler(httpd_req_t* req) {
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "upload interrupted");
         return ESP_OK;
     }
+    // Heap guard.  json_lite builds a DOM whose peak is several times the body
+    // size, in vectors that must grow CONTIGUOUSLY - so total free heap is the
+    // wrong number to look at.  With exceptions off an allocation failure is
+    // abort(), i.e. a reboot rather than a rejected upload, which is exactly
+    // what a 4 KB flood did to this board.  Refuse politely instead.
+    //
+    // The bound comes from the PARSER's caps, not from the body size: whatever
+    // arrives, json_lite stops at MAX_NODES_UNTRUSTED values, so the worst
+    // case is that many Values (~64 B each on RV32) plus the transient of one
+    // container vector doubling.  Guessing from the body was wrong - a 4 KB
+    // flood passed a body-derived check and then panicked the board.
+    const size_t largest = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+    constexpr size_t kParsePeak = json::MAX_NODES_UNTRUSTED * 64 * 17 / 10;  // ~76 KB
+    const size_t need = kParsePeak + 8 * 1024;
+    if (largest < need) {
+        json::Writer w;
+        w.obj().kv("ok", false)
+            .kv("err", "not enough contiguous heap to parse this safely (" +
+                        std::to_string(largest) + " B free, needs ~" +
+                        std::to_string(need) + " B)")
+            .end_obj();
+        ESP_LOGW(TAG, "ring upload refused: %u B largest block, needs ~%u",
+                 static_cast<unsigned>(largest), static_cast<unsigned>(need));
+        return send_json(req, w.take());
+    }
+
     std::string err;
     if (!g_ctx->ring_upload.stage(body, &err)) {
         json::Writer w;
