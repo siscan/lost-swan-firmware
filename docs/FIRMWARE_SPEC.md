@@ -172,6 +172,14 @@ Proposed map, everything on headers, nothing on strapping pins except I2S:
 Two USB-C ports (native USB-Serial-JTAG and a USB-to-UART bridge); either
 works for the console. PCB antenna on the module (the `U` variant has u.FL).
 
+**EN is ganged and cannot be split.**  One GPIO (6) drives all five TMC2209 EN
+pins, and the only spare non-strapping GPIO on this map is **24** - one, not
+four.  So there is no per-column de-energize and there will not be one:
+stopping a column stops it *stepping*, while its coils keep holding TMC2209
+standstill current.  Releasing EN is the only true de-energize and it takes the
+whole display with it.  The fault escalation in §5.8 is written around that
+fact rather than pretending otherwise.
+
 Purchase gotcha: v1.1 boards exist in the channel and may carry v0.1
 engineering-sample chips, which current ESP-IDF no longer supports. Buy from a
 source that states v1.2 / chip rev 1.0, and run `esptool chip_id` on arrival.
@@ -413,6 +421,131 @@ bench test: with EN released, does a loaded drum creep over 10 min? If it holds,
 
 ---
 
+### 5.8 Fault classification and escalation
+
+Two fault causes want opposite responses, and treating them alike drives a
+stepper into an obstruction for 7.5 s at a time.  The discriminator is
+**whether the Hall edge arrived**:
+
+| cause | signature | what it means | response |
+|---|---|---|---|
+| `no_hall` | a cold homing pass ran 1.2 revolutions with **no edge at all**, or the hall never released | sensor, magnet, wiring, or a Hall that never asserts | retry (the drum is almost certainly turning freely, so a re-home costs only time) |
+| `slip` | the edge **arrived**, more than one flap from where it was expected | the drum turned but lost registration - a card catching, a pinion skipping | retry (a re-home is the recovery, and Phase 1.5 pins this behaviour) |
+| `jam` | an expected edge **never came** while the motor kept stepping (1.5 revolutions past the last edge), or a homing pass timed out on a column that *had* previously seen an edge | mechanical resistance - the drum has stopped and the motor has not | **stop at once, no retry** |
+
+Nico asked for two causes; there are two *responses* and three causes, because
+slip is retryable for a different reason than a dead sensor is, and folding it
+into `jam` would regress the recovery the simulated-axis suite has pinned since
+Phase 1.5.  `components/motion/fault_policy.h` states the rule; it is pure and
+host-tested (`test/host/test_fault_policy.cpp`).
+
+**Escalation** is a whole-machine judgement, evaluated when a fault is raised:
+
+| condition | escalation | effect |
+|---|---|---|
+| single column, `no_hall` or `slip` | `park_column` | park that column, the rest of the display keeps running |
+| single column, `jam` | `stop_column` | stop **that** column immediately, no retry |
+| **two or more** columns faulted | `drop_enable` | release EN for all five |
+| **any** fault while a column is in a high-speed open-loop spin | `drop_enable` | release EN for all five |
+
+Two columns failing together is not two coincidences - it is power, the loom,
+or the frame.  A fault during the alarm spin is the worst moment to keep
+driving: five drums at 25 flaps/s can turn a fixable problem into a broken
+gear, and the display is worth less than the mechanism.
+
+**Hardware limit - EN is ganged.**  All five TMC2209 EN pins are on one GPIO
+(§ 2.2), and the pin map has exactly **one** spare non-strapping GPIO
+(GPIO24), so per-column de-energize is not possible and adding it would need
+four more pins that do not exist.  Consequences, which are real:
+
+- `park_column` and `stop_column` stop **stepping** a column.  Its coils still
+  hold TMC2209 standstill current, so a jammed column is still energised
+  against the obstruction, just not being driven further into it.
+- `drop_enable` is the **only** true de-energize, and it necessarily takes the
+  whole display with it.
+- Therefore "stop everything" is the correct response to any signal that
+  something structural may be wrong, and the firmware prefers it over trying to
+  isolate a column it cannot actually isolate.
+
+A fault **stays a fault** and stays visible until cleared by a `home`/`rehome`
+command or by leaving maintenance mode.  Nothing times it out.
+
+### 5.9 Per-column state and maintenance mode
+
+**Per-column mode**, persisted in NVS (`col_mode`, a five-byte blob):
+
+| mode | behaviour |
+|---|---|
+| `real` *(default)* | drives the hardware |
+| `sim` | the same control core runs against a modelled drum (§ 5.10) |
+| `disabled` | parked on blank, excluded from every frame, never homed, never retried, reported as **expected** rather than as a fault |
+
+`disabled` is **set by the user and never inferred**.  No fault, timeout or
+escalation writes it - a fault is a fault and stays visible until cleared;
+turning it into configuration would silently hide a broken column for ever.
+Set from the console (`col <n> real|sim|disabled`) or Settings -> Columns, both
+through the one dispatcher (`motion.column`).
+
+**Frames with a missing column: keep the mode running, leave the hole.**  A
+clock missing one digit tells you more than a dark display, and halting the
+whole show because one drum is out is a worse failure than the one it reacts
+to.  The frame scheduler skips excluded columns everywhere - issuing, spinning,
+lead-time budgeting and the settled test - and the renderers are untouched:
+they keep producing five indices and never learn a column is missing.  One
+refinement on the stated preference: a column being disabled is first **parked
+on the home slot (blank)** while it is still homed and idle, so the hole reads
+as a blank flap rather than a stale digit somebody would read as part of the
+time.  The banner names which columns are out and why.
+
+**Maintenance mode** (`maint` in NVS), a deliberate override, never inferred:
+
+- Entered explicitly (`maint on`, Settings -> Maintenance, or
+  `motion.maintenance`).
+- **Survives a reboot** - pulling power mid-repair must not restart a countdown
+  on top of your hands.  A boot in maintenance does **not** home and leaves EN
+  released.
+- Frame scheduling stops, modes suspend, cues are held (a system-failure alarm
+  going off during a repair is exactly wrong), and automatic re-homing is off.
+- A running countdown keeps its deadline - the deadline is absolute and a
+  repair does not cancel it - it simply is not rendered or driven.
+- **Manual commands work regardless of fault state**, which is the point: a
+  suspect column is driven by hand from the Calibrate page.  `go` from FAULT,
+  normally rejected so nothing false is displayed, is permitted in maintenance.
+- Leaving re-arms everything and re-homes all five, because the drums have been
+  moved by hand and nothing knows where they are.
+
+The two compose, which is the intent: one real column and four simulated during
+build-out; one disabled and four real during a repair.
+
+### 5.10 Simulated axes (`sim`)
+
+A simulated column runs the **real** control core, the real 1 kHz tick and the
+real 50 kHz step ISR; only the Hall input is substituted, by a modelled drum
+(`motion/sim_drum.h`).  One line in the ISR differs between real and simulated,
+which is the point - modes, frames, ring, countdown, scheduler and the whole
+web UI are the same code on the same path.
+
+The model is honest where it matters: 272000/33 usteps per revolution as an
+integer DDA (8242 + 14/33, so the 0.42 residue accumulates exactly as the real
+drum does), the Hall window at the correct position, edge jitter, and therefore
+a homing pass that takes the real ~7.5 s at homing speed.  It is division-free
+so it is safe to call from the IRAM ISR.  Fault injection - `sim <col> slip
+<+-usteps>`, `sim <col> miss <n edges>`, `sim <col> clear`, or
+`motion.sim_fault` - exercises slip, missed edges, the classification above and
+the recovery, on demand (the console spelling is `sim fault <col> slip <n>`).
+
+**It must be impossible to mistake for real.**  Four independent surfaces say
+so: an `ESP_LOGW` line at boot, a `motion.simulated` field in the state
+payload, a permanently visible strip in the web UI and a chip on the
+presentation terminal, and the per-column mode in `stats`.
+
+**Never the default.**  The defaults of `ColumnConfig` are all-`real`,
+not-in-maintenance, asserted at compile time by `static_assert` and again in
+the host tests, so a fresh NVS boots real.  The simulation is compiled in under
+`SWAN_SIM_AXES` (default ON during build-out); `-DSWAN_RELEASE=1` with
+`SWAN_SIM_AXES` still on is a **`FATAL_ERROR` at configure time**, so a release
+image cannot silently ship able to simulate.  CI builds both.
+
 ## 6. Frame layer
 
 A **frame** is five ring indices. `frame.show(f)` computes each column's
@@ -616,9 +749,32 @@ configurable.
   full-display `?????` state is a named preset: `preset.set {name: "qmarks"}`
   → all five columns to `?`. Other presets: `blank`, `reveal`, `wifi`.
 
-### 7.4 Boot / no-signal
+### 7.4 Boot / no-signal, and the FAULT display policy
 
-Covered in §7.1. Column FAULT display policy is `[Q5]`.
+Covered in §7.1.
+
+**Column FAULT display policy (`[Q5]`, answered: park on blank, others
+continue) - as executed, consistent with §5.8/§5.9:**
+
+- A faulted column is **parked** (stepping stops); the other four keep running
+  their mode.  The renderers are not told: they keep producing five indices and
+  the frame layer drops the ones it must not command.
+- Escalation can overrule "others continue": two or more columns faulted, or
+  any fault during the alarm spin, **drops EN for all five** (§5.8).  That is
+  a mechanical decision, not a display one.
+- A `jam` says so in as many words - the drum stopped while the motor kept
+  stepping - and is **not retried**.  `no_hall` and `slip` retry up to
+  `REHOME_RETRIES = 3`.
+- A **disabled** column (§5.9) is not a fault and is never reported as one.
+  It is parked on blank and reported as configuration.
+- A column whose position is **unknown** (`index = -1`, i.e. hunting, or after
+  an open-loop spin) renders distinctly from one showing the blank flap -
+  hatched and dimmed, with a pulse while homing.  They are different facts and
+  looked identical until 2026-08-23.
+- Whatever the state, it is named on a **persistent banner outside `<main>`**,
+  visible from every page, with the retry attempt.  A homing pass is ~7.5 s and
+  a column tries three times, so there is a ~30 s window from boot in which the
+  display looks idle and is actually searching.
 
 ---
 
@@ -716,6 +872,9 @@ API; anything the UI can do, a prop can do with a publish.
 | `display.frame` | `{indices:[5]}` or `{tokens:[5]}` | raw frame, for props and tests; does not change mode |
 | `audio.volume` / `audio.mute` / `audio.play` | `{value}` / `{on}` / `{cue}` | |
 | `motion.rehome` | `{column?}` | |
+| `motion.column` | `{column, mode}` or `{all:true, mode}` | per-column `real` / `sim` / `disabled` (§5.9); persists to NVS |
+| `motion.maintenance` | `true` \| `false` | enter/leave maintenance (§5.9); leaving re-homes all five |
+| `motion.sim_fault` | `{column, kind, value?}` | inject `slip` / `miss` / `clear` on a **simulated** column (§5.10) |
 | `motion.cal` | `{column, delta}` / `{column, save}` | calibration nudges |
 | `clock.format` | `{h24}` | |
 | `system.reboot` | — | |
@@ -776,7 +935,13 @@ motion.flaps_s_home      default 8
 motion.accel             default 82000
 motion.hall_tol          default 41
 motion.en_idle_off       default false
-motion.fault_policy      [Q5]
+motion.fault_policy      [Q5] - executed as §5.8/§7.4
+motion.columns[5]        real | sim | disabled per column, default all real.
+                         NVS key col_mode (5-byte blob).  `disabled` is set by
+                         the user and NEVER inferred from a fault (§5.9)
+motion.maintenance       default false.  Survives a reboot deliberately; a boot
+                         in maintenance does not home and leaves EN released.
+                         NVS key maint (§5.9)
 audio.volume / audio.mute / audio.quiet_start / audio.quiet_end
 msg.dwell_s              default 600
 countdown.seconds_mode   default seconds.  What the display does INSIDE the
@@ -815,6 +980,8 @@ loop.
 
 ## 13. Serial CLI (bring-up)
 
+`col <n> real|sim|disabled` (or `col` to list) · `sim all|<n> [off]` ·
+`sim fault <col> slip <±µsteps>|miss <n>|clear` · `maint on|off` ·
 `pins` · `hall` (live levels) · `en 0|1` · `step <col> <n>` · `home <col>|all`
 · `go <col> <index>` · `spin <col> <flaps_s> <seconds>` · `revs <col> <n>`
 (measure hall_to_hall over n revolutions) · `cal <col> <±µsteps>` · `save` ·
@@ -1480,3 +1647,63 @@ reason, so nothing gets re-litigated.
     uploaded table resolves, and one that exists only in the compiled fallback
     is rejected.  The runtime ring is live, not decorative.
 
+
+- 2026-08-23 — **Per-column state, fault escalation, maintenance mode, and
+  simulated axes on the target** (Nico: "not a dev scaffold - this is how the
+  display should behave permanently, including repairs years from now").  New
+  spec §5.8, §5.9, §5.10; §7.4 rewritten so the `[Q5]` FAULT display policy is
+  stated as executed rather than as a one-line answer.  What was decided:
+  - **Three causes, two responses.**  Nico asked for two causes wanting
+    opposite responses.  There are two responses, and **three** causes, because
+    a *slip* - the edge arrived in the wrong place - is retryable for a
+    different reason than a dead sensor is: the drum turned, it just lost
+    registration, and a re-home is the recovery.  Classifying slip as a jam
+    regressed Phase 1.5's slip-recovery assertions (`test_axis_sim`, which
+    requires `rehomes >= 1` and `gave_up == 0` after a +200 µstep slip), which
+    is how the distinction was found rather than argued.
+  - **`edge_overdue` widened from rev + 1 flap to rev + half a revolution.**
+    At the tight threshold a slip of just over one flap and a completely
+    stopped drum are the *same observation*, so a jam could not be distinguished
+    from a slip at all.  Widening makes a slip resolve as a late edge (Slip,
+    retried) and only a genuine absence trip the Jam path.  Cost: a real jam is
+    noticed up to ~3.1 s later at 15 flaps/s — against the alternative of
+    spending a full 7.5 s homing pass grinding into it, which is the thing this
+    whole change exists to prevent.
+  - **EN is ganged; the spec now says so where it matters** (§2.2, §5.8,
+    BRINGUP).  One GPIO for five drivers and exactly one spare non-strapping
+    GPIO, so `park_column` and `stop_column` stop *stepping* while the coils
+    still hold standstill current.  `drop_enable` is the only true de-energize
+    and necessarily takes the whole display.  That is why "several columns at
+    once" and "a fault during the alarm spin" both drop EN rather than trying
+    to isolate a column the hardware cannot isolate.
+  - **Frame holes: Nico's preference adopted, with one refinement.**  Keep the
+    mode running, leave the hole, banner names which columns are out and why.
+    The refinement: a column being disabled is **parked on blank first** while
+    it is still homed and idle, so the hole reads as a blank flap rather than a
+    stale digit somebody would read as part of the time.  A clock reading
+    `09:4[7]` with a dead 7 is worse than one reading `09:4_`.
+  - **`disabled` is never inferred.**  No fault, timeout or escalation writes
+    it; a fault stays a fault and stays visible until cleared.  Asserted in
+    `test_fault_policy` by the shape of the policy layer: escalation's
+    vocabulary is entirely about stepping, and nothing in it returns a
+    `ColumnMode`.
+  - **Maintenance survives a reboot on purpose**, and a boot in maintenance
+    does not home and leaves EN released.  Cues are held too — a
+    system-failure alarm going off while someone has their hands in the
+    mechanism is exactly wrong.  A running countdown keeps its deadline (it is
+    absolute) but is not driven.
+  - **Simulated axes substitute exactly one line in the ISR** — the Hall source
+    — so everything above the axis layer is the same code on the same path.
+    The drum model is division-free (a 64-bit divide in the IRAM ISR would call
+    flash-resident `__udivdi3` and stall behind an NVS write) and uses the real
+    272000/33 as an integer DDA, so the 0.42 µstep/rev residue accumulates as
+    the real drum's does and a homing pass takes the real ~7.5 s.
+  - **Never the default, enforced three ways:** `static_assert` on
+    `ColumnConfig`'s defaults, a host test that reads the same assertion aloud,
+    and a configure-time `FATAL_ERROR` if `SWAN_RELEASE=1` is built with
+    `SWAN_SIM_AXES` still ON.  CI builds the release configuration to prove the
+    gate fires.
+  - Recorded in BRINGUP: the firmware detects a **stall** (the drum stopping
+    while the motor steps) but **cannot** detect cards fluttering or failing to
+    seat — drum position stays perfectly correct while the display looks wrong.
+    Speed tuning is therefore **watched**, not just logged.

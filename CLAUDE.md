@@ -107,6 +107,9 @@ build.ps1 / test-host.ps1      the documented build/test commands on this machin
 main/                          app_main.cpp, task wiring
 components/swan_hal/           pin map, GPIO bank writes, I2S init, LED (ESP-IDF owns the name `hal`)
 components/motion/             axis_control.{h,cpp}: pure control core (host-tested);
+                               fault_policy.{h,cpp} + column_mode.h: fault causes,
+                               escalation, per-column real/sim/disabled (pure);
+                               sim_drum.h: modelled drum for simulated axes;
                                motion.cpp: IDF shell (ISR, task, locks, GPIO)
 components/ring/               two ring tables (generated), runtime ring.json loader,
                                role lookup, slot math — host-testable
@@ -171,12 +174,46 @@ The rules, from 2026-08-21:
   do not keep writing uncompiled code across phases. Phase exit requires
   `idf.py build` and the host tests passing.
 
+## Per-column state, faults and simulated axes
+
+Spec §5.8–§5.10 and §7.4. Rules that later phases must keep:
+
+- **Three fault causes, two responses.** `no_hall` and `slip` retry; `jam`
+  stops at once and is never retried — retrying drives a stepper into an
+  obstruction for 7.5 s at a time. Classification lives in
+  `components/motion/fault_policy.h`, is pure, and is host-tested.
+- **EN is ganged.** One GPIO, five drivers, one spare non-strapping GPIO. So
+  parking or stopping a column stops it *stepping* while its coils still hold
+  standstill current, and `drop_enable` is the only true de-energize —
+  necessarily for all five. Do not write anything that assumes per-column
+  de-energize is possible.
+- **`disabled` is set by the user, never inferred.** No fault, timeout or
+  escalation may write a `ColumnMode`. A fault stays a fault until cleared.
+- **A frame hole keeps the mode running.** The frame scheduler skips excluded
+  columns; renderers keep producing five indices and never learn about it.
+- **Simulated axes substitute exactly one line in the ISR** — the Hall source.
+  Everything above the axis layer is the same code on the same path; a second
+  code path for "sim mode" is the one thing not allowed here. `sim_drum.h` must
+  stay division-free (a 64-bit divide in the IRAM ISR calls flash-resident
+  `__udivdi3`).
+- **The simulation is never the default and must be impossible to mistake for
+  real.** `static_assert`s on `ColumnConfig`, a configure-time `FATAL_ERROR`
+  for `SWAN_RELEASE=1` with `SWAN_SIM_AXES=ON`, and four reporting surfaces
+  (boot log, state payload, web strip, terminal chip). Keep all six.
+- **Maintenance survives a reboot** and releases EN, because BRINGUP tells Nico
+  to enter it before touching a drum. That is a safety claim; keep it true.
+
 ## Current phase
 
 **Phase 3 done (web UI, WiFi STA, mDNS, /ws + /api, ring upload, gzipped
-assets). Next: Phase 4** per spec §15 — MQTT + Home Assistant discovery, OTA
-with rollback, captive-portal provisioning. The Update page is a stub that
-says so.
+assets), flashed and verified on the board. Per-column mode (real/sim/disabled),
+fault classification with escalation, and maintenance mode are in. Next: Phase
+4** per spec §15 — MQTT + Home Assistant discovery, OTA with rollback,
+captive-portal provisioning. The Update page is a stub that says so.
+
+Phase 4 and 5 can be exercised end to end on real silicon with `sim all`: real
+WiFi, real LittleFS, real NVS, real heap, real control core — only the Hall
+input is modelled. That is where every serious bug has been so far.
 
 Rules that Phase 3 established and that later phases must keep:
 

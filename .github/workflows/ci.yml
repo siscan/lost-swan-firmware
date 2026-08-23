@@ -7,6 +7,10 @@
 #   host-tests  - native build of the pure-logic suites, incl. the
 #                 simulated-axis suite (Phase 1.5)
 #   firmware    - both board maps, in Espressif's official IDF v5.5.5 image
+#   release-gate - a release image must NOT be able to ship with simulated
+#                 axes compiled in.  Proves both halves: SWAN_RELEASE=1 with
+#                 the sim still on FAILS at configure time, and with it off
+#                 builds clean.
 name: ci
 
 on:
@@ -60,3 +64,32 @@ jobs:
         run: |
           . $IDF_PATH/export.sh
           idf.py size
+
+  release-gate:
+    runs-on: ubuntu-latest
+    container:
+      image: espressif/idf:v5.5.5
+    steps:
+      - uses: actions/checkout@v5
+      - name: A release image cannot carry simulated axes
+        shell: bash
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          . $IDF_PATH/export.sh
+          idf.py -B build_gate -DSWAN_BOARD=devkitc1 set-target esp32c5
+          # The gate must FIRE: SWAN_RELEASE=1 with the simulation still
+          # compiled in is a configure-time FATAL_ERROR, not a warning.
+          if idf.py -B build_gate -DSWAN_BOARD=devkitc1 \
+                    -DSWAN_RELEASE=1 -DSWAN_SIM_AXES=ON reconfigure; then
+            echo "FAIL: SWAN_RELEASE=1 with SWAN_SIM_AXES=ON configured cleanly"
+            exit 1
+          fi
+          echo "gate fired as expected"
+      - name: ... and a real release build is clean
+        shell: bash
+        run: |
+          . $IDF_PATH/export.sh
+          rm -rf build_release
+          idf.py -B build_release -DSWAN_BOARD=devkitc1 set-target esp32c5
+          idf.py -B build_release -DSWAN_BOARD=devkitc1 \
+                 -DSWAN_RELEASE=1 -DSWAN_SIM_AXES=OFF build

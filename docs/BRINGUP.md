@@ -141,6 +141,15 @@ fault, so the measurement still completes.
 Flap fall is gravity-limited around 20–25 flaps/s regardless of motor; the real
 ceiling is measured here, not assumed.
 
+> **WATCH THIS ONE, do not just read the log.**  The firmware detects a
+> **stall** — the drum stopping while the motor keeps stepping — because that
+> moves the Hall edge.  It **cannot** detect cards fluttering, bouncing, or
+> failing to seat against the bezel lip: the drum position stays perfectly
+> correct and every counter stays clean while the display looks wrong.  There
+> is no sensor that sees a card.  So this step is the one place where your eyes
+> are the instrument, and `flaps_s_alarm` is set by watching, not by a number
+> the console prints.
+
 - Result: clean up to ______ flaps/s → flaps_s_alarm = ______
 
 ### 6. Edge repeatability — 20 revolutions
@@ -313,9 +322,79 @@ identically.
 - [ ] The readout counts down smoothly between state pushes (it derives from
       the deadline locally) and agrees with the drums.
 
+### 17. Per-column mode and simulated axes (spec §5.9, §5.10)
+
+Runnable with **nothing wired**, which is the point: it is how phases 4 and 5
+get exercised on real silicon, real WiFi, real LittleFS, real NVS and a real
+128 KB heap while the mechanics are still weeks out.
+
+- [ ] `col` — lists all five.  A fresh NVS must read `real` on every column and
+      `maintenance off`.  If it does not, the defaults are broken; stop.
+- [ ] `sim all` → all five simulated.  Console prints the warning; the web UI
+      grows a permanent amber strip; the presentation terminal grows a chip;
+      `stats` shows the mode per column.  **Four surfaces, all of them.**
+- [ ] `home all` → all five find their edge.  Time one: a pass is ~7.5 s at
+      homing speed and a simulated drum must take the same ~7.5 s, because the
+      model uses the real 272000/33 µsteps/rev.
+- [ ] Watch the clock run for a few minutes on the web UI.  Every flip, every
+      land-on-tick, every `go` event is the real scheduler against the real
+      control core — only the Hall input is modelled.
+- [ ] `sim fault 0 slip 200` → column 0 reports a slip at its next edge, re-homes,
+      recovers.  `stats` shows `resync_major` up and `faults` unchanged or +1
+      with cause `slip`.
+- [ ] `sim fault 0 miss 2` → two edges suppressed.  The column must classify **jam**
+      and **stop without retrying** — that is the whole point of the
+      classification.  Banner reads MECHANICAL, not FAULT.
+- [ ] `sim fault 0 clear`, `home 0` → back to normal.
+- [ ] `col 0 real` with the other four simulated — the build-out configuration.
+      Column 0 will fault on `no_hall` (nothing is wired) and park while the
+      other four keep running.  **That is the escalation working**, not a bug.
+- [ ] `save`, reboot → the modes persist.  A simulated column must **not**
+      quietly come back as real.
+- [ ] `col 2 disabled` → column 2 parks on blank, is left out of every frame,
+      and is reported as configuration rather than as a fault.  The clock keeps
+      running with a hole.
+
+### 18. Maintenance mode (spec §5.9)
+
+- [ ] `maint on` → the banner says MAINTENANCE, frame scheduling stops, nothing
+      moves on its own, and automatic re-homing is off.
+- [ ] `go 0 12` and `cal 0 +10` still work — manual control is the point.
+- [ ] Reboot while in maintenance → comes back **still in maintenance**, does
+      **not** home, and leaves EN released.  Pulling power mid-repair must not
+      restart the display on top of your hands.
+- [ ] `maint off` → re-arms and re-homes all five.
+
+### 19. The EN limit, understood on the bench (spec §5.8)
+
+Worth doing once with a meter, because it changes what you can safely do with
+your hands in the mechanism:
+
+- [ ] With a column parked or faulted, measure the motor current.  It is still
+      drawing TMC2209 **standstill current** — stopping a column stops it
+      *stepping*, not holding.
+- [ ] `en 0` → now it is actually released, **and so are the other four**, because
+      EN is one GPIO across all five drivers and the pin map has exactly one
+      spare non-strapping GPIO (24).  Per-column de-energize does not exist and
+      is not coming.
+- [ ] Therefore: before touching a drum, `maint on` (which releases EN), not
+      "wait for it to stop moving".
+
 ## Notes
 
 - `step`, `spin` and `revs` are open-loop: they leave the displayed index
   unknown. Re-home before using `go` or `frame`.
 - A column that faults re-homes itself up to 3 times before latching FAULT.
-  `home <col>` clears it.
+  `home <col>` clears it — **unless the cause is `jam`**, which is never
+  retried: the drum stopped while the motor kept stepping, and another pass
+  drives it straight back into whatever stopped it.  Clear the obstruction
+  first.
+- **EN is ganged across all five drivers** and there is one spare
+  non-strapping GPIO, so per-column de-energize is impossible.  Parking or
+  stopping a column stops it *stepping*; its coils still hold standstill
+  current.  `en 0` (or `maint on`) is the only true de-energize and it takes
+  the whole display with it.
+- **The firmware cannot see a card.**  It detects a stalled drum, because that
+  moves the Hall edge; it cannot detect a card fluttering, bouncing or failing
+  to seat, because the drum position stays correct while the display looks
+  wrong.  Anything about flap behaviour is watched, not logged.

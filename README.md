@@ -10,8 +10,10 @@ Target: ESP32-C5-DevKitC-1-N8R8 (XIAO ESP32-C5 map behind a board define).
 - **Spec v1.0** — all questions answered (spec §16); resolutions in the §17 decision log
 - Hardware: **DevKitC-1 V1.2 on the bench, chip revision v1.2** (production
   silicon; the §2.0 risk is closed). Console on **COM3**, USB-Serial/JTAG.
-  Flashed and booting; nothing wired yet, so all five columns latch FAULT by
-  design
+  Flashed and booting; nothing wired yet, so all five columns hunt for ~30 s
+  and then latch FAULT with cause `no_hall`, by design.  `sim all` runs the
+  whole stack against modelled drums instead, which is how Phases 4 and 5 get
+  exercised on real silicon while the mechanics are weeks out
 - Code: **Phase 3 complete** (web UI, WiFi STA, mDNS, `/ws` + `/api`, ring
   upload, gzipped assets in LittleFS) on top of Phase 2 (fluid ring, frame
   scheduler, modes with the deadline countdown, time service, browser
@@ -21,7 +23,8 @@ Target: ESP32-C5-DevKitC-1-N8R8 (XIAO ESP32-C5 map behind a board define).
 | gate | status |
 |---|---|
 | `set-target esp32c5` + `build` clean | passes — zero warnings, both board maps |
-| host tests green | 9/9 suites (rings, motion math, simulated axis, ring.json, TZ/DST, frame, modes, wear, web API) |
+| host tests green | 10/10 suites (rings, motion math, simulated axis, ring.json, TZ/DST, frame, modes, wear, fault policy, web API) |
+| release image cannot carry the simulator | `-DSWAN_RELEASE=1` with `SWAN_SIM_AXES=ON` is a configure-time `FATAL_ERROR`; CI builds both halves |
 | Phase 3 adversarial review | 22 findings confirmed, all fixed — see spec §17 |
 | `git diff` empty after `tools/ringgen.py` | clean — header and ring.json both regenerate byte-identically |
 | motion cross-task handoff explicit | done — see `docs/MOTION_SYNC.md`, incl. the seqlock for multi-field reads |
@@ -293,15 +296,15 @@ build turns that into `storage.bin`. Only the `.gz` copies ship, and
 |---|---:|---:|
 | `glyphs.svg` | 57,602 | 20,747 |
 | `ring.json` | 9,361 | 9,361 |
-| `app.js` | 19,096 | 6,304 |
-| `terminal.js` | 11,353 | 4,216 |
+| `app.js` | 23,650 | 7,816 |
+| `index.html` | 13,852 | 4,590 |
+| `terminal.js` | 12,024 | 4,481 |
 | `flap.js` | 11,572 | 4,151 |
-| `index.html` | 12,390 | 4,051 |
-| `terminal.css` | 8,794 | 2,984 |
-| `style.css` | 7,642 | 2,699 |
+| `terminal.css` | 9,044 | 3,085 |
+| `style.css` | 8,347 | 2,916 |
 | `bus.js` | 2,946 | 1,184 |
-| `terminal.html` | 2,202 | 945 |
-| **total** | **142,958** | **56,642** |
+| `terminal.html` | 2,274 | 953 |
+| **total** | **150,672** | **59,284** |
 
 Against a **2048 KB** partition, so the room is for audio (spec §9). The
 packer fails the build above a 256 KB budget rather than letting the UI
@@ -309,6 +312,74 @@ quietly eat it. The glyph sheet is 37% of the payload and worth it; digits,
 AM/PM and blank are still text placeholders, and exporting those too would add
 roughly 6 KB gzipped. `ring.json` is the one file that ships **uncompressed** —
 the firmware opens it directly and knows nothing about gzip.
+
+### Per-column mode: real, sim, disabled
+
+Each column is independently `real`, `sim` or `disabled`, persisted in NVS and
+set from the console or Settings → Columns.  The two configurations this exists
+for: **one real column and four simulated** during build-out, and **one
+disabled and four real** during a repair.
+
+```
+col                      # list all five
+col 0 real               # this column drives hardware
+sim all                  # every column simulated
+sim 2 off                # column 2 back to real
+col 3 disabled           # parked on blank, left out of every frame
+sim fault 0 slip 200     # inject a slip on a simulated column
+sim fault 0 miss 2       # suppress two hall edges -> classified as a jam
+sim fault 0 clear        # drop injected faults
+maint on                 # suspend everything and release EN
+
+```
+
+A **simulated** column runs the *real* control core, the real 1 kHz tick and
+the real 50 kHz step ISR — only the Hall input comes from a modelled drum
+(`motion/sim_drum.h`, division-free so it is safe in the IRAM ISR, using the
+real 272000/33 µsteps/rev so a homing pass takes the real ~7.5 s).  Modes,
+frames, ring, countdown, scheduler and the whole web UI are the same code on
+the same path.
+
+It is **impossible to mistake for real**: an `ESP_LOGW` line at boot, a
+`motion.simulated` field in the state payload, a permanent amber strip in the
+web UI, a chip on the presentation terminal, and the mode per column in
+`stats`.  It is **never the default** — `ColumnConfig`'s defaults are all-real
+(`static_assert`ed), and `-DSWAN_RELEASE=1` with `SWAN_SIM_AXES` still ON is a
+configure-time `FATAL_ERROR`, so a release image cannot ship able to simulate.
+
+A **disabled** column is parked on blank, excluded from every frame, never
+homed, never retried, and reported as *configuration* rather than as a fault.
+It is set by you and never inferred: no fault ever disables a column.  The mode
+keeps running and the display carries a hole — a clock missing one digit tells
+you more than a dark display.
+
+### Fault causes, and why a jam is not retried
+
+| cause | signature | response |
+|---|---|---|
+| `no_hall` | a homing pass saw **no edge at all** | retry (the drum is turning freely; a pass costs only time) |
+| `slip` | the edge **arrived**, more than a flap out | retry (a re-home is the recovery) |
+| `jam` | an expected edge **never came** while the motor kept stepping | **stop at once, no retry** |
+
+Retrying a jam drives a stepper into an obstruction for 7.5 s at a time against
+printed gear teeth.  Escalation: one column on a sensor signature parks and the
+rest keep running; a jam stops that column immediately; **two or more columns
+faulted, or any fault during the alarm spin, drops EN for all five**.
+
+**EN is ganged.**  One GPIO drives all five drivers and the pin map has exactly
+one spare non-strapping GPIO, so per-column de-energize does not exist.
+Parking or stopping a column stops it *stepping* — its coils still hold
+standstill current.  `en 0`, or maintenance mode, is the only true de-energize
+and it takes the whole display.
+
+### Maintenance mode
+
+`maint on` (or Settings → Maintenance) stops frame scheduling, suspends the
+modes, holds cues, turns off automatic re-homing and releases EN.  Manual
+commands still work regardless of fault state, so a suspect column is driven by
+hand from the Calibrate page.  It **survives a reboot** deliberately: pulling
+power mid-repair must not restart a countdown on top of your hands.  `maint
+off` re-arms everything and re-homes all five.
 
 ### Motion state is always visible
 

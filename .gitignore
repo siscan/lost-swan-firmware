@@ -10,5 +10,8 @@ dependencies.lock
 __pycache__/
 .DS_Store
 build-xiao/
+build_xiao/
+build_release/
+build_gate/
 sdkconfig
 compile_commands.json
