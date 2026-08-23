@@ -89,5 +89,36 @@ esp_err_t reload() {
 
 const RingSet& get() { return g_set; }
 
+RingSet& mutable_ring() { return g_set; }
+
+esp_err_t write_accepted(const std::string& body) {
+    if (!g_mounted) return ESP_ERR_INVALID_STATE;
+
+    // Temp file then rename: a power cut mid-write must not leave a truncated
+    // ring.json that the next boot would reject.
+    constexpr const char* TMP_PATH = "/fs/ring.json.new";
+    std::FILE* f = std::fopen(TMP_PATH, "wb");
+    if (f == nullptr) {
+        ESP_LOGE(TAG, "cannot open %s for write", TMP_PATH);
+        return ESP_FAIL;
+    }
+    const size_t wrote = std::fwrite(body.data(), 1, body.size(), f);
+    const bool flushed = (std::fflush(f) == 0);
+    std::fclose(f);
+    if (wrote != body.size() || !flushed) {
+        ESP_LOGE(TAG, "short write to %s (%u/%u bytes)", TMP_PATH,
+                 static_cast<unsigned>(wrote), static_cast<unsigned>(body.size()));
+        std::remove(TMP_PATH);
+        return ESP_FAIL;
+    }
+    std::remove(RING_PATH);  // LittleFS rename onto an existing name can fail
+    if (std::rename(TMP_PATH, RING_PATH) != 0) {
+        ESP_LOGE(TAG, "rename %s -> %s failed", TMP_PATH, RING_PATH);
+        return ESP_FAIL;
+    }
+    ESP_LOGI(TAG, "%s written (%u bytes)", RING_PATH, static_cast<unsigned>(body.size()));
+    return ESP_OK;
+}
+
 }  // namespace ring_store
 }  // namespace swan
