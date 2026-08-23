@@ -1413,3 +1413,70 @@ reason, so nothing gets re-litigated.
     open-per-command **resets the board between commands**.  Any scripted
     console interaction must clear both before `open()`.
 
+- 2026-08-23 — **"Position unknown" must not look like "showing blank"**
+  (Nico, from the first LAN session).  With nothing wired, all five columns sat
+  at `idx=-1` while hunting for a hall edge, and the mirror rendered them as
+  blank cards — so a display that was actively searching looked like a display
+  sitting idle, and nothing on any page said otherwise.  The mechanism was
+  `FlapDisplay.setAll()` skipping negative indices, which left each card on
+  whatever it was painted last: slot 0, blank.
+  - `paintUnknown()` now renders unknown distinctly — hatched, dimmed, dashed
+    border, `title="position unknown"` — and `HOMING`/`UNHOMED` adds a slow
+    pulse so hunting reads differently from given-up.  An open-loop spin ends
+    in the same state, because that is exactly what it leaves behind.
+  - The state payload gained **`settled`** (Idle *and* index >= 0) and
+    **`retry`** (the automatic re-home attempt, published through the seqlock
+    alongside everything else the control tick owns).
+  - A **persistent banner** sits outside `<main>` on the control panel and as a
+    header chip on the presentation terminal, so it is visible from every page
+    rather than only in Diagnostics.  It names the columns and the attempt.
+  - Timing worth knowing, measured on the board: a homing pass is **~7.5 s**
+    (1.2 revolutions at 8 flaps/s), a column tries **three** times, so there is
+    a **~30 s window from boot** in which the display looks idle and is
+    actually searching.  That window is now legible.
+  - Correction to the previous entry: I reported "all five settle in FAULT" as
+    the outcome.  That is the *end* state; the state that matters, and the one
+    that was invisible, is the half-minute of hunting before it.
+
+- 2026-08-23 — **The JSON DOM is too heavy for untrusted input on this
+  device**, found by flooding the real board rather than by reasoning.  The
+  phase 3 review's node cap of 8,000 was fifteen times too generous:
+  - Measured: `data/ring.json` is 9,361 bytes and **535 nodes**.  A 500-node
+    flood parsed in 0.1 s; **2,000 nodes panicked the board every time**
+    (`reset=panic`), and the arithmetic is exact — one array growing to a
+    capacity of 1024 needs 1024 x 64 = 65,536 bytes while still holding the
+    512 x 64 = 32,768 it is copying from, and **98,304 was precisely the
+    largest free block** the board reported.
+  - So the hazard is **one huge container**, not the total node count.  Two
+    limits now: `MAX_NODES_UNTRUSTED = 700` overall, and **256 elements per
+    array or object** — five times what any legitimate document needs, and it
+    stops a flood at byte 523 in 0.00 s, before any memory pressure.
+  - The upload handler also refuses when the largest free block cannot hold the
+    parser's worst case.  The first attempt at that guard derived the
+    requirement from the *body size* and let a 4 KB flood through to panic the
+    board; it is derived from the parser's own caps now.
+  - `json::parse` gained an explicit `max_nodes`, because the default is a
+    policy for untrusted input on a 128 KB heap — not a property of the format.
+    A host test checking our own `/api/ring` (~1,850 nodes) states its own.
+  - **The real fix is a streaming parse for the upload path**, which is Phase 4
+    work.  The headroom with a DOM is genuinely thin and this is recorded so it
+    is not rediscovered.
+
+- 2026-08-23 — **Hardware verification of the Phase 3 review's finding 1, and
+  of the upload path against real LittleFS.**
+  - `/ws` on real silicon: handshake 101, the client **registers** (it receives
+    anything at all, which requires the post-handshake callback to have run),
+    state pushes flow and the clock advances.  The fix holds on the hardware
+    the dev server structurally could not test.
+  - State pushes were pinned at the 5 Hz cap forever, because free heap and
+    uptime jitter every tick and the change comparison covered them.  It covers
+    the **display state only** now — `"mode"` up to `"sys"` — and an idle
+    display pushes at exactly **1 Hz**, measured.
+  - Ring upload against real LittleFS: malformed, truncated, 49-slot,
+    role-incomplete and node-flood documents are all rejected in 0.00 s with
+    accurate reasons, the running table untouched and no reboot.  A valid
+    modified table uploads, applies, **persists across a reboot**, and — the
+    part that matters — **drives resolution**: a token that exists only in the
+    uploaded table resolves, and one that exists only in the compiled fallback
+    is rejected.  The runtime ring is live, not decorative.
+

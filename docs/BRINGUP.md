@@ -56,11 +56,18 @@ swan>
 No revision warning and no abort — v1.2 is inside the image's window.  Free
 heap after boot with WiFi initialised and httpd serving: **141 KB**.
 
-Unwired behaviour, which is what this checklist step is really for: every
-column runs 1.2 revolutions at homing speed, times out, retries three times on
-the 250 ms stagger, then latches FAULT and stops.  Position freezes at 39,560
-µsteps, velocity 0, console responsive throughout.  `home 0` clears that
-column and leaves the others latched.
+Unwired behaviour, which is what this checklist step is really for.  **Read
+the timeline, not just the end state:** every column runs 1.2 revolutions at
+homing speed — **~7.5 s** — times out, and retries **three** times on the
+250 ms stagger.  So for roughly **30 seconds from boot the columns are hunting**
+with `idx=-1`, and only then do they latch FAULT and stop, at 39,560 µsteps
+with velocity 0.  The console is responsive throughout and `home <col>` clears
+that column, leaving the others latched.
+
+That hunting window used to be invisible: the mirror painted an unknown index
+as a blank card, so a searching display looked like an idle one.  The web UI
+now renders unknown distinctly (hatched, pulsing while hunting) and carries a
+persistent banner naming the columns and the re-home attempt — see step 16b.
 
 ### 0b. First flash — the original checklist
 
@@ -238,14 +245,37 @@ identically.
 - [ ] The live speed sliders change the sound of a move immediately; SAVE is
       what survives a reboot.  Confirm both halves separately.
 
+### 12b. Motion state is legible — **DONE 2026-08-23 (unwired)**
+
+- [x] A column with an unknown index renders **differently from blank** —
+      hatched and dimmed, `title="position unknown"`.
+- [x] While hunting it pulses, and the banner reads
+      `COLUMNS NOT SETTLED — col 1 re-homing 2/3 · …` with the ~7.5 s / three
+      attempts note.
+- [x] Once given up it reads `MOTION FAULT — col 1 FAULT (gave up after 3
+      re-homes) · …` and points at REHOME.
+- [x] Visible from every page, and as a header chip on the presentation
+      terminal (a kiosk never opens Diagnostics).
+- [ ] With drums attached: confirm a column that homes successfully drops the
+      indicator promptly and the card stops being hatched.
+
 ### 13. Ring upload
 
-- [ ] Upload a deliberately broken `ring.json` (delete a slot).  Expect a
-      rejection naming the reason, and **the display must not flinch** — the
-      running table is untouched and no file is written.
-- [ ] Upload the real `data/ring.json`.  Expect `ring.json applied` in the log,
-      the Settings page to report `ring.json` as the source, and the table to
-      survive a reboot.
+- [x] **DONE 2026-08-23 against real LittleFS.**  Malformed, truncated (4,679 B),
+      49-slot, role-incomplete and node-flood (4 KB and 18 KB) documents were
+      each rejected in **0.00 s** with an accurate reason, the running table
+      untouched and **no reboot**:
+      `bad literal at byte 0` · `expected ',' or '}' at byte 4681` ·
+      `array has too many elements at byte 523` ·
+      `shared table has 49 slots; the drum has 50` ·
+      `column 1 cannot render role 'AM'`.
+- [x] A valid modified table uploaded, applied, and **survived a reboot** with
+      `source: ring.json`.  It demonstrably **drives resolution**: a token
+      present only in the uploaded table resolved, and one present only in the
+      compiled fallback was rejected.
+- [ ] With drums attached: confirm an upload actually re-renders the wall
+      (`cmd_ring_swap` forces it) rather than leaving the columns on slots
+      chosen from the old table.
 
 ### 14. Assets
 

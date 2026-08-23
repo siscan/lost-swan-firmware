@@ -27,6 +27,8 @@ Target: ESP32-C5-DevKitC-1-N8R8 (XIAO ESP32-C5 map behind a board define).
 | motion cross-task handoff explicit | done — see `docs/MOTION_SYNC.md`, incl. the seqlock for multi-field reads |
 | CI | GitHub Actions on ubuntu — see below |
 | flashed to hardware | **done 2026-08-23** — boots, CLI up, ring.json loads from LittleFS, unwired homing faults cleanly |
+| `/ws` verified on silicon | **done** — client registers, 1 Hz heartbeat, live state (the dev server cannot test this) |
+| ring upload vs real LittleFS | **done** — broken files rejected in 0.00 s, a valid one persists and drives resolution |
 | chip revision | **v1.2** — production silicon, inside the image's v1.0–v1.99 window |
 
 ## CI — the reliability source of truth
@@ -290,22 +292,36 @@ build turns that into `storage.bin`. Only the `.gz` copies ship, and
 | file | raw | gzipped |
 |---|---:|---:|
 | `glyphs.svg` | 57,602 | 20,747 |
-| `app.js` | 16,978 | 5,488 |
-| `index.html` | 12,070 | 3,909 |
-| `terminal.js` | 10,418 | 3,865 |
-| `flap.js` | 9,882 | 3,657 |
-| `terminal.css` | 8,122 | 2,800 |
-| `style.css` | 6,199 | 2,185 |
-| `ring.json` | 9,361 | 1,441 |
+| `ring.json` | 9,361 | 9,361 |
+| `app.js` | 19,096 | 6,304 |
+| `terminal.js` | 11,353 | 4,216 |
+| `flap.js` | 11,572 | 4,151 |
+| `index.html` | 12,390 | 4,051 |
+| `terminal.css` | 8,794 | 2,984 |
+| `style.css` | 7,642 | 2,699 |
 | `bus.js` | 2,946 | 1,184 |
-| `terminal.html` | 2,126 | 919 |
-| **total** | **135,704** | **46,195** |
+| `terminal.html` | 2,202 | 945 |
+| **total** | **142,958** | **56,642** |
 
 Against a **2048 KB** partition, so the room is for audio (spec §9). The
 packer fails the build above a 256 KB budget rather than letting the UI
-quietly eat it. The glyph sheet is 45% of the payload and worth it; digits,
+quietly eat it. The glyph sheet is 37% of the payload and worth it; digits,
 AM/PM and blank are still text placeholders, and exporting those too would add
-roughly 6 KB gzipped.
+roughly 6 KB gzipped. `ring.json` is the one file that ships **uncompressed** —
+the firmware opens it directly and knows nothing about gzip.
+
+### Motion state is always visible
+
+A column whose index is `-1` is **not** showing the blank flap — it is
+unhomed, hunting for its hall edge, or freshly spun open-loop. Those used to
+render identically, so a display that was actively searching looked like one
+sitting idle. Unknown now renders hatched and dimmed, pulses while hunting,
+and a persistent banner (outside `<main>`, and a header chip on the
+presentation terminal) names the columns and the re-home attempt.
+
+Worth knowing at the bench: a homing pass is **~7.5 s** and a column tries
+**three** times, so there is a **~30 s window from boot** where the display is
+searching. The banner is what makes that legible.
 
 ### Ring upload
 
