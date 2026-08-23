@@ -24,6 +24,13 @@ CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 # browser tab be evicted rather than wedging the last connection slot.
 CONFIG_HTTPD_WS_SUPPORT=y
 CONFIG_HTTPD_MAX_REQ_HDR_LEN=1024
+# esp_http_server answers the WS handshake ITSELF and deliberately does not
+# call the URI handler for it (httpd_uri.c: "If the request is websocket
+# handshake, then do not call the uri->handler").  Without this callback there
+# is no moment at which a newly connected client can be registered, so every
+# push path is dead - found by the phase 3 review, and invisible to the host
+# dev server, which has its own socket layer.
+CONFIG_HTTPD_WS_POST_HANDSHAKE_CB_SUPPORT=y
 
 # --- Watchdogs (spec 12).  Motion control task subscribes explicitly.
 CONFIG_ESP_TASK_WDT_INIT=y

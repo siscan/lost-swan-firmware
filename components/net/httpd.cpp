@@ -11,6 +11,7 @@
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "ring/json_write.h"
+#include "webapi/event_tap.h"
 #include "webapi/ring_upload.h"
 
 namespace swan {
@@ -181,7 +182,8 @@ esp_err_t state_handler(httpd_req_t* req) {
 }
 
 esp_err_t ring_handler(httpd_req_t* req) {
-    return send_json(req, api::build_ring_doc(g_ctx->ring));
+    const RingSet ring = g_ctx->ring.snapshot();  // pinned for the response
+    return send_json(req, api::build_ring_doc(ring));
 }
 
 // Measured, not tabulated (spec 7.1): a whole day and a whole run walked
@@ -189,7 +191,11 @@ esp_err_t ring_handler(httpd_req_t* req) {
 // HTTP task at priority 3 - well clear of the motion path.
 esp_err_t wear_handler(httpd_req_t* req) {
     const ModesConfig cfg = g_ctx->modes.config();
-    return send_json(req, api::build_wear_doc(g_ctx->ring, cfg.h24, cfg.seconds_live_s));
+    // Pinned: this walks tens of thousands of renders, easily spanning several
+    // modes ticks, and an upload landing in the middle would otherwise free
+    // the tables underneath it.
+    const RingSet ring = g_ctx->ring.snapshot();
+    return send_json(req, api::build_wear_doc(ring, cfg.h24, cfg.seconds_live_s));
 }
 
 esp_err_t cmd_handler(httpd_req_t* req) {
@@ -230,14 +236,31 @@ esp_err_t ring_upload_handler(httpd_req_t* req) {
 // ---------------------------------------------------------------------------
 // WebSocket
 // ---------------------------------------------------------------------------
+// Registration happens HERE, not in ws_handler: esp_http_server answers the
+// handshake itself and deliberately does not call the URI handler for it
+// (httpd_uri.c: "If the request is websocket handshake, then do not call the
+// uri->handler").  With the registration in the handler, g_ws_fds stayed empty
+// forever and every push path was dead - no state document, no heartbeat, no
+// go/spin/cue - while commands still worked, because a command reply goes back
+// through the session's own ws_handler.  Needs
+// CONFIG_HTTPD_WS_POST_HANDSHAKE_CB_SUPPORT.
+esp_err_t ws_opened(httpd_req_t* req) {
+    const int fd = httpd_req_to_sockfd(req);
+    ws_add(fd);
+    ESP_LOGI(TAG, "ws open, fd %d (%u client%s)", fd, static_cast<unsigned>(ws_clients()),
+             ws_clients() == 1 ? "" : "s");
+    // Prime the page: the full state, and the mode it is in.
+    httpd_queue_work(g_server, ws_send_cb, new WsSend{fd, api::build_state(*g_ctx, now_ms())});
+    httpd_queue_work(g_server, ws_send_cb,
+                     new WsSend{fd, api::mode_event(g_ctx->modes.mode())});
+    return ESP_OK;
+}
+
 esp_err_t ws_handler(httpd_req_t* req) {
-    if (req->method == HTTP_GET) {  // the handshake
-        const int fd = httpd_req_to_sockfd(req);
-        ws_add(fd);
-        ESP_LOGI(TAG, "ws open, fd %d", fd);
-        // Prime the page: the full state, then the current mode.
-        auto* s1 = new WsSend{fd, api::build_state(*g_ctx, now_ms())};
-        httpd_queue_work(g_server, ws_send_cb, s1);
+    // A plain GET /ws with no Upgrade header still reaches the handler with
+    // HTTP_GET.  It is not a WebSocket and must never be registered as one.
+    if (req->method == HTTP_GET) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "/ws requires a WebSocket upgrade");
         return ESP_OK;
     }
 
@@ -247,11 +270,20 @@ esp_err_t ws_handler(httpd_req_t* req) {
     if (err != ESP_OK) return err;
     if (frame.len > MAX_BODY) return ESP_ERR_INVALID_SIZE;
 
-    std::string buf(frame.len + 1, '\0');
-    frame.payload = reinterpret_cast<uint8_t*>(&buf[0]);
-    err = httpd_ws_recv_frame(req, &frame, frame.len);
-    if (err != ESP_OK) return err;
-    buf.resize(frame.len);
+    // Only fetch a payload when there IS one.  With len == 0 the second call
+    // re-enters the header path and issues a blocking recv for the next frame's
+    // first byte, which either stalls the single httpd task for the full socket
+    // timeout or eats the head of the next frame and leaves the session
+    // permanently mid-stream.  An empty TEXT frame, or an unsolicited empty
+    // PONG, is enough to trigger it.
+    std::string buf;
+    if (frame.len > 0) {
+        buf.assign(frame.len + 1, '\0');
+        frame.payload = reinterpret_cast<uint8_t*>(&buf[0]);
+        err = httpd_ws_recv_frame(req, &frame, frame.len);
+        if (err != ESP_OK) return err;
+        buf.resize(frame.len);
+    }
 
     if (frame.type == HTTPD_WS_TYPE_CLOSE) {
         ws_remove(httpd_req_to_sockfd(req));
@@ -312,6 +344,11 @@ esp_err_t httpd_start(api::Context& ctx) {
     cfg.stack_size = 8192;   // JSON building plus a 2 KB file chunk
     cfg.lru_purge_enable = true;
     cfg.close_fn = on_socket_close;
+    // A phone whose radio sleeps stops draining its window; the async send
+    // then blocks the single httpd task for the whole timeout, serving nobody.
+    // One second is plenty on a LAN and bounds the damage.
+    cfg.send_wait_timeout = 1;
+    cfg.recv_wait_timeout = 5;
     // Below the modes task (5) and far below the motion control task: nothing
     // on the network path may delay a step (CLAUDE.md hard constraints).
     cfg.task_priority = 3;
@@ -322,8 +359,18 @@ esp_err_t httpd_start(api::Context& ctx) {
         return err;
     }
 
+    // Designated initialisers from here: ws_post_handshake_cb is Kconfig-gated,
+    // so a positional aggregate would put the callback in the wrong slot the
+    // moment that option moves.
+    httpd_uri_t ws_route = {};
+    ws_route.uri = "/ws";
+    ws_route.method = HTTP_GET;
+    ws_route.handler = ws_handler;
+    ws_route.is_websocket = true;
+    ws_route.ws_post_handshake_cb = ws_opened;
+
     const httpd_uri_t routes[] = {
-        {"/ws", HTTP_GET, ws_handler, nullptr, true, false, nullptr},
+        ws_route,
         {"/api/state", HTTP_GET, state_handler, nullptr, false, false, nullptr},
         {"/api/ring", HTTP_GET, ring_handler, nullptr, false, false, nullptr},
         {"/api/wear", HTTP_GET, wear_handler, nullptr, false, false, nullptr},
