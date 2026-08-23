@@ -203,8 +203,19 @@ void log_events(int col, const TickEvents& ev, const IsrSnap& in, const AxisCtl&
                  static_cast<unsigned>(ev.rehome_attempt), REHOME_RETRIES);
     }
     if (ev.gave_up) {
-        ESP_LOGE(TAG, "col %d gave up after %d re-homes; `home %d` clears it", col,
-                 REHOME_RETRIES, col);
+        // Report the attempts that ACTUALLY happened.  A jam latches on the
+        // first fault with zero re-homes, and claiming three would send you
+        // looking for a thrashing column that never existed - which is the
+        // same class of mistake as "fault (re-home 3/3)" reading as
+        // still-trying.
+        const unsigned tries = a.rehome_attempt.load(RLX);
+        if (tries == 0) {
+            ESP_LOGE(TAG, "col %d latched FAULT without retrying; `home %d` clears it", col,
+                     col);
+        } else {
+            ESP_LOGE(TAG, "col %d gave up after %u re-home%s; `home %d` clears it", col, tries,
+                     tries == 1 ? "" : "s", col);
+        }
     }
     if (ev.homed) {
         ESP_LOGI(TAG, "col %d homed at pos=%lld", col, static_cast<long long>(in.pos));

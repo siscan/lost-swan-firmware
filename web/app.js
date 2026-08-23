@@ -134,7 +134,9 @@ function renderMotion(s) {
                 : c.cause === "slip"    ? " lost registration"
                 : "";
       return n + " FAULT" + why +
-             (c.retry > 0 ? " (gave up after " + c.retry + " re-homes)" : "");
+             (c.retry > 0 ? " (gave up after " + c.retry +
+                            (c.retry === 1 ? " re-home)" : " re-homes)")
+                          : " (not retried)");
     }
     if (c.state === "HOMING") {
       return n + (c.retry > 0 ? " re-homing " + c.retry + "/3" : " homing");
