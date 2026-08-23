@@ -49,12 +49,26 @@ class IdfMqttAdmin final : public api::MqttAdmin {
 public:
     api::MqttStatus mqtt_status() override;
     bool mqtt_configure(bool enabled, std::string_view uri, std::string_view user,
-                        std::string_view pass, std::string_view base) override;
+                        std::string_view pass, std::string_view base,
+                        std::string_view ha_prefix) override;
+};
+
+class IdfWifiAdmin final : public api::WifiAdmin {
+public:
+    bool set_credentials(std::string_view ssid, std::string_view pass) override;
+    bool start_portal() override;
+    bool stop_portal() override;
+    bool portal_running() override;
+    std::string portal_ssid() override;
+    bool have_credentials() override;
 };
 
 class IdfSystemOps final : public api::SystemOps {
 public:
     bool reboot() override;
+    bool ota_confirm() override;
+    bool ota_rollback() override;
+    bool ota_pending_verify() override;
 };
 
 }  // namespace net

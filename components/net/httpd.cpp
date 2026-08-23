@@ -1,6 +1,9 @@
 #include "net/httpd.h"
 
 #include "net/mqtt.h"
+#include "net/ota.h"
+#include "net/provision.h"
+#include "webapi/portal.h"
 
 #include <sys/time.h>
 #include <unistd.h>
@@ -254,6 +257,26 @@ esp_err_t send_file(httpd_req_t* req, const char* rel, bool gzipped) {
 }
 
 esp_err_t static_handler(httpd_req_t* req) {
+    // While the portal is up, a phone probes a well-known URL to decide whether
+    // the network is captive.  Each platform wants a different answer, and the
+    // wrong one means the sign-in sheet never appears and the user is simply
+    // told the network has no internet.
+    if (portal_active()) {
+        char host[64] = {};
+        httpd_req_get_hdr_value_str(req, "Host", host, sizeof host);
+        switch (api::portal_probe_kind(req->uri, host, "lost.local")) {
+            case api::ProbeKind::NoContent:
+                httpd_resp_set_status(req, "204 No Content");
+                return httpd_resp_send(req, nullptr, 0);
+            case api::ProbeKind::Redirect:
+                httpd_resp_set_status(req, "302 Found");
+                httpd_resp_set_hdr(req, "Location", "http://192.168.4.1/");
+                return httpd_resp_send(req, nullptr, 0);
+            case api::ProbeKind::None:
+                break;
+        }
+    }
+
     if (!path_is_safe(req->uri)) {
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "bad path");
         return ESP_OK;
@@ -543,7 +566,7 @@ esp_err_t httpd_start(api::Context& ctx) {
 
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
     cfg.uri_match_fn = httpd_uri_match_wildcard;  // one wildcard route for the UI
-    cfg.max_uri_handlers = 10;
+    cfg.max_uri_handlers = 12;   // + /api/ota and /api/ota/status
     cfg.stack_size = 8192;   // JSON building plus a 2 KB file chunk
     cfg.lru_purge_enable = true;
     cfg.close_fn = on_socket_close;
@@ -593,6 +616,11 @@ esp_err_t httpd_start(api::Context& ctx) {
         {"/api/ring/upload", HTTP_POST, ring_upload_handler, nullptr, false, false, nullptr},
         {"/*", HTTP_GET, static_handler, nullptr, false, false, nullptr},
     };
+    // BEFORE the loop, deliberately.  esp_http_server checks handlers in
+    // REGISTRATION order and the last entry above is the "/*" wildcard that
+    // serves the web UI - register the OTA routes after it and the wildcard
+    // swallows them, which presents as an update page that 404s its own POST.
+    ESP_ERROR_CHECK(ota_register_routes(g_server));
     for (const httpd_uri_t& r : routes) ESP_ERROR_CHECK(httpd_register_uri_handler(g_server, &r));
 
     ESP_LOGI(TAG, "serving on port %d", cfg.server_port);

@@ -3,6 +3,7 @@
 #include <cstring>
 
 #include "esp_log.h"
+#include "hal/boot_health.h"
 #include "nvs.h"
 #include "nvs_flash.h"
 
@@ -96,7 +97,7 @@ esp_err_t init() {
     esp_err_t err = nvs_flash_init();
     if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_LOGW(TAG, "nvs partition unusable (%s); erasing", esp_err_to_name(err));
-        ESP_ERROR_CHECK(nvs_flash_erase());
+        ESP_ERROR_CHECK((g_nvs_was_erased.store(true, std::memory_order_relaxed), nvs_flash_erase()));
         err = nvs_flash_init();
     }
     return err;

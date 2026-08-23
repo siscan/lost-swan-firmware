@@ -132,7 +132,8 @@ struct FakeMqtt : api::MqttAdmin {
     std::string last_uri, last_user, last_pass, last_base;
     api::MqttStatus mqtt_status() override { return st; }
     bool mqtt_configure(bool enabled, std::string_view uri, std::string_view user,
-                        std::string_view pass, std::string_view base) override {
+                        std::string_view pass, std::string_view base,
+                        std::string_view) override {
         ++configures;
         st.enabled = enabled;
         st.uri = last_uri = std::string(uri);
@@ -143,6 +144,23 @@ struct FakeMqtt : api::MqttAdmin {
         st.base = last_base;
         return true;
     }
+};
+
+struct FakeWifi : api::WifiAdmin {
+    std::string ssid, pass;
+    bool portal = false;
+    int saves = 0;
+    bool set_credentials(std::string_view s, std::string_view p) override {
+        ++saves;
+        ssid = std::string(s);
+        pass = std::string(p);
+        return true;
+    }
+    bool start_portal() override { portal = true; return true; }
+    bool stop_portal() override { portal = false; return true; }
+    bool portal_running() override { return portal; }
+    std::string portal_ssid() override { return "LOST-Swan-test"; }
+    bool have_credentials() override { return !ssid.empty(); }
 };
 
 struct Rig {
@@ -158,8 +176,9 @@ struct Rig {
     FakeSys sys;
     FakeOps ops;
     FakeMqtt mqtt;
+    FakeWifi wifi;
     api::RingStager stager{ring};
-    api::Context ctx{mm, stager, motion, cfg, sys, stager, ops, mqtt, {}};
+    api::Context ctx{mm, stager, motion, cfg, sys, stager, ops, mqtt, wifi, {}};
 
     Rig() {
         mm.set_config(ModesConfig{});

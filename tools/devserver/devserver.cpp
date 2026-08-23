@@ -68,13 +68,28 @@ struct DevMqtt final : api::MqttAdmin {
     api::MqttStatus st;
     api::MqttStatus mqtt_status() override { return st; }
     bool mqtt_configure(bool enabled, std::string_view uri, std::string_view,
-                        std::string_view, std::string_view base) override {
+                        std::string_view, std::string_view base, std::string_view) override {
         st.enabled = enabled;
         st.uri = std::string(uri);
         if (!base.empty()) st.base = std::string(base);
         std::printf("mqtt.config enabled=%d uri=%s\n", enabled ? 1 : 0, st.uri.c_str());
         return true;
     }
+};
+
+struct DevWifi final : api::WifiAdmin {
+    bool portal = false;
+    std::string ssid;
+    bool set_credentials(std::string_view s, std::string_view) override {
+        ssid = std::string(s);
+        std::printf("[dev] wifi.credentials ssid=%s\n", ssid.c_str());
+        return true;
+    }
+    bool start_portal() override { portal = true; return true; }
+    bool stop_portal() override { portal = false; return true; }
+    bool portal_running() override { return portal; }
+    std::string portal_ssid() override { return "LOST-Swan-dev"; }
+    bool have_credentials() override { return !ssid.empty(); }
 };
 
 struct DevOps final : api::SystemOps {
@@ -266,8 +281,9 @@ int main(int argc, char** argv) {
     DevSys sysinfo;
     DevOps ops;
     DevMqtt mqtt;
+    DevWifi wifi;
     // The stager is BOTH the pinned ring source and the upload sink.
-    api::Context ctx{modes, stager, sim, cfg_sink, sysinfo, stager, ops, mqtt, {}};
+    api::Context ctx{modes, stager, sim, cfg_sink, sysinfo, stager, ops, mqtt, wifi, {}};
 
     sysinfo.s.wifi_state = "connected";
     sysinfo.s.ssid = "host-dev-server";

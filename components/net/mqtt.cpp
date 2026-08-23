@@ -15,6 +15,9 @@
 #include "mqtt_client.h"
 #include "net/wifi.h"
 #include "ring/json_write.h"
+#include "esp_app_desc.h"
+#include "esp_mac.h"
+#include "webapi/ha_discovery.h"
 #include "webapi/mqtt_bridge.h"
 
 namespace swan {
@@ -71,6 +74,7 @@ std::atomic<bool> g_connected{false};
 std::atomic<bool> g_link_up{false};
 std::atomic<bool> g_want_reconfigure{false};
 std::atomic<bool> g_announce{false};
+std::atomic<bool> g_retract{false};   // publish empty discovery, then stop
 std::atomic<uint32_t> g_dropped{0};
 
 // Notifications to the transport task, so it never polls.
@@ -225,6 +229,35 @@ void client_start() {
     ESP_LOGI(TAG, "connecting to %s (base %s)", cfg.uri.c_str(), g_base.c_str());
 }
 
+// Home Assistant discovery (spec 10.3).
+//
+// Published ONE AT A TIME, straight through publish_now rather than through the
+// outbound ring: the set is ~11 KB across 19 documents and the ring is bounded
+// at 8 KB with oldest-dropped, so queuing it would silently discard entities
+// and leave Home Assistant with half a device.
+api::HaContext ha_context() {
+    api::HaContext c;
+    {
+        const std::lock_guard<std::mutex> lock(g_mu);
+        c.base = g_base;
+        c.prefix = g_cfg.ha_prefix.empty() ? "homeassistant" : g_cfg.ha_prefix;
+    }
+    // The device id comes from the base MAC, so a reflash - or an OTA - keeps
+    // Home Assistant's entity ids and everything recorded against them.
+    uint8_t mac[6] = {};
+    char buf[13] = {};
+    if (esp_read_mac(mac, ESP_MAC_WIFI_STA) == ESP_OK) {
+        std::snprintf(buf, sizeof buf, "%02x%02x%02x%02x%02x%02x", mac[0], mac[1], mac[2],
+                      mac[3], mac[4], mac[5]);
+        c.device_id = buf;
+    }
+    const esp_app_desc_t* d = esp_app_get_description();
+    if (d != nullptr) c.version = d->version;
+    return c;
+}
+
+void publish_discovery(bool announce);
+
 // One outbound message, published from THIS task only.
 //
 // esp_mqtt_client_publish, not _enqueue: the client dequeues one outbox item
@@ -239,6 +272,30 @@ bool publish_now(const OutMsg& m) {
                                            static_cast<int>(m.payload.size()), m.qos,
                                            m.retain ? 1 : 0);
     return id >= 0;
+}
+
+void publish_discovery(bool announce) {
+    const api::HaContext c = ha_context();
+    size_t bytes = 0;
+    for (size_t i = 0; i < api::ha_entity_count(); ++i) {
+        std::string topic, payload;
+        if (!api::ha_entity(i, c, announce, topic, payload)) break;
+        bytes += payload.size();
+        // Retained: Home Assistant has to find the device when IT restarts,
+        // not only when the display does.  An empty retained payload is a
+        // deletion, which is the only way to remove a device rather than leave
+        // a permanently-unavailable ghost.
+        OutMsg m{std::string{}, payload, true, 1};
+        m.topic = topic;
+        if (g_client == nullptr) return;
+        // The discovery prefix is NOT under our base, so this bypasses
+        // topic_for and publishes the absolute topic.
+        esp_mqtt_client_publish(g_client, topic.c_str(), payload.data(),
+                                static_cast<int>(payload.size()), 1, 1);
+    }
+    ESP_LOGI(TAG, "%s %u Home Assistant entities (%u bytes)",
+             announce ? "announced" : "retracted",
+             static_cast<unsigned>(api::ha_entity_count()), static_cast<unsigned>(bytes));
 }
 
 void drain_outbound() {
@@ -297,6 +354,15 @@ void transport_task(void*) {
     for (;;) {
         // A reconfiguration is performed HERE, never on the caller's task.
         if (g_want_reconfigure.exchange(false, std::memory_order_relaxed)) {
+            // Turning MQTT off has to take the device out of Home Assistant,
+            // and that can only be said while still connected.
+            if (g_retract.exchange(false, std::memory_order_relaxed) &&
+                g_connected.load(std::memory_order_relaxed)) {
+                publish_discovery(false);
+                OutMsg bye{api::TOPIC_AVAILABILITY, api::PAYLOAD_OFFLINE, true, 1};
+                publish_now(bye);
+                vTaskDelay(pdMS_TO_TICKS(200));
+            }
             client_stop_locked_free();
             {
                 const std::lock_guard<std::mutex> lock(g_mu);
@@ -315,6 +381,7 @@ void transport_task(void*) {
         if (g_announce.exchange(false, std::memory_order_relaxed)) {
             OutMsg hello{api::TOPIC_AVAILABILITY, api::PAYLOAD_ONLINE, true, 1};
             publish_now(hello);
+            publish_discovery(true);
         }
 
         InMsg m;
@@ -359,6 +426,12 @@ esp_err_t mqtt_init(api::Context& ctx) {
 }
 
 esp_err_t mqtt_reconfigure() {
+    // If MQTT is about to be turned off, the device must be retracted from
+    // Home Assistant BEFORE the client stops - afterwards there is no way to
+    // say it, and the ghost is permanent.
+    config::MqttConfig next;
+    config::load_mqtt(next);
+    if (!next.enabled) g_retract.store(true, std::memory_order_relaxed);
     g_want_reconfigure.store(true, std::memory_order_relaxed);
     kick();
     return ESP_OK;

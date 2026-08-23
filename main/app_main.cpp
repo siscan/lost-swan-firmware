@@ -16,6 +16,8 @@
 #include "config/config.h"
 #include "esp_app_desc.h"
 #include "esp_log.h"
+#include "esp_task_wdt.h"
+#include "hal/boot_health.h"
 #include "frame/motion_port.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -26,12 +28,15 @@
 #include "net/bindings.h"
 #include "net/httpd.h"
 #include "net/mqtt.h"
+#include "net/ota.h"
+#include "net/provision.h"
 #include "net/wifi.h"
 #include "ring/ring_store.h"
 #include "timesvc/time_service.h"
 #include "webapi/api.h"
 #include "webapi/event_tap.h"
 #include "webapi/mqtt_bridge.h"
+#include "webapi/portal.h"
 #include "webapi/ring_upload.h"
 
 namespace {
@@ -95,6 +100,12 @@ void status_task(void*) {
 // two things that must happen in the modes context and nowhere else: applying
 // a staged ring table (ring_store.h contract) and pushing state on /ws.
 void modes_task(void*) {
+    // Watched, like the motion control tick.  These two are the tasks whose
+    // hanging means the display has stopped being a display: one drives the
+    // drums, the other decides what they should show and when the cues fire.
+    // httpd is deliberately NOT watched - it blocks on recv by design, and a
+    // wedged web server is a nuisance rather than a dead clock.
+    ESP_ERROR_CHECK(esp_task_wdt_add(nullptr));
     TickType_t last = xTaskGetTickCount();
     swan::Mode last_mode = g_modes->mode();
     std::string last_payload;
@@ -105,6 +116,8 @@ void modes_task(void*) {
 
     for (;;) {
         vTaskDelayUntil(&last, pdMS_TO_TICKS(50));
+        esp_task_wdt_reset();
+        swan::g_modes_ticks.fetch_add(1, std::memory_order_relaxed);
         const int64_t now = utc_ms_now();
 
         // A ring uploaded by the HTTP task was validated into a staging table;
@@ -214,6 +227,7 @@ extern "C" void app_main() {
              swan::BOARD_NAME);
 
     ESP_ERROR_CHECK(swan::config::init());
+    swan::g_config_init_ok.store(true, std::memory_order_relaxed);
 
     swan::MotionParams mp;  // spec defaults
     ESP_ERROR_CHECK(swan::config::load(mp));
@@ -285,11 +299,12 @@ extern "C" void app_main() {
     static swan::net::IdfSysInfo sysinfo;
     static swan::net::IdfSystemOps ops;
     static swan::net::IdfMqttAdmin mqtt_admin;
+    static swan::net::IdfWifiAdmin wifi_admin;
     g_stager = new swan::api::RingStager(swan::ring_store::mutable_ring());
     // The stager is BOTH the ring source and the upload sink: it owns the lock
     // that makes a snapshot safe against its own swap.
     g_api = new swan::api::Context{*g_modes, *g_stager, motion_admin, cfg_sink,
-                                   sysinfo,  *g_stager, ops, mqtt_admin, {}};
+                                   sysinfo,  *g_stager, ops, mqtt_admin, wifi_admin, {}};
 
     xTaskCreate(status_task, "swan_status", 3072, nullptr, 2, nullptr);
     xTaskCreate(modes_task, "swan_modes", 8192, nullptr, 5, nullptr);
@@ -301,9 +316,26 @@ extern "C" void app_main() {
     swan::net::mdns_start("lost", "LOST Swan Timer");
     if (swan::net::httpd_start(*g_api) != ESP_OK) {
         ESP_LOGE(TAG, "web server failed to start");
+    } else {
+        swan::g_httpd_started.store(true, std::memory_order_relaxed);
+    }
+    // The confirm watcher (spec 10.4).  Costs nothing unless this image is
+    // PENDING_VERIFY, which it only is on the first boot after an OTA.
+    if (swan::net::ota_init(*g_api) != ESP_OK) {
+        ESP_LOGE(TAG, "ota watcher failed to start");
     }
     // MQTT last: off until configured, never waited on, and the display is a
     // complete standalone clock without it (spec 10.0).
+    // Provisioning (spec 10.1).  Only with no credentials at all: a display
+    // that HAS credentials stays a clock and keeps retrying, because a router
+    // rebooting must not drop it off the LAN and into AP mode.
+    {
+        swan::config::WifiConfig wc;
+        swan::config::load_wifi(wc);
+        swan::api::PortalInputs pin;
+        pin.have_credentials = wc.configured();
+        if (swan::api::portal_should_run(pin)) swan::net::provision_start();
+    }
     if (swan::net::mqtt_init(*g_api) != ESP_OK) {
         ESP_LOGE(TAG, "mqtt transport failed to start");
     }
@@ -311,4 +343,8 @@ extern "C" void app_main() {
     swan::cli::bind_modes(g_modes, utc_ms_now);
     swan::cli::bind_ring(g_stager);
     ESP_ERROR_CHECK(swan::cli::start());
+
+    // The last statement, and the point of it: an image that reaches here has
+    // demonstrated the one thing a confirm watcher can actually check.
+    swan::g_app_main_completed.store(true, std::memory_order_relaxed);
 }

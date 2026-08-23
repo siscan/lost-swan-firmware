@@ -1,6 +1,8 @@
 #include "net/bindings.h"
 
 #include "net/mqtt.h"
+#include "net/ota.h"
+#include "net/provision.h"
 
 #include "esp_app_desc.h"
 #include "esp_log.h"
@@ -123,6 +125,9 @@ api::SysInfo IdfSysInfo::get() {
     const esp_app_desc_t* d = esp_app_get_description();
     s.version = d != nullptr ? d->version : "unknown";
     s.ws_dropped = ws_dropped();
+    const OtaState o = ota_status();
+    s.ota_partition = o.running_partition;
+    s.ota_pending_verify = o.pending_verify;
     return s;
 }
 
@@ -139,7 +144,8 @@ api::MqttStatus IdfMqttAdmin::mqtt_status() {
 }
 
 bool IdfMqttAdmin::mqtt_configure(bool enabled, std::string_view uri, std::string_view user,
-                                  std::string_view pass, std::string_view base) {
+                                  std::string_view pass, std::string_view base,
+                                  std::string_view ha_prefix) {
     config::MqttConfig c;
     config::load_mqtt(c);
     c.enabled = enabled;
@@ -149,11 +155,32 @@ bool IdfMqttAdmin::mqtt_configure(bool enabled, std::string_view uri, std::strin
     // form back without having been shown the secret it is about to resave.
     if (!pass.empty()) c.pass = std::string(pass);
     if (!base.empty()) c.base = std::string(base);
+    if (!ha_prefix.empty()) c.ha_prefix = std::string(ha_prefix);
     if (config::save_mqtt(c) != ESP_OK) return false;
     // Staged, never applied here: stopping the client waits with portMAX_DELAY
     // on a task that may be parked for seconds, and this runs on the single
     // httpd task.
     return mqtt_reconfigure() == ESP_OK;
+}
+
+bool IdfSystemOps::ota_confirm() { return swan::net::ota_confirm() == ESP_OK; }
+bool IdfSystemOps::ota_rollback() {
+    // Does not return on success: the bootloader reboots into the other slot.
+    return swan::net::ota_rollback_and_reboot() == ESP_OK;
+}
+bool IdfSystemOps::ota_pending_verify() { return swan::net::ota_pending_verify(); }
+
+bool IdfWifiAdmin::set_credentials(std::string_view ssid, std::string_view pass) {
+    return net::set_credentials(std::string(ssid).c_str(), std::string(pass).c_str()) == ESP_OK;
+}
+bool IdfWifiAdmin::start_portal() { return provision_start() == ESP_OK; }
+bool IdfWifiAdmin::stop_portal() { return provision_stop() == ESP_OK; }
+bool IdfWifiAdmin::portal_running() { return provisioning(); }
+std::string IdfWifiAdmin::portal_ssid() { return provision_ssid(); }
+bool IdfWifiAdmin::have_credentials() {
+    config::WifiConfig c;
+    config::load_wifi(c);
+    return c.configured();
 }
 
 bool IdfSystemOps::reboot() {

@@ -71,6 +71,11 @@ struct SysInfo {
     uint32_t heap = 0;
     uint32_t heap_largest = 0;  // biggest contiguous block; a DOM needs one
     uint32_t uptime_s = 0;
+    // The OTA slot and whether this image has confirmed itself.  Without them
+    // the rollback test cannot tell which image is running, and a display sat
+    // in PENDING_VERIFY looks completely normal right up until it reverts.
+    std::string ota_partition = "?";
+    bool ota_pending_verify = false;
     std::string reset_reason = "unknown";
     std::string version = "dev";
     // Outbound /ws messages the transport had to drop.  Published because a
@@ -120,6 +125,11 @@ class SystemOps {
 public:
     virtual ~SystemOps() = default;
     virtual bool reboot() = 0;
+    // OTA confirm / roll back by hand, so a human is never stuck watching a
+    // 120 s timer wondering whether it noticed.
+    virtual bool ota_confirm() { return false; }
+    virtual bool ota_rollback() { return false; }
+    virtual bool ota_pending_verify() { return false; }
 };
 
 // The MQTT transport, as the dispatcher sees it.  Deliberately narrow: the API
@@ -134,6 +144,21 @@ struct MqttStatus {
     uint32_t dropped = 0;
 };
 
+// WiFi credentials and the provisioning portal (spec 10.1).
+class WifiAdmin {
+public:
+    virtual ~WifiAdmin() = default;
+    // Saving credentials reboots by default (spec 10.1): the STA has to be
+    // restarted anyway, and a clean boot is easier to reason about than an
+    // in-place reconfigure with an AP still up.
+    virtual bool set_credentials(std::string_view ssid, std::string_view pass) = 0;
+    virtual bool start_portal() = 0;
+    virtual bool stop_portal() = 0;
+    virtual bool portal_running() = 0;
+    virtual std::string portal_ssid() = 0;
+    virtual bool have_credentials() = 0;
+};
+
 class MqttAdmin {
 public:
     virtual ~MqttAdmin() = default;
@@ -141,7 +166,8 @@ public:
     // Persist and ask the transport to re-apply.  The password is write-only
     // from the API's point of view: it is never reported back.
     virtual bool mqtt_configure(bool enabled, std::string_view uri, std::string_view user,
-                                std::string_view pass, std::string_view base) = 0;
+                                std::string_view pass, std::string_view base,
+                                std::string_view ha_prefix) = 0;
 };
 
 struct Context {
@@ -153,6 +179,7 @@ struct Context {
     RingStaging& ring_upload;
     SystemOps& ops;
     MqttAdmin& mqtt;
+    WifiAdmin& wifi;
 
     // ONE command at a time, whatever the transport.
     //

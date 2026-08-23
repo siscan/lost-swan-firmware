@@ -110,6 +110,12 @@ std::string build_state(Context& ctx, int64_t utc_ms) {
         .kv("dropped", static_cast<int64_t>(mq.dropped))
         .end_obj();
 
+    w.key("prov").obj()
+        .kv("portal", ctx.wifi.portal_running())
+        .kv("ssid", ctx.wifi.portal_ssid())
+        .kv("configured", ctx.wifi.have_credentials())
+        .end_obj();
+
     w.kv("time_valid", ctx.modes.time_valid());
     w.kv("wifi_glyph", ctx.modes.wifi_glyph_shown());
 
@@ -185,6 +191,8 @@ std::string build_state(Context& ctx, int64_t utc_ms) {
         .kv("heap", static_cast<int64_t>(sys.heap))
         .kv("heap_largest", static_cast<int64_t>(sys.heap_largest))
         .kv("uptime_s", static_cast<int64_t>(sys.uptime_s))
+        .kv("ota_partition", sys.ota_partition)
+        .kv("ota_pending", sys.ota_pending_verify)
         .kv("reset", sys.reset_reason)
         .kv("version", sys.version)
         .kv("ws_dropped", static_cast<int64_t>(sys.ws_dropped))
@@ -528,6 +536,15 @@ std::string handle_command(Context& ctx, std::string_view body, int64_t utc_ms, 
     }
 
     // ---- motion / calibration ----
+    // Motion is held for the duration of an OTA write (spec 10.4): the
+    // flash-resident control task stalls on every sector erase, so a move
+    // started now would step with nobody able to decelerate it or notice an
+    // overdue Hall edge.  Refused HERE so every transport gets the same answer.
+    if (ctx.modes.ota_hold() &&
+        (c == "motion.rehome" || c == "motion.spin" || c == "display.frame" ||
+         c == "preset.set" || c == "mode.set" || c == "message.set")) {
+        return err_result("an update is being written; motion is held");
+    }
     if (c == "motion.rehome") {
         int col = -1;
         if (p.type == json::Type::Int) col = static_cast<int>(p.number);
@@ -642,6 +659,25 @@ std::string handle_command(Context& ctx, std::string_view body, int64_t utc_ms, 
     if (c == "audio.volume" || c == "audio.mute" || c == "audio.play") {
         return err_result("audio arrives in phase 5");
     }
+    if (c == "wifi.credentials") {
+        const json::Value* ssid = member(p, "ssid");
+        if (ssid == nullptr || ssid->type != json::Type::Str || ssid->as_str().empty()) {
+            return err_result("need ssid");
+        }
+        const json::Value* pass = member(p, "pass");
+        const bool ok = ctx.wifi.set_credentials(
+            ssid->as_str(), pass != nullptr ? pass->as_str() : std::string_view{});
+        return ok ? ok_result() : err_result("could not save");
+    }
+    if (c == "wifi.provision") {
+        // Explicit only.  Nothing infers this from a disconnect: a router
+        // reboot must not drop a wall display off the LAN and into AP mode.
+        const bool on = p.type == json::Type::Bool
+                            ? p.boolean
+                            : (p.get("on") == nullptr || p.get("on")->boolean);
+        const bool ok = on ? ctx.wifi.start_portal() : ctx.wifi.stop_portal();
+        return ok ? ok_result() : err_result("could not change the portal");
+    }
     if (c == "mqtt.config") {
         const json::Value* en = member(p, "enabled");
         const json::Value* uri = member(p, "uri");
@@ -655,11 +691,21 @@ std::string handle_command(Context& ctx, std::string_view body, int64_t utc_ms, 
         const json::Value* user = member(p, "user");
         const json::Value* pass = member(p, "pass");
         const json::Value* base = member(p, "base");
+        const json::Value* hap = member(p, "ha_prefix");
         const bool ok = ctx.mqtt.mqtt_configure(
             want, uri->as_str(), user != nullptr ? user->as_str() : std::string_view{},
             pass != nullptr ? pass->as_str() : std::string_view{},
-            base != nullptr ? base->as_str() : std::string_view{"swan/"});
+            base != nullptr ? base->as_str() : std::string_view{"swan/"},
+            hap != nullptr ? hap->as_str() : std::string_view{});
         return ok ? ok_result() : err_result("could not apply");
+    }
+    if (c == "ota.confirm") {
+        return ctx.ops.ota_confirm() ? ok_result()
+                                     : err_result("this image is not pending verification");
+    }
+    if (c == "ota.rollback") {
+        return ctx.ops.ota_rollback() ? ok_result()
+                                      : err_result("nothing to roll back to");
     }
     if (c == "system.reboot") {
         return ctx.ops.reboot() ? ok_result() : err_result("reboot unavailable");
