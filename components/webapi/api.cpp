@@ -101,6 +101,12 @@ std::string build_state(Context& ctx, int64_t utc_ms) {
             .kv("err", a.last_hall_err)
             .kv("flips", static_cast<int64_t>(a.flips_total))
             .kv("hall", a.hall_level)
+            // "settled" is the question the UI actually needs answered: an
+            // index of -1 means the position is UNKNOWN, which is not the same
+            // as showing the blank flap, and a column hunting for its hall
+            // edge must not look like an idle one.
+            .kv("settled", a.state == AxisState::Idle && a.index >= 0)
+            .kv("retry", static_cast<int>(a.rehome_attempt))
             .end_obj();
     }
     w.end_arr();
@@ -143,6 +149,7 @@ std::string build_state(Context& ctx, int64_t utc_ms) {
         .kv("host", sys.hostname)
         .kv("rssi", sys.rssi)
         .kv("heap", static_cast<int64_t>(sys.heap))
+        .kv("heap_largest", static_cast<int64_t>(sys.heap_largest))
         .kv("uptime_s", static_cast<int64_t>(sys.uptime_s))
         .kv("reset", sys.reset_reason)
         .kv("version", sys.version)

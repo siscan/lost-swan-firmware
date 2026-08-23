@@ -44,6 +44,7 @@ struct AxisInfo {
     uint32_t faults;
     int32_t last_hall_err;
     int32_t hall_to_hall;  // measured usteps between the last two edges
+    uint8_t rehome_attempt; // automatic re-home in flight: 0, or 1..REHOME_RETRIES
 };
 
 }  // namespace swan

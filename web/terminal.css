@@ -126,7 +126,25 @@ html, body {
   white-space: nowrap;
 }
 .chip.bad { color: var(--red); border-color: var(--red); }
+.chip.warn { color: var(--amber); border-color: var(--amber); }
 .chip.ok  { color: var(--p); }
+
+/* Same rule as the control panel: unknown is not blank. */
+.flap-card.unknown {
+  background-image: repeating-linear-gradient(
+    45deg, transparent 0 5px, rgba(127, 127, 127, 0.28) 5px 10px);
+  box-shadow: inset 0 0 0 2px #4a4a4a, 0 2px 8px #000a;
+  opacity: 0.55;
+}
+.flap-card.searching { animation: hunting 1.4s ease-in-out infinite; }
+.flap-card.faulted { box-shadow: inset 0 0 0 2px var(--red), 0 2px 8px #000a; }
+@keyframes hunting {
+  0%, 100% { opacity: 0.35; }
+  50%      { opacity: 0.75; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .flap-card.searching { animation: none; opacity: 0.55; }
+}
 
 /* --- body ---------------------------------------------------------------- */
 .body {

@@ -120,6 +120,10 @@ struct AxisCtl {
     std::atomic<uint32_t> faults{0};
     std::atomic<int32_t> last_hall_err{0};
     std::atomic<int32_t> hall_to_hall{0};
+    // Which automatic re-home attempt is in flight, 0 when not retrying.
+    // Published so the UI can say "column 3, attempt 2 of 3" instead of
+    // leaving a hunting column indistinguishable from an idle one.
+    std::atomic<uint8_t> rehome_attempt{0};
 
     // Written by the calibration API from any task, read here.  A single value
     // with no companion invariant; live nudging during a move is intentional
@@ -198,6 +202,7 @@ struct AxisPublished {
     int32_t last_hall_err;
     int32_t hall_to_hall;
     int32_t cal_offset;  // written by the cal API, not the tick; single value
+    uint8_t rehome_attempt;  // 0 = not retrying, else 1..REHOME_RETRIES
 };
 AxisPublished axis_read_published(const AxisCtl& a);
 

@@ -150,15 +150,42 @@
       return { text: slot.id, small: true, glyph: hasGlyph(slot.id) ? slot.id : null };
     }
 
+    // A column whose index is unknown - unhomed, hunting for its hall edge, or
+    // just spun open-loop - is NOT showing the blank flap.  It used to look
+    // exactly like one, because setAll() skipped negative indices and left the
+    // card on whatever it was painted last (slot 0, blank).  Five columns
+    // hunting looked like a display sitting idle.
+    paintUnknown(i) {
+      const col = this.cols[i];
+      if (!col) return;
+      const s = this.scheme(i);
+      // backgroundColor, not background: the shorthand resets background-image
+      // and would wipe the hatch that .unknown paints.
+      col.card.style.backgroundColor = s.card.default;
+      col.card.style.color = s.ink.default;
+      col.card.classList.add("unknown");
+      col.svg.style.display = "none";
+      col.text.style.display = "";
+      col.text.textContent = "";
+      col.card.title = "position unknown";
+      col.idx = -1;
+      if (this.opts.onFace) this.opts.onFace(i, -1, null);
+    }
+
     paint(i, idx) {
       const col = this.cols[i];
       if (!col) return;
+      if (idx < 0) {
+        this.paintUnknown(i);
+        return;
+      }
+      col.card.classList.remove("unknown");
       const slot = this.colTable(i)[idx];
       const s = this.scheme(i);
       const isGlyph = slot && (slot.cat === "glyph" || slot.cat === "wifi");
       const f = FlapDisplay.face(slot);
 
-      col.card.style.background = (isGlyph && s.card.glyph) || s.card.default;
+      col.card.style.backgroundColor = (isGlyph && s.card.glyph) || s.card.default;
       // The glyph artwork is fill="currentColor", so the card's colour drives
       // both the text placeholders and the real thing: red on black for the
       // minutes group, black on white/red for the seconds group.
@@ -233,6 +260,7 @@
         if (--left <= 0) {
           clearInterval(col.timer);
           col.timer = null;
+          this.paintUnknown(i);   // open loop: where it stopped is not known
         }
       }, per);
     }
@@ -244,7 +272,18 @@
         clearInterval(this.cols[i].timer);
         this.cols[i].timer = null;
         this.cols[i].target = -1;
-        if (indices[i] >= 0) this.paint(i, indices[i]);
+        this.paint(i, indices[i]);   // -1 paints "unknown", never nothing
+      }
+    }
+
+    // Per-column axis state, so a hunting column can be seen to be hunting.
+    // `states` is the /ws cols array; only the motion state matters here.
+    setStates(cols) {
+      for (let i = 0; i < this.cols.length && i < cols.length; i++) {
+        const st = cols[i].state;
+        const busy = st === "HOMING" || st === "UNHOMED";
+        this.cols[i].card.classList.toggle("searching", busy);
+        this.cols[i].card.classList.toggle("faulted", st === "FAULT");
       }
     }
 

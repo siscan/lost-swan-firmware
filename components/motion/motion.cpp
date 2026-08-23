@@ -356,6 +356,7 @@ void info(int col, AxisInfo& out) {
     out.faults = pub.faults;
     out.last_hall_err = pub.last_hall_err;
     out.hall_to_hall = pub.hall_to_hall;
+    out.rehome_attempt = pub.rehome_attempt;
     // Derived from the step count rather than counted per move, so it stays
     // exact across wraps and open-loop stepping.
     out.flips_total =

@@ -57,6 +57,7 @@ struct SysInfo {
     std::string hostname = "lost";
     int rssi = 0;
     uint32_t heap = 0;
+    uint32_t heap_largest = 0;  // biggest contiguous block; a DOM needs one
     uint32_t uptime_s = 0;
     std::string reset_reason = "unknown";
     std::string version = "dev";

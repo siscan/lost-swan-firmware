@@ -32,6 +32,7 @@ void enter_fault(TickCtx& c, const char* why) {
 
     if (a.rehome_retries < REHOME_RETRIES) {
         ++a.rehome_retries;
+        a.rehome_attempt.store(a.rehome_retries, RLX);
         c.ev.rehome = true;
         c.ev.rehome_attempt = a.rehome_retries;
         a.home_delay = 1;
@@ -97,6 +98,7 @@ void on_hall_edge(TickCtx& c) {
     if (st == AxisState::Homing && a.home_phase == HomePhase::Seek) {
         a.home_phase = HomePhase::Settle;
         a.rehome_retries = 0;
+        a.rehome_attempt.store(0, RLX);
         // Forward-clamped, NOT plan_target.  By the time the control tick sees
         // the edge, pos has already crept a ustep or two past hall, so with the
         // common cal_offset of 0 plan_target would wrap a whole extra
@@ -123,6 +125,7 @@ void apply_request(TickCtx& c, const Request& r) {
     switch (r.kind) {
         case ReqKind::Home:
             a.rehome_retries = 0;
+            a.rehome_attempt.store(0, RLX);
             // delay 0 would never fire the countdown and park the axis in
             // Unhomed silently; the minimum is "this tick".
             a.home_delay = r.delay_ticks > 0 ? r.delay_ticks : 1;
@@ -236,6 +239,7 @@ IsrWrite axis_control_tick(AxisCtl& a, const IsrSnap& in, const Request& req,
                     a.home_phase = HomePhase::None;
                     a.index.store(RING_HOME_SLOT, RLX);
                     a.rehome_retries = 0;
+                    a.rehome_attempt.store(0, RLX);
                     a.state.store(AxisState::Idle, RLX);
                     ev.homed = true;
                 }
@@ -288,6 +292,7 @@ AxisPublished axis_read_published(const AxisCtl& a) {
         out.last_hall_err = a.last_hall_err.load(RLX);
         out.hall_to_hall = a.hall_to_hall.load(RLX);
         out.cal_offset = a.cal_offset.load(RLX);
+        out.rehome_attempt = a.rehome_attempt.load(RLX);
         std::atomic_thread_fence(std::memory_order_acquire);
         const uint32_t s2 = a.seq.load(std::memory_order_relaxed);
         if (s1 == s2) return out;

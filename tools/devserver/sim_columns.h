@@ -104,6 +104,7 @@ public:
         out.faults = pub.faults;
         out.last_hall_err = pub.last_hall_err;
         out.hall_to_hall = pub.hall_to_hall;
+        out.rehome_attempt = pub.rehome_attempt;
         out.flips_total =
             static_cast<uint32_t>((out.pos_abs * USTEPS_PER_FLAP_DEN) / USTEPS_PER_FLAP_NUM);
         return out;

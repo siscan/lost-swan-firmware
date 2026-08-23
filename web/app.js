@@ -75,11 +75,23 @@ function onState(s) {
   $("t-remaining").textContent = cdLive ? mmss(s.cd.remaining_s) : "—";
 
   // The mirror follows the axes, so a page opened mid-run catches up without
-  // animating fifty phantom flips.
+  // animating fifty phantom flips.  A column with index -1 paints as UNKNOWN,
+  // not as the blank flap - they are different facts.
   if (flap && !flap.primed) {
     flap.setAll(s.cols.map((c) => c.index));
     flap.primed = true;
   }
+  if (flap) {
+    flap.setStates(s.cols);
+    // An axis that has gone unknown while the page was open must stop showing
+    // a stale face; the go/spin events cannot express "I no longer know".
+    s.cols.forEach((c, i) => {
+      if (c.index < 0 && flap.cols[i] && flap.cols[i].idx >= 0 && !flap.cols[i].timer) {
+        flap.paintUnknown(i);
+      }
+    });
+  }
+  renderMotion(s);
 
   renderDiag(s);
   renderCal(s);
@@ -88,6 +100,43 @@ function onState(s) {
   $("ramp-state").textContent = s.cal.ramp_active
       ? "walking column " + (s.cal.ramp_col + 1)
       : "";
+}
+
+// The banner.  Any column not settled is worth saying on every page, with the
+// retry count, because a column thrashing through three re-homes and a column
+// quietly parked look identical otherwise.
+function renderMotion(s) {
+  const el = $("motion");
+  const busy = s.cols
+    .map((c, i) => ({ i, c }))
+    .filter(({ c }) => c.state !== "IDLE" || c.index < 0);
+  if (busy.length === 0) {
+    el.className = "";
+    el.textContent = "";
+    return;
+  }
+  const faulted = busy.some(({ c }) => c.state === "FAULT");
+  // "fault (re-home 3/3)" read as still-trying on the bench.  A column that
+  // has given up and one that is mid-retry are different problems and must
+  // read differently.
+  const parts = busy.map(({ i, c }) => {
+    const n = "col " + (i + 1);
+    if (c.state === "FAULT") {
+      return n + " FAULT" + (c.retry > 0 ? " (gave up after " + c.retry + " re-homes)" : "");
+    }
+    if (c.state === "HOMING") {
+      return n + (c.retry > 0 ? " re-homing " + c.retry + "/3" : " homing");
+    }
+    if (c.state === "UNHOMED") return n + " unhomed";
+    if (c.index < 0) return n + " position unknown";
+    return n + " " + c.state.toLowerCase();
+  });
+  el.className = "show" + (faulted ? " bad" : "");
+  el.innerHTML = (faulted ? "MOTION FAULT — " : "COLUMNS NOT SETTLED — ") +
+      "<b>" + parts.join(" · ") + "</b>" +
+      (faulted ? ". `home &lt;col&gt;` on the console, or REHOME on the Calibrate page."
+               : ". A homing pass takes ~7.5 s; a column tries three times before "
+                 + "giving up, so allow ~30 s from boot.");
 }
 
 function renderDiag(s) {
@@ -101,6 +150,7 @@ function renderDiag(s) {
       [String(c.revs), true], [String(c.flips), true], [String(c.minor), true],
       [String(c.major), true], [String(c.faults), true], [String(c.h2h), true],
       [String(c.err), true], [c.hall ? "●" : "○", false],
+      [c.retry > 0 ? c.retry + "/3" : "—", false],
     ];
     cells.forEach(([text, num]) => tr.appendChild(el("td", num ? { class: "num" } : null, text)));
     body.appendChild(tr);

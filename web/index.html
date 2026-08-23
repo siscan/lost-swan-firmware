@@ -20,6 +20,12 @@
   </div>
 </header>
 
+<!-- Persistent, and deliberately outside <main>: a column that is unhomed,
+     hunting or faulted is a fact about the whole device, not a Diagnostics
+     detail, and at boot there is a ~30 s window in which the display looks
+     idle and is actually searching. -->
+<div id="motion"></div>
+
 <nav>
   <button data-page="terminal" class="active">TERMINAL</button>
   <button data-page="modes">MODES</button>
@@ -155,7 +161,7 @@
       <th>col</th><th>state</th><th>face</th><th class="num">index</th><th class="num">dest</th>
       <th class="num">cal</th><th class="num">revs</th><th class="num">flips</th>
       <th class="num">minor</th><th class="num">major</th><th class="num">faults</th>
-      <th class="num">h2h</th><th class="num">err</th><th>hall</th>
+      <th class="num">h2h</th><th class="num">err</th><th>hall</th><th>re-home</th>
     </tr></thead>
     <tbody id="diag-rows"></tbody>
   </table>

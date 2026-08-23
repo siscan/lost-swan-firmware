@@ -2,6 +2,7 @@
 
 #include "esp_app_desc.h"
 #include "esp_log.h"
+#include "esp_heap_caps.h"
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -81,6 +82,7 @@ api::SysInfo IdfSysInfo::get() {
     s.rssi = w.rssi;
     s.hostname = "lost";
     s.heap = esp_get_free_heap_size();
+    s.heap_largest = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
     s.uptime_s = static_cast<uint32_t>(esp_timer_get_time() / 1000000);
     s.reset_reason = reset_reason_name(esp_reset_reason());
     const esp_app_desc_t* d = esp_app_get_description();

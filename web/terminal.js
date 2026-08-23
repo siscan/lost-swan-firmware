@@ -272,6 +272,32 @@ function onState(s) {
     flap.setAll(s.cols.map((c) => c.index));
     flap.primed = true;
   }
+  if (flap) {
+    flap.setStates(s.cols);
+    s.cols.forEach((c, i) => {
+      if (c.index < 0 && flap.cols[i] && flap.cols[i].idx >= 0 && !flap.cols[i].timer) {
+        flap.paintUnknown(i);
+      }
+    });
+  }
+
+  // A column that is not settled is a fact about the whole device, so it shows
+  // here too - a kiosk never opens the Diagnostics page.
+  const busy = s.cols
+    .map((c, i) => ({ i, c }))
+    .filter(({ c }) => c.state !== "IDLE" || c.index < 0);
+  const chip = $("motion");
+  if (busy.length === 0) {
+    chip.style.display = "none";
+  } else {
+    const faulted = busy.some(({ c }) => c.state === "FAULT");
+    const retry = busy.find(({ c }) => c.retry > 0);
+    chip.style.display = "";
+    chip.className = "chip " + (faulted ? "bad" : "warn");
+    chip.textContent = (faulted ? "FAULT " : "HOMING ") + busy.length + "/" + s.cols.length +
+        (retry && !faulted ? " · try " + retry.c.retry + "/3" : "");
+  }
+
   tickReadout();
 }
 
