@@ -890,6 +890,14 @@ API; anything the UI can do, a prop can do with a publish.
 | `clock.format` | `{h24}` | |
 | `system.reboot` | — | |
 
+**MQTT adds a transport, not a command set.**  No command names exist that the
+web UI does not have, and no argument ever rides a topic segment: it is
+`swan/cmd/<command>` plus a JSON payload, full stop.  A second topic grammar
+would be a second command set.  The **serial CLI is the one deliberate
+exception** to "everything goes through the dispatcher" — it drives `motion::`
+directly because `step`, `spin`, `en`, `hall` and `pins` are bench tooling that
+must work before ModeManager exists (decision 2026-08-23, §17).
+
 MQTT: `swan/cmd/<command>` with a JSON payload (a bare string is accepted
 where the payload is a single value). Every command publishes its result on
 `swan/event` (`ok`, `rejected`, `fault`) and the new state on `swan/state`.
@@ -904,8 +912,24 @@ Base topic `swan/` (confirmed). Retained `swan/state` JSON; retained
 prop is a plain MQTT peer: it subscribes to `swan/countdown` and `swan/state`
 and publishes to `swan/cmd/…`.
 
+**Authorisation: none in the firmware, by decision** (2026-08-23, extending
+Q7).  Every §10.2a command is reachable over MQTT, including `system.reboot`,
+`motion.maintenance`, `motion.column` and the OTA controls.  The boundary is
+the **broker's own credentials** — the display authenticates *to* the broker
+with `mqtt.user`/`mqtt.pass` and trusts what arrives.  That is what "MQTT is the
+canonical external API" and "anything the UI can do, a prop can do with a
+publish" require; a second credential in the firmware would break HA discovery
+for exactly the entities most worth having.  Anyone who can publish to your
+broker can drive your display: scope the broker's ACL, not the firmware.
+
+One thing is refused regardless: a **retained** message on `swan/cmd/…` is
+logged and dropped, never obeyed.  A retained `countdown.execute` would re-fire
+on every reconnect and every reboot, which is a countdown starting itself in an
+empty room.
+
 Discovery under `homeassistant/<component>/swan/<object_id>/config`, one device
-("LOST Swan Timer"). Proposed entities:
+("LOST Swan Timer").  The `homeassistant/` prefix is configurable
+(`mqtt.ha_prefix`) because HA's own `discovery_prefix` is. Proposed entities:
 
 | entity | type |
 |---|---|
@@ -920,9 +944,43 @@ Discovery under `homeassistant/<component>/swan/<object_id>/config`, one device
 
 ### 10.4 OTA
 Upload page → `esp_ota` with rollback enabled
-(`CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE`); new image must mark itself valid
-after a successful boot + home. Motion is held during flash writes regardless
-of the IRAM-safe ISR.
+(`CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE`).  Motion is held during flash writes
+regardless of the IRAM-safe ISR (see below for what "held" means).
+
+**The mark-valid criterion is NOT "a successful boot + home"** — that was the
+original wording and it bricks the display three separate ways, each a
+boot-loop between the two slots:
+
+- **Maintenance never homes** (§5.9, deliberate, a safety claim) *and survives
+  a reboot*, so in maintenance neither image can ever confirm.
+- **A disabled column is never homed** (§5.9), so a display with one column out
+  can never satisfy it.
+- **A broken Hall is not a broken image.**  Unwired, all five fault after ~30 s.
+  Rollback exists for an image that cannot run, not for a mechanism that is
+  broken — and rolling back will not fix a sensor.
+
+The criterion is instead a set of **local invariants an OTA could plausibly
+have broken**, specifically the ones that make the *next* OTA possible:
+`app_main` reached the end; `config::init()` returned OK **and did not erase
+NVS**; the modes task has ticked ≥200 times; the motion control tick has run
+≥10 000 times; `httpd_start` returned OK.  Otherwise wait; past 120 s of uptime,
+roll back.  Deliberately excluded: homing, axis state, WiFi, SNTP, mDNS, MQTT
+and LittleFS — gating on WiFi means "somebody changed the SSID" rolls you into
+an image that also cannot join.
+
+**"Motion is held" means**, concretely: refuse to start an OTA unless all five
+axes are Idle at zero velocity (or maintenance is on); suspend frame
+scheduling; hold cues; and reject `motion.rehome` / `motion.spin` /
+`display.frame` / `preset.set` at the dispatcher for the duration.  It does
+**not** mean dropping EN: that de-energizes all five (ganged, §2.2) and a loaded
+drum may creep — `motion.en_idle_off` is false precisely because that has never
+been measured.  The hold is transient, **never persisted**: a hold that survived
+a reboot would be maintenance's brick-loop shape all over again.
+
+Rollback covers a crash-reboot and a power cycle.  It does **not** cover a
+hang: `CONFIG_ESP_TASK_WDT_PANIC` is off, so a task-WDT trip prints and
+continues, and a first boot that hangs never resets and therefore never rolls
+back.
 
 ---
 
@@ -1883,3 +1941,39 @@ reason, so nothing gets re-litigated.
     print-side fix, not a visual feature — and a straddle flap is physically
     half of two adjacent cards, so it has no single card colour to paint.  The
     slot lists stay in the manifests; nothing reads them.
+
+- 2026-08-23 — **Phase 4 decisions, taken before the work rather than during
+  it.**
+  - **The one-dispatcher rule is narrowed to network paths, because the wider
+    version was never true.**  `grep -c handle_command components/cli/cli.cpp`
+    is 0: the CLI has always driven `ModeManager::cmd_*` and `motion::`
+    directly.  Not a safety bug — every call lands on a locked method — but
+    MQTT was about to be written to a rule the neighbouring file breaks.  So:
+    every **network** control path goes through `api::handle_command`, and the
+    serial CLI sits deliberately below it, because `step`, `spin`, `en`, `hall`
+    and `pins` are bench tooling that has to work before ModeManager is bound
+    at all.  CLAUDE.md and §10.2a corrected.  (Nico chose this over refactoring
+    the CLI onto the dispatcher.)
+  - **MQTT gets the full command set with no firmware authorisation**,
+    extending Q7's "no password on LAN".  The broker's credentials are the
+    boundary; the display authenticates to the broker and trusts what arrives.
+    `system.reboot`, `motion.maintenance`, `motion.column` and the OTA controls
+    are all reachable by anyone who can publish.  That is the cost of "anything
+    the UI can do, a prop can do with a publish", and of HA discovery working
+    for the entities most worth having.  Scope the broker's ACL, not the
+    firmware.  Recorded so it is a decision and not an oversight.
+  - **A retained message on `swan/cmd/…` is logged and dropped, never obeyed.**
+    A retained `countdown.execute` would re-fire on every reconnect and every
+    reboot — a countdown starting itself in an empty room. §17's
+    finished-countdown entry is the same failure wearing a different hat.
+  - **§10.4's mark-valid criterion was wrong and is replaced.**  "A successful
+    boot + home" cannot be satisfied in maintenance (which never homes and
+    survives the reboot), cannot be satisfied with a disabled column, and is
+    not satisfied by an unwired board — each of which produces a boot loop
+    between the two slots rather than a working display.  Replaced with local
+    invariants an OTA could plausibly have broken; §10.4 has the list and the
+    exclusions, and says why WiFi is not among them.
+  - Also recorded there: what "motion is held" actually means (it is not
+    dropping EN), that the hold is never persisted, and that rollback covers a
+    crash or a power cycle but **not a hang** — `CONFIG_ESP_TASK_WDT_PANIC` is
+    off, so a first boot that hangs never resets and therefore never rolls back.

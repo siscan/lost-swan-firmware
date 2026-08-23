@@ -486,6 +486,71 @@ bench rather than from the model.
 Until that is done, treat every fault classification you have seen as
 *plumbing verified, physics assumed*.
 
+### 21. MQTT transport (spec 10.2a, 10.3) — **DONE 2026-08-23 (five sim columns)**
+
+No broker needed on the LAN: `tools/mqtt_broker.py` is a stdlib fixture that
+speaks enough MQTT 3.1.1 for all of this, including keepalive enforcement so
+the Last Will actually fires.
+
+```bash
+python tools/mqtt_broker.py                      # on the dev machine
+```
+```
+mqtt mqtt://<dev-machine>:1883                   # on the console
+mqtt status
+```
+
+Results, on the board:
+
+```
+CONNECT  id='ESP32_ddA8E8' keepalive=30s clean=1  will=swan/availability [R]
+SUB      swan/cmd/# (qos 1)
+PUB      swan/availability   [R] q1  online
+PUB      swan/state          [R] q1  {"e":"state",...}
+PUB      swan/countdown      [R] q1  {"state":"idle","target":0,"set_by":"unknown","seq":0}
+```
+
+- [x] **Commands arrive through the one dispatcher.** `swan/cmd/preset.set` with
+      a bare `qmarks` reaches all five columns; `swan/cmd/motion.column` with
+      `{"column":2,"mode":"disabled"}` disables column 3. Both answer on
+      `swan/event` with the command name and the dispatcher's own result.
+- [x] **A bad payload is rejected, not ignored:**
+      `{"ok":false,"err":"mode must be real|sim|disabled"}` — the same string
+      the web UI gets, from the same validator.
+- [x] **No second command grammar.** `swan/cmd/motion.column/2` produces no
+      result at all: an argument in a topic segment is refused, never
+      half-understood.
+- [x] **The deadline says who set it.** `countdown.execute` over MQTT publishes
+      `{"state":"running","target":…,"set_by":"mqtt","seq":10}` — exactly the
+      four fields §7.3 names, and seq advances so a peer can order two
+      retained documents.
+- [x] **A RETAINED command is refused on replay.** Note the subtlety: a broker
+      *clears* the retain flag when forwarding to an existing subscription, so
+      a live retained publish is indistinguishable from a normal one and is
+      correctly obeyed. The hazard is the **replay on connect**, which arrives
+      with retain=1 — that is what would restart a countdown on every reboot,
+      and it is refused. Tested by leaving one retained and forcing a
+      reconnect.
+- [x] **Cadence.** A *running* countdown published **0** state documents in
+      12 s. Before `cd.remaining_s` was excluded from the change comparison it
+      published 11 — a retained topic rewritten once a second for 108 minutes.
+- [x] **Availability, all four cases:**
+      - connect → retained `online`
+      - `system.reboot` → retained `offline` in **0.0 s** (a clean DISCONNECT
+        makes the broker discard the will, so the firmware publishes it itself)
+      - board reset, gone > keepalive → the **will** fires at **50.5 s**
+        (45 s after the last packet), retained `offline`
+      - board reset, back in < keepalive → **session takeover**, the stale
+        will is discarded, and Home Assistant never sees a spurious flap
+- [x] **A cold boot with MQTT already in NVS reconnects unprompted** — 2 s
+      after the broker appeared, with nothing typed.
+- [x] The password never appears in the state payload.
+
+Local gotcha, recorded so it is not rediscovered: asserting **both** DTR and
+RTS on the USB-Serial-JTAG port drives the chip into *download mode*, not a
+reset — the board then sits silent and off the network. `esptool.py --before
+default_reset --after hard_reset read_mac` is the reliable way to reset it.
+
 ## Notes
 
 - `step`, `spin` and `revs` are open-loop: they leave the displayed index

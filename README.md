@@ -382,6 +382,47 @@ hand from the Calibrate page.  It **survives a reboot** deliberately: pulling
 power mid-repair must not restart a countdown on top of your hands.  `maint
 off` re-arms everything and re-homes all five.
 
+### MQTT (spec 10.2a, 10.3)
+
+Off until configured, never waited on: the display is a complete standalone
+clock without a broker.
+
+```bash
+mqtt mqtt://192.168.1.10:1883 myuser mypass
+```
+
+`swan/cmd/<command>` plus a JSON payload becomes the **same document the web UI
+posts**, validated by the **same** `api::handle_command`. There are no
+MQTT-only commands and no arguments in topic segments — a second topic grammar
+would be a second command set. A bare value is accepted where a command takes
+one (`swan/cmd/mode.set` ← `clock`).
+
+| topic | retained | what |
+|---|---|---|
+| `swan/state` | yes | the full state document, on change, ≥1 s apart, 30 s floor |
+| `swan/countdown` | yes | `{state, target, set_by, seq}` — the deadline, §7.3 |
+| `swan/availability` | yes | `online` / `offline`; LWT plus an explicit goodbye |
+| `swan/event` | no | one result per command |
+| `swan/cmd/#` | — | subscribed; **retained** messages here are refused |
+
+Three things worth knowing before touching this:
+
+- **A retained command is never obeyed.** A retained `countdown.execute` would
+  re-fire on every reconnect and every reboot. Note that a broker *clears* the
+  retain flag when forwarding to an existing subscription, so only the replay
+  on connect is distinguishable — and that is exactly the dangerous one.
+- **`esp_mqtt_client_publish` blocks the caller** for up to ten seconds.
+  Producers push into a bounded ring and the transport task does the publishing;
+  the modes task owns a 20 Hz tick and must never wait on a radio. Drops are
+  counted and published as `mqtt.dropped`.
+- **`cd.remaining_s` is excluded from the change comparison.** It is derived
+  from the absolute target and it ticks, so including it rewrote the retained
+  state topic once a second for a whole 108-minute run.
+
+**Authorisation is the broker's, not the firmware's** (decision 2026-08-23,
+extending Q7): every command is reachable by anyone who can publish. Scope the
+broker's ACL.
+
 ### A broker to test against
 
 `tools/mqtt_broker.py` is a ~350-line stdlib-only MQTT 3.1.1 broker, for the
