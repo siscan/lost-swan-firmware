@@ -274,11 +274,10 @@ function onState(s) {
   }
   if (flap) {
     flap.setStates(s.cols);
-    s.cols.forEach((c, i) => {
-      if (c.index < 0 && flap.cols[i] && flap.cols[i].idx >= 0 && !flap.cols[i].timer) {
-        flap.paintUnknown(i);
-      }
-    });
+    // The state document is the authority; go events are lossy (see
+    // flap.js reconcile()).  The dock is a mirror of a mirror and must not be
+    // the one place the drift survives.
+    flap.reconcile(s.cols, s.cfg && s.cfg.flaps_s_normal);
   }
 
   // A column that is not settled is a fact about the whole device, so it shows

@@ -74,22 +74,19 @@ function onState(s) {
       (s.ring.descending ? " · descending" : " · NOT DESCENDING");
   $("t-remaining").textContent = cdLive ? mmss(s.cd.remaining_s) : "—";
 
-  // The mirror follows the axes, so a page opened mid-run catches up without
-  // animating fifty phantom flips.  A column with index -1 paints as UNKNOWN,
-  // not as the blank flap - they are different facts.
+  // The mirror follows the axes.  A page opened mid-run SNAPS once to where
+  // the drums are, without animating fifty phantom flips; from then on every
+  // state document reconciles it, because the go events that drive the
+  // animation are lossy and nothing else would ever correct a card that
+  // missed one.  A column with index -1 paints as UNKNOWN, not as the blank
+  // flap - they are different facts.
   if (flap && !flap.primed) {
     flap.setAll(s.cols.map((c) => c.index));
     flap.primed = true;
   }
   if (flap) {
     flap.setStates(s.cols);
-    // An axis that has gone unknown while the page was open must stop showing
-    // a stale face; the go/spin events cannot express "I no longer know".
-    s.cols.forEach((c, i) => {
-      if (c.index < 0 && flap.cols[i] && flap.cols[i].idx >= 0 && !flap.cols[i].timer) {
-        flap.paintUnknown(i);
-      }
-    });
+    flap.reconcile(s.cols, s.cfg && s.cfg.flaps_s_normal);
   }
   renderMotion(s);
 
@@ -201,6 +198,11 @@ function renderDiag(s) {
     ["address", (s.sys.ip || "—") + " · " + s.sys.host + ".local"],
     ["rssi", s.sys.rssi + " dBm"],
     ["heap", s.sys.heap + " B"],
+    // Non-zero means the board could not push everything it wanted to.  The
+    // mirror still tracks - it reconciles against this very document - but the
+    // flip animations for the dropped events were lost, and a rising count
+    // means the transport is under pressure.
+    ["ws dropped", s.sys.ws_dropped],
     ["uptime", s.sys.uptime_s + " s"],
     ["reset reason", s.sys.reset],
     ["firmware", s.sys.version],
