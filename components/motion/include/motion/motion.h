@@ -57,6 +57,11 @@ bool all_idle();
 void set_columns(const ColumnConfig& c);
 ColumnConfig columns();
 
+// How many 1 kHz control ticks have run.  Read by the OTA confirm watcher
+// (spec 10.4): a motion tick that has stopped is one of the few things that
+// says an image is broken rather than a mechanism.
+uint32_t control_ticks();
+
 // True when at least one column is simulated.  Everything that reports device
 // state consults this; it is the reason the banner, the boot line, the state
 // payload and `stats` all say so.

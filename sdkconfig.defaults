@@ -47,9 +47,33 @@ CONFIG_COMPILER_OPTIMIZATION_PERF=y
 # go now has nothing to say later.
 CONFIG_MQTT_SKIP_PUBLISH_IF_DISCONNECTED=y
 
+# Task watchdog: PANIC, not just a log line (spec 10.4).
+#
+# With it off, a task-WDT trip printed and carried on - so a first boot that
+# HUNG never reset, and therefore never rolled back. A hang is precisely the
+# failure rollback exists for, and it was the one case not covered.
+#
+# 30 s, not the default 5. The timeout has to clear every legitimately slow
+# path or the cure is worse than the disease, and the longest is a LittleFS
+# format of the 2 MB storage partition on a virgin board: ~512 sector erases
+# with the flash cache off, 10-25 s, during which NO task runs - not even idle.
+# ring_store::init unsubscribes the idle task across that window explicitly;
+# the generous timeout is the second line of defence. 30 s still sits well
+# inside the 120 s mark-valid window, so a hung image is caught and rolled back
+# with time to spare.
+CONFIG_ESP_TASK_WDT_PANIC=y
+CONFIG_ESP_TASK_WDT_TIMEOUT_S=30
+
 # NOT enabled yet, deliberately:
 #   CONFIG_SPIRAM             — N8R8 has 8 MB PSRAM but nothing in Phase 1 needs
 #                               it; enabling untested PSRAM only adds boot risk.
-#   CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE — Phase 4 (spec 10.4).  Turning it on
-#                               before the "mark valid" path exists bricks-loops
-#                               every flash.
+# (CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE is now ON, below - the mark-valid path
+#  exists.)
+
+# Rollback (spec 10.4).  Safe to turn on only now that the confirm path exists:
+# with it on, an image that does not call esp_ota_mark_app_valid_cancel_rollback
+# is reverted by the bootloader on the next reset.  The criterion is local
+# invariants an OTA could plausibly have broken - NOT "boot + home", which
+# cannot be satisfied in maintenance, cannot be satisfied with a disabled
+# column, and is not satisfied by an unwired board.
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y

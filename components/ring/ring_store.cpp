@@ -4,7 +4,11 @@
 #include <string>
 
 #include "esp_littlefs.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
 #include "esp_log.h"
+#include "esp_task_wdt.h"
 
 namespace swan {
 namespace ring_store {
@@ -42,7 +46,21 @@ esp_err_t init() {
     conf.format_if_mount_failed = true;  // a virgin partition is expected
     conf.dont_mount = false;
 
+    // Mounting can FORMAT, and formatting the 2 MB storage partition is ~512
+    // sector erases with the flash cache disabled: 10-25 s in which no task
+    // runs at all, the idle task included.  With CONFIG_ESP_TASK_WDT_PANIC on
+    // that would panic, and it would panic again on the next boot, and the
+    // next - a virgin or corrupted board would never come up.
+    //
+    // So the idle task is unsubscribed across exactly this call and resubscribed
+    // after.  Nothing is watched for the duration, which is correct: this is a
+    // known-long operation, not a hang.
+    TaskHandle_t idle = xTaskGetIdleTaskHandleForCPU(0);   // single core
+    const bool unwatched = idle != nullptr && esp_task_wdt_delete(idle) == ESP_OK;
+
     const esp_err_t err = esp_vfs_littlefs_register(&conf);
+
+    if (unwatched) esp_task_wdt_add(idle);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "littlefs mount failed (%s); compiled ring table active",
                  esp_err_to_name(err));

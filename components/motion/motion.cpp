@@ -265,12 +265,15 @@ void control_tick() {
     }
 }
 
+std::atomic<uint32_t> g_control_ticks{0};
+
 void control_task(void*) {
     esp_task_wdt_add(nullptr);
     TickType_t last = xTaskGetTickCount();
     for (;;) {
         vTaskDelayUntil(&last, pdMS_TO_TICKS(1));
         control_tick();
+        g_control_ticks.fetch_add(1, std::memory_order_relaxed);
         esp_task_wdt_reset();
     }
 }
@@ -420,6 +423,8 @@ void set_columns(const ColumnConfig& c) {
 }
 
 ColumnConfig columns() { return g_cols; }
+
+uint32_t control_ticks() { return g_control_ticks.load(std::memory_order_relaxed); }
 
 bool any_simulated() { return g_cols.any(ColumnMode::Sim); }
 
