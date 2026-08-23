@@ -46,6 +46,29 @@ if(SWAN_RELEASE)
 endif()
 message(STATUS "LOST Swan simulated axes: ${SWAN_SIM_AXES}  release: ${SWAN_RELEASE}")
 
+# Build identity, carried in esp_app_desc_t and reported as sys.version.
+#
+# esp_app_desc has project_name / version / idf_ver / chip_id and NOTHING that
+# distinguishes the XIAO pin map from the DevKitC-1 one, or a build with the
+# simulated axes compiled in from a release build without them.  An OTA cannot
+# refuse a wrong-board image it cannot identify, and a rollback test cannot
+# prove an image was swapped if both report the same string.  So the flavour
+# goes in the version:
+#
+#     0.4.0+devkitc1.sim      0.4.0+xiao.sim      0.4.0+devkitc1.rel
+#
+# Set before project(), which is where IDF reads it.
+set(SWAN_VERSION "0.4.0")
+if(SWAN_RELEASE)
+    set(SWAN_FLAVOUR "rel")
+elseif(SWAN_SIM_AXES)
+    set(SWAN_FLAVOUR "sim")
+else()
+    set(SWAN_FLAVOUR "nosim")
+endif()
+set(PROJECT_VER "${SWAN_VERSION}+${SWAN_BOARD}.${SWAN_FLAVOUR}")
+message(STATUS "LOST Swan version: ${PROJECT_VER}")
+
 project(lost_swan_firmware)
 
 # --- LittleFS payload (spec 10.2; spec 15 phase 3, step e) -------------------
