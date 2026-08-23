@@ -143,6 +143,20 @@ public:
     // never.
     Result cmd_ring_swap(const std::function<bool()>& swap, int64_t utc_ms);
 
+    // Maintenance (spec 5.9).  Suspends the whole display: no rendering, no
+    // frame scheduling, nothing moves on its own.  Manual commands keep
+    // working - that is the point of it - and the motion layer separately
+    // stops automatic re-homing.  Leaving re-arms and re-renders; the caller
+    // re-homes.
+    Result cmd_maintenance(bool on, int64_t utc_ms);
+    bool maintenance() const;
+
+    // Columns the frame layer must skip (bit i = column i).  Set when a
+    // column is disabled.  Renderers are untouched: they still produce a full
+    // frame and the hole is simply never issued.
+    Result cmd_set_excluded(uint8_t mask, int64_t utc_ms);
+    uint8_t excluded() const;
+
     // The active POSIX TZ string, read under the lock.  ModeManager owns it;
     // a mirrored copy elsewhere would be written by one task and read by
     // another with nothing between them.
@@ -241,6 +255,7 @@ private:
     bool cue_warn4_ = false, cue_warn1_ = false, cue_zero_ = false;
     bool spin_started_ = false;
     bool pending_resume_ = false;  // countdown resume deferred until time_valid
+    bool maintenance_ = false;
     int64_t last_tick_ms_ = INT64_MIN;
 
     // Calibration walk state (control-side only).

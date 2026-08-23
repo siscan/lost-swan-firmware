@@ -210,12 +210,61 @@ void ModeManager::tick_ramp(int64_t utc_ms) {
     }
 }
 
+ModeManager::Result ModeManager::cmd_maintenance(bool on, int64_t utc_ms) {
+    const std::lock_guard<std::mutex> lock(mu_);
+    const Enter witness(*this);
+    if (maintenance_ == on) return {true, nullptr};
+    maintenance_ = on;
+    if (on) {
+        // Drop anything scheduled.  Nothing may move on its own from here.
+        sched_.cancel_pending();
+        return {true, nullptr};
+    }
+    // Leaving re-arms: re-render from scratch, since the drums have been moved
+    // by hand and last_frame_ is the only record of where they were told to be.
+    rendered_key_ = RENDER_NONE;
+    cd_shown_ = SHOWN_NONE;
+    cd_scheduled_land_ = 0;
+    tick_locked(utc_ms);
+    return {true, nullptr};
+}
+
+bool ModeManager::maintenance() const {
+    const std::lock_guard<std::mutex> lock(mu_);
+    const Enter witness(*this);
+    return maintenance_;
+}
+
+ModeManager::Result ModeManager::cmd_set_excluded(uint8_t mask, int64_t utc_ms) {
+    const std::lock_guard<std::mutex> lock(mu_);
+    const Enter witness(*this);
+    if (sched_.excluded() == mask) return {true, nullptr};
+    sched_.set_excluded(mask);
+    // A column joining or leaving the frame changes what should be showing.
+    rendered_key_ = RENDER_NONE;
+    cd_shown_ = SHOWN_NONE;
+    if (!maintenance_) tick_locked(utc_ms);
+    return {true, nullptr};
+}
+
+uint8_t ModeManager::excluded() const {
+    const std::lock_guard<std::mutex> lock(mu_);
+    const Enter witness(*this);
+    return sched_.excluded();
+}
+
 void ModeManager::tick_locked(int64_t utc_ms) {
     if (last_tick_ms_ != INT64_MIN) {
         const int64_t delta = utc_ms - last_tick_ms_;
         if (delta > STEP_FORWARD_MS || delta < STEP_BACKWARD_MS) handle_time_step(delta);
     }
     last_tick_ms_ = utc_ms;
+
+    // Maintenance: the deadline keeps running (it is absolute, and a repair
+    // should not silently cancel a countdown) but NOTHING is rendered or
+    // scheduled.  Cues are held too - a system-failure alarm going off while
+    // someone has their hands in the mechanism is exactly wrong.
+    if (maintenance_) return;
 
     if (pending_resume_ && time_.valid()) {
         pending_resume_ = false;

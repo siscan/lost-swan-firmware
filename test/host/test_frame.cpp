@@ -304,6 +304,55 @@ void test_spin_survives_convergence() {
     CHECK_EQ(port.gos.size(), 0u);   // nothing clobbered the spin
 }
 
+
+// A disabled column is a HOLE, not a column that quietly moves anyway
+// (spec 5.9).  The frame layer is the only place that knows; renderers keep
+// producing five indices and never learn about it.
+void test_excluded_column_is_never_commanded() {
+    FakePort port;
+    FrameScheduler sched(port, {15, 82000});
+    for (auto& c : port.cols) {
+        c.index = 0;
+        c.state = AxisState::Idle;
+    }
+    sched.set_excluded(0b00101);  // columns 0 and 2 disabled
+    CHECK(sched.is_excluded(0));
+    CHECK(!sched.is_excluded(1));
+    CHECK(sched.is_excluded(2));
+
+    sched.show({10, 11, 12, 13, 14}, 0);
+    sched.tick(0);
+    port.drain_mailbox();
+    for (const auto& g : port.gos) {
+        CHECK(g.col != 0 && g.col != 2);
+    }
+    CHECK_EQ(port.gos.size(), 3u);
+
+    // ... including the alarm spin, which is the one place five columns are
+    // commanded at once without a frame behind them.
+    port.gos.clear();
+    port.spins.clear();
+    sched.spin_all(25, 6, 100);
+    sched.tick(100);
+    port.drain_mailbox();
+    CHECK_EQ(port.spins.size(), 3u);
+    for (const auto& sp : port.spins) {
+        CHECK(sp.col != 0 && sp.col != 2);
+    }
+
+    // And the frame is "settled" once the columns that CAN move have arrived:
+    // waiting on a column that will never report is a hang, not a safeguard.
+    for (int i = 0; i < N_COLUMNS; ++i) {
+        if (i == 0 || i == 2) continue;
+        port.cols[static_cast<size_t>(i)].index = 10 + i;
+        port.cols[static_cast<size_t>(i)].state = AxisState::Idle;
+    }
+    port.cols[0].state = AxisState::Fault;
+    port.cols[2].state = AxisState::Unhomed;
+    sched.tick(200);
+    CHECK(sched.settled());
+}
+
 }  // namespace
 
 void run_tests() {
@@ -315,4 +364,5 @@ void run_tests() {
     test_non_instant_moves();
     test_mailbox_lag_within_a_tick();
     test_spin_survives_convergence();
+    test_excluded_column_is_never_commanded();
 }

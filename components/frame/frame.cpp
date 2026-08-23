@@ -51,6 +51,7 @@ int64_t move_duration_ms(int flips, int32_t flaps_s, int32_t accel) {
 int64_t FrameScheduler::lead_ms(const Frame& f) {
     int64_t worst = 0;
     for (int i = 0; i < N_COLUMNS; ++i) {
+        if (is_excluded(i)) continue;  // a hole costs no time
         const int flips = flips_from(port_.col(i), f.idx[static_cast<size_t>(i)]);
         const int64_t d = move_duration_ms(flips, timing_.flaps_s, timing_.accel);
         if (d > worst) worst = d;
@@ -60,6 +61,7 @@ int64_t FrameScheduler::lead_ms(const Frame& f) {
 
 void FrameScheduler::issue(const Frame& f) {
     for (int i = 0; i < N_COLUMNS; ++i) {
+        if (is_excluded(i)) continue;
         const size_t k = static_cast<size_t>(i);
         const MotionPort::Col c = port_.col(i);
         const int want = f.idx[k];
@@ -110,6 +112,7 @@ void FrameScheduler::spin_all(int32_t flaps_s, int seconds, int64_t now_ms) {
     note_tick(now_ms);
     have_pending_ = false;  // a spin supersedes a scheduled frame
     for (int i = 0; i < N_COLUMNS; ++i) {
+        if (is_excluded(i)) continue;
         // RING_INVALID is what an open-loop move lands on, so recording it
         // stops the convergence pass later in this same tick from posting a
         // `go` over the spin it just started.  With zero_hold_s = 0 that was
@@ -135,6 +138,7 @@ void FrameScheduler::tick(int64_t now_ms) {
     // brings it back - and it also lands the post-spin choreography (index
     // unknown after open-loop) and retries anything the mailbox rejected.
     for (int i = 0; i < N_COLUMNS; ++i) {
+        if (is_excluded(i)) continue;
         const size_t k = static_cast<size_t>(i);
         const MotionPort::Col c = port_.col(i);
         const int want = desired_.idx[k];
@@ -153,6 +157,7 @@ void FrameScheduler::tick(int64_t now_ms) {
 bool FrameScheduler::settled() {
     if (!have_desired_ || have_pending_) return false;
     for (int i = 0; i < N_COLUMNS; ++i) {
+        if (is_excluded(i)) continue;  // a hole is settled by definition
         const MotionPort::Col c = port_.col(i);
         if (c.state != AxisState::Idle || c.index != desired_.idx[static_cast<size_t>(i)]) {
             return false;

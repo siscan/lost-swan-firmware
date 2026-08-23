@@ -681,6 +681,90 @@ void test_mode_set_message_requires_message() {
     FACES(r, "eye|blank|blank|blank|blank");
 }
 
+
+// --------------------------------------------------------------------------
+// Maintenance mode (spec 5.9): a deliberate override, never inferred
+// --------------------------------------------------------------------------
+void test_maintenance_suspends_everything() {
+    Rig r;
+    r.configure(cfg_minutely());
+    r.begin_at(utc_ms(2026, 1, 15, 17, 0, 0));
+    r.run_to(r.time.utc_ms + 2000);
+    const size_t gos_before = r.port.gos.size();
+    CHECK(gos_before > 0);  // the clock was rendering
+
+    CHECK(r.mm.cmd_maintenance(true, r.time.utc_ms).ok);
+    CHECK(r.mm.maintenance());
+
+    // Nothing auto-moves for a full simulated hour: no clock render, no
+    // land-on-tick boundary, no scheduler convergence.  Someone has their
+    // hands in the mechanism.
+    r.port.gos.clear();
+    r.run_to(r.time.utc_ms + 3600 * 1000);
+    CHECK_EQ(r.port.gos.size(), 0u);
+
+    // ... and time keeps passing, so leaving does not replay an hour of ticks
+    // as a burst.  The clock renders the CURRENT minute, once.
+    CHECK(r.mm.cmd_maintenance(false, r.time.utc_ms).ok);
+    CHECK(!r.mm.maintenance());
+    r.run_to(r.time.utc_ms + 500);
+    CHECK(r.port.gos.size() > 0);
+    CHECK(r.port.gos.size() <= static_cast<size_t>(N_COLUMNS));
+}
+
+void test_maintenance_survives_and_blocks_countdown() {
+    Rig r;
+    r.begin_at(utc_ms(2026, 1, 15, 17, 0, 0));
+    // A countdown running when maintenance is entered keeps its deadline -
+    // the deadline is absolute and nothing about a repair changes when it
+    // expires - but nothing is DRIVEN while the repair is happening.
+    CHECK(r.mm.cmd_countdown_start(r.time.utc_ms).ok);
+    CHECK(r.mm.cd_phase() == CdPhase::Running);
+    const int64_t target = r.mm.cd_target();
+
+    CHECK(r.mm.cmd_maintenance(true, r.time.utc_ms).ok);
+    r.port.gos.clear();
+    r.run_to(r.time.utc_ms + 120 * 1000);
+    CHECK_EQ(r.port.gos.size(), 0u);
+    CHECK_EQ(r.mm.cd_target(), target);  // untouched
+
+    CHECK(r.mm.cmd_maintenance(false, r.time.utc_ms).ok);
+    r.run_to(r.time.utc_ms + 1000);
+    CHECK(r.port.gos.size() > 0);
+}
+
+void test_excluded_columns_leave_a_hole() {
+    Rig r;
+    r.begin_at(utc_ms(2026, 1, 15, 17, 0, 0));
+    // Column 3 disabled: the mode keeps running, the renderer keeps producing
+    // five indices, and exactly one column is never commanded.  The preference
+    // Nico asked for, made testable.  A preset is the probe because it moves
+    // ALL FIVE columns - a clock tick would only move the ones whose digit
+    // changed, and would pass whether the hole worked or not.
+    r.mm.cmd_set_excluded(0b01000, r.time.utc_ms);
+    r.port.gos.clear();
+    CHECK(r.mm.cmd_preset("qmarks", r.time.utc_ms).ok);
+    r.run_to(r.time.utc_ms + 200);
+    CHECK_EQ(r.port.gos.size(), static_cast<size_t>(N_COLUMNS - 1));
+    for (const auto& g : r.port.gos) CHECK(g.col != 3);
+
+    // The mode is untouched: a hole does not halt the display.  (The clock
+    // moves only the columns whose digit changed, so the count here is not
+    // fixed - the invariant that matters is that column 3 is never among them.)
+    CHECK(r.mm.cmd_mode_set(Mode::Clock, r.time.utc_ms).ok);
+    CHECK(r.mm.mode() == Mode::Clock);
+    r.port.gos.clear();
+    r.run_to(r.time.utc_ms + 61 * 1000);
+    for (const auto& g : r.port.gos) CHECK(g.col != 3);
+
+    // Re-enabling brings it straight back - no reboot, no re-home dance.
+    r.mm.cmd_set_excluded(0, r.time.utc_ms);
+    r.port.gos.clear();
+    CHECK(r.mm.cmd_preset("qmarks", r.time.utc_ms).ok);
+    r.run_to(r.time.utc_ms + 200);
+    CHECK_EQ(r.port.gos.size(), static_cast<size_t>(N_COLUMNS));
+}
+
 }  // namespace
 
 void run_tests() {
@@ -705,4 +789,7 @@ void run_tests() {
     test_time_validity_gating();
     test_time_step_preserves_message_dwell();
     test_mode_set_message_requires_message();
+    test_maintenance_suspends_everything();
+    test_maintenance_survives_and_blocks_countdown();
+    test_excluded_columns_leave_a_hole();
 }

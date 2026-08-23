@@ -62,6 +62,17 @@ public:
 
     void set_timing(Timing t) { timing_ = t; }
 
+    // Columns the scheduler must not command at all: bit i set = column i is
+    // excluded (spec 5.9, a DISABLED column).  The renderers above still
+    // produce a full five-column frame - modes know nothing about this - and
+    // the hole is simply never issued, which is what keeps the mode running
+    // with a gap rather than failing wholesale.
+    void set_excluded(uint8_t mask) { excluded_ = mask; }
+    uint8_t excluded() const { return excluded_; }
+    bool is_excluded(int col) const {
+        return (excluded_ & static_cast<uint8_t>(1u << col)) != 0;
+    }
+
     // The lead the longest column needs to land frame `f` from what is
     // displayed now.  Moving columns are measured from their destination;
     // columns with an unknown index (post-spin) count the full wrap.
@@ -115,6 +126,7 @@ private:
     // reasons from a snapshot its own command has already invalidated.
     static constexpr int kNotPosted = -2;
     std::array<int, N_COLUMNS> posted_{};
+    uint8_t excluded_ = 0;
     // The tick `posted_` belongs to.  show() and tick() both stamp it, and
     // whichever runs first at a new timestamp clears the record - so a frame
     // issued after the convergence pass in the SAME tick still sees what that
