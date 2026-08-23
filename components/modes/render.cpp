@@ -71,7 +71,15 @@ bool seconds_mode_from_name(std::string_view s, SecondsMode& out) {
 
 int countdown_step_s(SecondsMode mode, int remaining_s, int live_s) {
     if (mode == SecondsMode::Minutes) return 60;
-    if (remaining_s > live_s) return 60;
+    // Floored to a whole minute, and NOT merely as tidiness: with live_s = 250
+    // the quiet phase shows floor(251/60)*60 = 240 and the first live value is
+    // 250, so the display would count UP - paid for by a 45-flip borrow on
+    // column 4 and a 16-flip wrap on column 5, a visible wrong-direction whirl
+    // in the middle of the four-minute warning.  Flooring here makes the value
+    // monotonic for ANY configured live_s; the API rejects non-multiples too,
+    // so a bad setting is refused rather than silently altered, but a stale
+    // NVS value still cannot break the invariant.
+    if (remaining_s > (live_s / 60) * 60) return 60;
     return mode == SecondsMode::Seconds ? 1 : 10;
 }
 

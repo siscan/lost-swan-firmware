@@ -13,6 +13,7 @@
 
 #include <array>
 #include <atomic>
+#include <functional>
 #include <mutex>
 #include <string>
 #include <string_view>
@@ -85,6 +86,10 @@ struct ModesConfig {
 class ModeManager {
 public:
     static constexpr int COUNTDOWN_S = 6480;  // 108:00
+    // The furthest ahead a deadline may be set.  Guards against a millisecond
+    // epoch, which truncates to a negative int remaining and parks the display
+    // on 000:00 while claiming to run.
+    static constexpr int64_t MAX_TARGET_AHEAD_S = 86400;
     static constexpr const char* THE_NUMBERS = "4 8 15 16 23 42";
 
     ModeManager(const RingSet& ring, FrameScheduler& sched, TimeSource& time,
@@ -127,6 +132,22 @@ public:
     Result cmd_display_frame(const Frame& f, int64_t utc_ms);  // no mode change
     Result cmd_clock_format(bool h24, int64_t utc_ms);
 
+    // Adopt an uploaded ring table.  MODES TASK ONLY.  `swap` is invoked with
+    // the mode lock held and returns true when it actually swapped: that is
+    // what keeps a command arriving from the CLI or the HTTP task from reading
+    // the table mid-assignment, since every other entry point takes the same
+    // lock.  On a real swap the render markers are invalidated and the frame
+    // re-issued - a software table change moves no drums, so without this the
+    // columns stay parked on slots chosen from the OLD table until whatever
+    // renders next, which in message, preset, reveal or countdown-idle is
+    // never.
+    Result cmd_ring_swap(const std::function<bool()>& swap, int64_t utc_ms);
+
+    // The active POSIX TZ string, read under the lock.  ModeManager owns it;
+    // a mirrored copy elsewhere would be written by one task and read by
+    // another with nothing between them.
+    std::string tz_string() const;
+
     // Calibration walk (spec 5.6, Calibrate page): step `col` forward from
     // index `from` towards `to` in increments of `step`, dwelling `dwell_s` at
     // each stop.  Forward-only like every other move.  While a ramp runs it
@@ -160,6 +181,7 @@ private:
     CueSink& cues_;
     ModesConfig cfg_;
     TimeZone tz_;  // default-constructed = UTC0 until set_tz
+    std::string tz_str_;  // the string it was parsed from, for reporting
 
     mutable std::mutex mu_;  // serializes every public entry point
 
@@ -240,6 +262,7 @@ private:
     void tick_clock(int64_t utc_ms);
     void tick_message(int64_t utc_ms);
     void tick_countdown(int64_t utc_ms);
+    void tick_countdown_offscreen(int64_t utc_ms);
     // A fresh set (execute/start/set_target): bumps seq and persists.  A past
     // target lands in Reveal SILENTLY - the choreography belongs to the
     // moment of zero, which already happened.

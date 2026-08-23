@@ -97,6 +97,7 @@ bool ModeManager::set_tz(std::string_view posix_tz) {
     const std::lock_guard<std::mutex> lock(mu_);
     const Enter witness(*this);
     tz_ = tz;
+    tz_str_.assign(posix_tz);
     rendered_key_ = RENDER_NONE;  // re-render with the new zone
     return true;
 }
@@ -222,6 +223,14 @@ void ModeManager::tick_locked(int64_t utc_ms) {
         enter_mode(Mode::Countdown, utc_ms);
         return;  // enter_mode already ticked
     }
+
+    // The deadline runs whatever is on the display.  enter_mode deliberately
+    // keeps a Running countdown alive across a mode switch, so if only the
+    // countdown MODE advanced it, switching to the clock mid-run would skip
+    // the cues and the zero entirely - and then fire all of them at once
+    // whenever countdown mode was next entered, possibly days later.  Cues and
+    // phase are unconditional; only the rendering is mode-gated.
+    if (mode_ != Mode::Countdown) tick_countdown_offscreen(utc_ms);
 
     if (ramp_.active) {
         tick_ramp(utc_ms);
@@ -358,6 +367,39 @@ Frame ModeManager::reveal_frame() const {
     return f;
 }
 
+// The cue and phase half of tick_countdown, run while some other mode owns the
+// display.  Deliberately issues no frames: the clock (or a message) is what
+// should be showing.  Audio still plays - spec 7.3 puts the cues on the
+// deadline, not on the visible mode - and the phase advances so that entering
+// countdown mode later shows the reveal, not a replay of the alarm.
+void ModeManager::tick_countdown_offscreen(int64_t utc_ms) {
+    if (cd_.phase != CdPhase::Running) return;
+    const int64_t rem_ms = cd_.target_utc * 1000 - utc_ms;
+
+    if (!cue_warn4_ && rem_ms <= 240 * 1000) {
+        cue_warn4_ = true;
+        cues_.on_cue(Cue::Warn4Min);
+    }
+    if (!cue_warn1_ && rem_ms <= 60 * 1000) {
+        cue_warn1_ = true;
+        cues_.on_cue(Cue::Warn1Min);
+    }
+    if (rem_ms > 0) return;
+
+    if (!cue_zero_) {
+        cue_zero_ = true;
+        cues_.on_cue(Cue::SystemFailure);
+    }
+    // No spin and no 000:00 - the columns are showing something else, and
+    // seizing them would be a countdown overriding a mode it does not own.
+    // Land straight in Reveal so a later mode.set countdown shows the reveal
+    // rather than replaying the choreography.
+    cd_.phase = CdPhase::Reveal;
+    spin_started_ = true;
+    cd_shown_ = SHOWN_NONE;
+    persist();
+}
+
 void ModeManager::tick_countdown(int64_t utc_ms) {
     const SecondsMode mode = cfg_.seconds_mode;
     const int live_s = cfg_.seconds_live_s;
@@ -450,7 +492,7 @@ void ModeManager::tick_countdown(int64_t utc_ms) {
         cd_.phase = CdPhase::Spin;
         if (!spin_started_) {
             spin_started_ = true;
-            sched_.spin_all(cfg_.alarm_flaps_s, cfg_.spin_s);
+            sched_.spin_all(cfg_.alarm_flaps_s, cfg_.spin_s, utc_ms);
         }
     }
     if (cd_.phase == CdPhase::Spin && since_zero >= hold_ms + spin_ms) {
@@ -554,6 +596,14 @@ ModeManager::Result ModeManager::cmd_countdown_set_target(int64_t target_utc, in
     const Enter witness(*this);
     if (target_utc <= 0) return {false, "bad epoch"};
     if (!time_.valid()) return {false, "time not synced"};
+    // A millisecond epoch is the obvious integration mistake, and it used to
+    // park the display on 000:00 while reporting `running`: rem_ms/1000
+    // truncates to int and wraps negative.  Anything beyond a day is not a
+    // countdown for this device.
+    const int64_t now_s = utc_ms / 1000;
+    if (target_utc <= now_s || target_utc > now_s + MAX_TARGET_AHEAD_S) {
+        return {false, "epoch out of range"};
+    }
     countdown_arm(target_utc, utc_ms);
     enter_mode(Mode::Countdown, utc_ms);
     return {true, nullptr};
@@ -641,6 +691,27 @@ int ModeManager::cal_ramp_column() const {
     const std::lock_guard<std::mutex> lock(mu_);
     const Enter witness(*this);
     return ramp_.active ? ramp_.col : -1;
+}
+
+ModeManager::Result ModeManager::cmd_ring_swap(const std::function<bool()>& swap,
+                                               int64_t utc_ms) {
+    const std::lock_guard<std::mutex> lock(mu_);
+    const Enter witness(*this);
+    if (!swap || !swap()) return {true, nullptr};  // nothing was staged
+
+    // The drums have not moved, but every index they are parked on was chosen
+    // from a table that no longer exists.  Re-render from scratch.
+    rendered_key_ = RENDER_NONE;
+    cd_shown_ = SHOWN_NONE;
+    cd_scheduled_land_ = 0;
+    tick_locked(utc_ms);
+    return {true, nullptr};
+}
+
+std::string ModeManager::tz_string() const {
+    const std::lock_guard<std::mutex> lock(mu_);
+    const Enter witness(*this);
+    return tz_str_;
 }
 
 ModeManager::Result ModeManager::cmd_clock_format(bool h24, int64_t utc_ms) {
