@@ -11,6 +11,8 @@
 #include <string>
 #include <string_view>
 
+#include "ring/json_lite.h"
+
 namespace swan {
 namespace json {
 
@@ -117,6 +119,37 @@ private:
         out_ += '"';
     }
 };
+
+// Re-emits a parsed document.  Lets an opaque sub-object be carried through a
+// component that does not understand it - the ring's colour schemes travel
+// from ring.json to the browser this way, and firmware never interprets them.
+inline void serialize_into(const Value& v, Writer& w) {
+    switch (v.type) {
+        case Type::Null:  w.null(); break;
+        case Type::Bool:  w.boolean(v.boolean); break;
+        case Type::Int:   w.num(v.number); break;
+        case Type::Str:   w.str(v.str); break;
+        case Type::Array:
+            w.arr();
+            for (const Value& e : v.items) serialize_into(e, w);
+            w.end_arr();
+            break;
+        case Type::Object:
+            w.obj();
+            for (const auto& m : v.members) {
+                w.key(m.first);
+                serialize_into(m.second, w);
+            }
+            w.end_obj();
+            break;
+    }
+}
+
+inline std::string serialize(const Value& v) {
+    Writer w;
+    serialize_into(v, w);
+    return w.take();
+}
 
 }  // namespace json
 }  // namespace swan

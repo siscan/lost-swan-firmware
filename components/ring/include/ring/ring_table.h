@@ -139,4 +139,13 @@ inline constexpr const RingSlot* RING_TABLE_FOR_COLUMN[RING_COLUMN_COUNT] = {
     RING_TABLE_A, RING_TABLE_A, RING_TABLE_A, RING_TABLE_A, RING_TABLE_B,
 };
 
+// Presentation only - the drums' colour schemes, so the web UI and the
+// simulator mirror what the wall actually looks like even on a board that
+// has no ring.json yet.  Firmware behaviour never reads these.
+inline constexpr const char* RING_SCHEMES_JSON =
+    "{\"minutes\":{\"card\":{\"default\":\"#181818\"},\"ink\":{\"default\":\"#e8e4da\",\"glyph\":\"#b03a2e\"}},\"seconds\":{\"card\":{\"default\":\"#e8e4da\",\"glyph\":\"#b03a2e\"},\"ink\":{\"default\":\"#181818\"}}}";
+inline constexpr const char* RING_COLUMN_SCHEME[RING_COLUMN_COUNT] = {
+    "minutes", "minutes", "minutes", "seconds", "seconds",
+};
+
 }  // namespace swan

@@ -1,6 +1,7 @@
 #include "ring/ring_runtime.h"
 
 #include "ring/json_lite.h"
+#include "ring/json_write.h"
 
 namespace swan {
 namespace {
@@ -235,6 +236,10 @@ RingSet RingSet::compiled_fallback() {
                 RingTable::compiled(RING_TABLE_FOR_COLUMN[i], RING_SLOT_COUNT);
         }
     }
+    s.schemes_json_ = RING_SCHEMES_JSON;
+    for (int i = 0; i < N_COLUMNS; ++i) {
+        s.scheme_[static_cast<size_t>(i)] = RING_COLUMN_SCHEME[i];
+    }
     s.from_json_ = false;
     return s;
 }
@@ -270,10 +275,28 @@ bool RingSet::load_json(std::string_view text, std::string* err) {
         }
     }
 
-    RingSet candidate;
+    RingSet candidate = compiled_fallback();  // presentation defaults come along
     candidate.shared_ = std::move(shared);
     candidate.per_col_ = std::move(per);
     candidate.from_json_ = true;
+
+    // Presentation, carried through verbatim and never interpreted here.  A
+    // malformed or missing block is not an error: the drums still turn, they
+    // just render in the fallback colours.
+    if (const json::Value* sch = root.get("schemes")) {
+        if (sch->type == json::Type::Object) candidate.schemes_json_ = json::serialize(*sch);
+    }
+    if (const json::Value* cols = root.get("columns")) {
+        if (const auto* arr = cols->as_array()) {
+            for (size_t i = 0; i < arr->size() && i < N_COLUMNS; ++i) {
+                const json::Value* n = (*arr)[i].get("scheme");
+                if (n != nullptr && n->type == json::Type::Str) {
+                    candidate.scheme_[i] = std::string(n->as_str());
+                }
+            }
+        }
+    }
+
     // Validate BEFORE publishing: a table that cannot render a role the column
     // will be asked for must fail here, not at render time (spec 4).
     if (!candidate.validate_roles(err)) return false;

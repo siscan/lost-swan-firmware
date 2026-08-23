@@ -111,12 +111,24 @@ public:
 
     bool loaded_from_json() const { return from_json_; }
 
+    // Presentation only, carried through so the web UI and the simulator can
+    // mirror the drums' actual colours (cols 4-5 are inverted).  Firmware
+    // behaviour never reads either: they exist to be handed to a browser.
+    // `schemes_json` is a JSON object verbatim from ring.json (or the
+    // generated fallback); `scheme` names the entry a column uses.
+    const std::string& schemes_json() const { return schemes_json_; }
+    const std::string& scheme(int column) const {
+        return scheme_[static_cast<size_t>(column)];
+    }
+
     static constexpr int AMPM_COLUMN = 0;              // spec 7.1
     static constexpr int WIFI_COLUMN = N_COLUMNS / 2;  // centre column
 
 private:
     std::shared_ptr<const RingTable> shared_;
     std::array<std::shared_ptr<const RingTable>, N_COLUMNS> per_col_{};
+    std::string schemes_json_;
+    std::array<std::string, N_COLUMNS> scheme_{};
     bool from_json_ = false;
 };
 
