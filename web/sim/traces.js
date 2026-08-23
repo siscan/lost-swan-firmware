@@ -643,11 +643,11 @@ window.SWAN_RING = {
   },
   "seconds": {
    "card": {
-    "default": "#e8e4da",
-    "glyph": "#b03a2e"
+    "default": "#e8e4da"
    },
    "ink": {
-    "default": "#181818"
+    "default": "#181818",
+    "glyph": "#b03a2e"
    }
   }
  }
