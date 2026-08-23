@@ -1,0 +1,227 @@
+/* LOST Swan split-flap - web UI (spec 10.2).  Swan-terminal aesthetic:
+   phosphor green on near-black, monospace, no framework, no web fonts.
+   Every byte here ships in LittleFS, so it stays small on purpose. */
+
+:root {
+  --bg: #0b0f0d;
+  --panel: #141a16;
+  --edge: #2c352c;
+  --text: #c8d2c4;
+  --dim: #6a7a6a;
+  --acc: #87a05a;
+  --warn: #d8b04a;
+  --bad: #c05a4a;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Courier New", Courier, monospace;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+a { color: var(--acc); }
+
+header {
+  border-bottom: 1px solid var(--edge);
+  padding: 14px 18px 0;
+}
+
+h1 {
+  font-size: 15px;
+  letter-spacing: 0.28em;
+  color: var(--acc);
+  font-weight: normal;
+  margin: 0 0 10px;
+}
+
+h2 {
+  font-size: 13px;
+  letter-spacing: 0.18em;
+  color: var(--acc);
+  font-weight: normal;
+  margin: 22px 0 8px;
+  text-transform: uppercase;
+}
+
+h2:first-child { margin-top: 0; }
+
+/* --- the mirror ------------------------------------------------------- */
+#display {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  margin: 18px 0 10px;
+  flex-wrap: nowrap;
+}
+
+.flap-gap { width: 22px; flex: 0 0 22px; }
+
+.flap-col {
+  width: 78px;
+  height: 106px;
+  perspective: 400px;
+  flex: 0 0 78px;
+}
+
+.flap-card {
+  width: 100%;
+  height: 100%;
+  border-radius: 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 46px;
+  font-weight: bold;
+  position: relative;
+  overflow: hidden;
+  text-align: center;
+  box-shadow: 0 4px 14px #0009, inset 0 -1px 0 #fff2;
+  transition: transform 40ms linear;
+}
+
+.flap-card::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 2px;
+  background: #0007;
+}
+
+.flap-card.small {
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0 4px;
+  word-break: break-word;
+}
+
+.flap-card.flip { transform: scaleY(0.12); }
+
+#statusline {
+  display: flex;
+  gap: 18px;
+  justify-content: center;
+  flex-wrap: wrap;
+  color: var(--dim);
+  font-size: 12px;
+  padding-bottom: 12px;
+}
+
+#statusline b { color: var(--text); font-weight: normal; }
+#link.bad { color: var(--bad); }
+#link.ok { color: var(--acc); }
+
+/* --- navigation ------------------------------------------------------- */
+nav {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  padding: 0 18px;
+  border-bottom: 1px solid var(--edge);
+}
+
+nav button {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--dim);
+  font: inherit;
+  letter-spacing: 0.14em;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+nav button:hover { color: var(--text); }
+nav button.active { color: var(--acc); border-bottom-color: var(--acc); }
+
+main { padding: 18px; max-width: 900px; }
+section { display: none; }
+section.active { display: block; }
+
+/* --- controls --------------------------------------------------------- */
+button, input, select {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--edge);
+  font: inherit;
+  padding: 6px 10px;
+}
+
+button { cursor: pointer; }
+button:hover:not(:disabled) { border-color: var(--acc); color: var(--acc); }
+button:disabled { opacity: 0.4; cursor: default; }
+
+button.primary { border-color: var(--acc); color: var(--acc); }
+button.small { padding: 3px 7px; font-size: 12px; }
+
+input[type="range"] { padding: 0; background: none; border: none; width: 200px; vertical-align: middle; }
+input[type="file"] { border: none; padding: 0; }
+
+label { color: var(--dim); }
+
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 8px 0; }
+.row > label { min-width: 168px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+
+.card {
+  border: 1px solid var(--edge);
+  background: var(--panel);
+  padding: 10px 12px;
+}
+
+.card h3 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  color: var(--acc);
+  font-weight: normal;
+  letter-spacing: 0.12em;
+}
+
+.hint { color: var(--dim); font-size: 12px; margin: 4px 0 10px; }
+.hint.warn { color: var(--warn); }
+
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--edge); }
+th { color: var(--dim); font-weight: normal; }
+td.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* --- terminal --------------------------------------------------------- */
+#numbers {
+  font-size: 22px;
+  letter-spacing: 0.3em;
+  width: 100%;
+  max-width: 420px;
+  text-align: center;
+}
+
+#toast {
+  position: fixed;
+  left: 50%;
+  bottom: 22px;
+  transform: translateX(-50%);
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  padding: 8px 16px;
+  opacity: 0;
+  transition: opacity 160ms;
+  pointer-events: none;
+  max-width: 90vw;
+}
+
+#toast.show { opacity: 1; }
+#toast.ok { border-color: var(--acc); color: var(--acc); }
+#toast.err { border-color: var(--bad); color: var(--bad); }
+
+@media (max-width: 620px) {
+  .flap-col { width: 54px; height: 74px; flex: 0 0 54px; }
+  .flap-card { font-size: 30px; }
+  .flap-card.small { font-size: 10px; }
+  .row > label { min-width: 100%; }
+}

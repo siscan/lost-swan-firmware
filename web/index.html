@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LOST Swan · Split-Flap</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header>
+  <h1>DHARMA · SWAN · STATION 3</h1>
+  <div id="display"></div>
+  <div id="statusline">
+    <span>mode <b id="s-mode">—</b></span>
+    <span>countdown <b id="s-cd">—</b></span>
+    <span>clock <b id="s-clock">—</b></span>
+    <span>ring <b id="s-ring">—</b></span>
+    <span id="link" class="bad">disconnected</span>
+  </div>
+</header>
+
+<nav>
+  <button data-page="terminal" class="active">TERMINAL</button>
+  <button data-page="modes">MODES</button>
+  <button data-page="calibrate">CALIBRATE</button>
+  <button data-page="diagnostics">DIAGNOSTICS</button>
+  <button data-page="settings">SETTINGS</button>
+  <button data-page="update">UPDATE</button>
+</nav>
+
+<main>
+
+<!-- ================= TERMINAL ================= -->
+<section id="page-terminal" class="active">
+  <h2>Execute</h2>
+  <p class="hint">Enter the Numbers, then EXECUTE. Correct entry sets the deadline
+     108:00 from now — start or mid-run reset, exactly as the show.</p>
+  <div class="row">
+    <input id="numbers" placeholder="4 8 15 16 23 42" autocomplete="off" spellcheck="false">
+  </div>
+  <div class="row">
+    <button id="btn-execute" class="primary">EXECUTE</button>
+    <button id="btn-cancel">CANCEL</button>
+    <button data-cmd='{"cmd":"preset.set","payload":"qmarks"}'>?????</button>
+  </div>
+
+  <h2>Remaining</h2>
+  <div class="row"><span id="t-remaining" style="font-size:30px">—</span></div>
+  <p class="hint">The countdown is a deadline held by the display, not a ticking
+     timer: a power cycle resumes it, and a terminal prop on MQTT renders the
+     same target.</p>
+</section>
+
+<!-- ================= MODES ================= -->
+<section id="page-modes">
+  <h2>Mode</h2>
+  <div class="row">
+    <button data-cmd='{"cmd":"mode.set","payload":"clock"}'>CLOCK</button>
+    <button data-cmd='{"cmd":"mode.set","payload":"message"}'>MESSAGE</button>
+    <button data-cmd='{"cmd":"mode.set","payload":"countdown"}'>COUNTDOWN</button>
+  </div>
+  <p class="hint">Countdown switches to an idle 108:00 until it is started.
+     MESSAGE needs a message to have been set first.</p>
+
+  <h2>Message</h2>
+  <div class="row" id="msg-pickers"></div>
+  <div class="row">
+    <label for="msg-dwell">dwell (s)</label>
+    <input id="msg-dwell" type="number" min="1" max="86400" value="600" style="width:110px">
+    <label><input id="msg-hold" type="checkbox"> hold until changed</label>
+    <button id="btn-message" class="primary">SHOW MESSAGE</button>
+  </div>
+  <p class="hint">Each picker offers only what that column's drum carries —
+     column 5's ring is a different part number and its glyph set differs.</p>
+
+  <h2>Presets</h2>
+  <div class="row">
+    <button data-cmd='{"cmd":"preset.set","payload":"qmarks"}'>?????</button>
+    <button data-cmd='{"cmd":"preset.set","payload":"blank"}'>BLANK</button>
+    <button data-cmd='{"cmd":"preset.set","payload":"reveal"}'>REVEAL</button>
+    <button data-cmd='{"cmd":"preset.set","payload":"wifi"}'>WIFI GLYPH</button>
+  </div>
+
+  <h2>Countdown</h2>
+  <div class="row">
+    <button data-cmd='{"cmd":"countdown.start"}'>START / RESET</button>
+    <button data-cmd='{"cmd":"countdown.cancel"}'>CANCEL</button>
+  </div>
+</section>
+
+<!-- ================= CALIBRATE ================= -->
+<section id="page-calibrate">
+  <h2>Columns</h2>
+  <p class="hint">Nudge until the blank card hangs flat against the bezel lip and
+     the next card is fully retained, then SAVE. Rotation is forward only, so a
+     nudge never reverses the drum.</p>
+  <div class="grid" id="cal-cards"></div>
+  <div class="row">
+    <button data-cmd='{"cmd":"motion.rehome"}'>REHOME ALL</button>
+    <button data-cmd='{"cmd":"motion.save"}' class="primary">SAVE OFFSETS</button>
+  </div>
+
+  <h2>Index walk</h2>
+  <p class="hint">Steps a column through its ring so the expected character can be
+     checked against the drum. On column 5 a digit legitimately appears at two
+     slots 25 apart — that is the double block, not a fault (docs/BRINGUP.md).</p>
+  <div class="row">
+    <label for="ramp-col">column</label>
+    <select id="ramp-col"></select>
+    <label for="ramp-from">from</label><input id="ramp-from" type="number" value="0" min="0" max="49" style="width:74px">
+    <label for="ramp-to">to</label><input id="ramp-to" type="number" value="49" min="0" max="49" style="width:74px">
+    <label for="ramp-step">step</label><input id="ramp-step" type="number" value="1" min="1" max="49" style="width:74px">
+    <label for="ramp-dwell">dwell (s)</label><input id="ramp-dwell" type="number" value="2" min="0" max="600" style="width:74px">
+  </div>
+  <div class="row">
+    <button id="btn-ramp" class="primary">START WALK</button>
+    <button id="btn-ramp-stop">STOP</button>
+    <span id="ramp-state" class="hint"></span>
+  </div>
+
+  <h2>Test spin</h2>
+  <div class="row">
+    <label for="spin-col">column</label>
+    <select id="spin-col"></select>
+    <label for="spin-flaps">flaps/s</label><input id="spin-flaps" type="number" value="20" min="1" max="40" style="width:74px">
+    <label for="spin-secs">seconds</label><input id="spin-secs" type="number" value="3" min="1" max="60" style="width:74px">
+    <button id="btn-spin">SPIN</button>
+  </div>
+  <p class="hint">Open loop: the displayed index becomes unknown, and the active
+     mode moves the column back to the current frame when the spin ends.</p>
+
+  <h2>Speeds — live</h2>
+  <p class="hint">These apply immediately so the bench can hear the difference.
+     Persisting them to NVS is the separate SAVE below.</p>
+  <div class="row"><label for="p-normal">flaps_s_normal <b id="v-normal"></b></label>
+    <input id="p-normal" type="range" min="1" max="40" step="1"></div>
+  <div class="row"><label for="p-alarm">flaps_s_alarm <b id="v-alarm"></b></label>
+    <input id="p-alarm" type="range" min="1" max="40" step="1"></div>
+  <div class="row"><label for="p-home">flaps_s_home <b id="v-home"></b></label>
+    <input id="p-home" type="range" min="1" max="40" step="1"></div>
+  <div class="row"><label for="p-accel">motion.accel <b id="v-accel"></b></label>
+    <input id="p-accel" type="range" min="10000" max="300000" step="1000"></div>
+  <div class="row">
+    <button id="btn-motion-save" class="primary">SAVE SPEEDS TO NVS</button>
+  </div>
+</section>
+
+<!-- ================= DIAGNOSTICS ================= -->
+<section id="page-diagnostics">
+  <h2>Columns</h2>
+  <table>
+    <thead><tr>
+      <th>col</th><th>state</th><th>face</th><th class="num">index</th><th class="num">dest</th>
+      <th class="num">cal</th><th class="num">revs</th><th class="num">flips</th>
+      <th class="num">minor</th><th class="num">major</th><th class="num">faults</th>
+      <th class="num">h2h</th><th class="num">err</th><th>hall</th>
+    </tr></thead>
+    <tbody id="diag-rows"></tbody>
+  </table>
+  <p class="hint">hall_to_hall should read 8242–8243 µsteps. A consistently
+     different value means the microstep setting or the gear teeth differ from
+     spec §3 — the drum wins, the spec gets corrected.</p>
+
+  <h2>System</h2>
+  <div class="grid" id="diag-sys"></div>
+</section>
+
+<!-- ================= SETTINGS ================= -->
+<section id="page-settings">
+  <h2>Clock</h2>
+  <div class="row">
+    <label for="set-h24">24-hour</label>
+    <input id="set-h24" type="checkbox">
+  </div>
+  <div class="row">
+    <label for="set-tz">POSIX TZ</label>
+    <input id="set-tz" style="width:280px" spellcheck="false">
+  </div>
+  <div class="row">
+    <label for="set-gran">granularity (min)</label>
+    <input id="set-gran" type="number" min="1" max="60" style="width:90px">
+    <span class="hint" id="gran-hint"></span>
+  </div>
+  <p class="hint">The rings descend, so a clock tick is the expensive direction:
+     ~39,500 flips/day at 1 minute against ~5,900 at 15.</p>
+
+  <h2>Countdown</h2>
+  <div class="row">
+    <label for="set-secmode">seconds mode</label>
+    <select id="set-secmode">
+      <option value="seconds">seconds — MMM:SS, live</option>
+      <option value="tens">tens — MMM:S0, col 5 parked</option>
+    </select>
+  </div>
+  <div class="row">
+    <label for="set-zero">zero hold (s)</label><input id="set-zero" type="number" min="0" max="60" style="width:90px">
+    <label for="set-spin">spin (s)</label><input id="set-spin" type="number" min="0" max="120" style="width:90px">
+    <label for="set-ftimeout">failure timeout (s)</label><input id="set-ftimeout" type="number" min="0" max="86400" style="width:110px">
+  </div>
+  <div class="row">
+    <label><input id="set-cdland" type="checkbox"> countdown moves land on the tick</label>
+  </div>
+  <div class="row">
+    <label><input id="set-clockland" type="checkbox"> clock moves land on the tick</label>
+  </div>
+
+  <h2>Reveal frame</h2>
+  <p class="hint">The five glyphs the columns land on after the alarm spin. Set by
+     NAME, never by index — the same index is a different character on column 5.</p>
+  <div class="row" id="reveal-pickers"></div>
+
+  <h2>Message</h2>
+  <div class="row">
+    <label for="set-dwell">default dwell (s)</label>
+    <input id="set-dwell" type="number" min="1" max="86400" style="width:110px">
+  </div>
+
+  <div class="row">
+    <button id="btn-config-save" class="primary">SAVE SETTINGS TO NVS</button>
+    <span class="hint">Changes above apply live; this persists them.</span>
+  </div>
+
+  <h2>Ring</h2>
+  <div class="row">
+    <span class="hint" id="ring-info"></span>
+  </div>
+  <div class="row">
+    <input id="ring-file" type="file" accept=".json,application/json">
+    <button id="btn-ring-upload">UPLOAD ring.json</button>
+  </div>
+  <p class="hint">The upload is validated into a staging table first; the running
+     table is swapped in by the modes task only if it parses, has exactly 50
+     slots and can render every role its column will be asked for. A bad or
+     truncated upload leaves the display untouched.</p>
+
+  <h2>Network</h2>
+  <p class="hint">WiFi credentials are entered over the serial console this phase
+     (<code>wifi &lt;ssid&gt; &lt;pass&gt;</code>). Captive-portal provisioning,
+     MQTT and Home Assistant discovery arrive in Phase 4.</p>
+
+  <h2>Audio</h2>
+  <p class="hint">Volume, mute and quiet hours arrive with the player in Phase 5.</p>
+</section>
+
+<!-- ================= UPDATE ================= -->
+<section id="page-update">
+  <h2>Firmware update</h2>
+  <p class="hint warn">Stub. OTA with rollback arrives in Phase 4 (spec §10.4);
+     until then flash over USB:</p>
+  <pre class="card">.\build.ps1 -p &lt;PORT&gt; flash monitor</pre>
+  <div class="row">
+    <button data-cmd='{"cmd":"system.reboot"}'>REBOOT</button>
+  </div>
+</section>
+
+</main>
+
+<div id="toast"></div>
+
+<script src="flap.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
