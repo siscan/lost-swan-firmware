@@ -1010,3 +1010,11 @@ reason, so nothing gets re-litigated.
     which is the standing guarantee that no move can produce a reverse DIR.
   - `docs/ref/FIRMWARE_HANDOFF.md` §2 still described the ascending ring; its
     ring section is corrected in place and marked superseded by this spec.
+- 2026-08-22 — **Column 4 is the clock's wear bottleneck, deliberately.**  At
+  the default 15-minute granularity column 4 costs 3,600 flips/day against
+  column 5's 1,200, because column 4 pays ring A's 49-flip increment while
+  column 5 has the cheap 24-flip double-block one.  Giving ring A a second
+  digit block would fix it and would mean another flap reprint; the clock's
+  cost is already accepted, so this asymmetry stands as known and intentional.
+  Recorded so it is not rediscovered as a defect.
+
