@@ -9,6 +9,7 @@
 #include <cstdint>
 
 #include "esp_err.h"
+#include "motion/column_mode.h"
 #include "motion/motion_math.h"
 #include "motion/motion_types.h"
 
@@ -45,6 +46,29 @@ esp_err_t adjust_cal(int col, int32_t delta);
 
 void info(int col, AxisInfo& out);
 bool all_idle();
+
+// --- per-column mode and maintenance (spec 5.9) ---------------------------
+//
+// Applying a config re-arms the ISR masks and, for a column that has just
+// become simulated, resets its modelled drum to a plausible start angle.  A
+// column becoming DISABLED is parked on the home slot first when it is homed
+// and idle, so the hole in the frame reads as a blank flap rather than as a
+// stale digit that a passer-by would read as the time.
+void set_columns(const ColumnConfig& c);
+ColumnConfig columns();
+
+// True when at least one column is simulated.  Everything that reports device
+// state consults this; it is the reason the banner, the boot line, the state
+// payload and `stats` all say so.
+bool any_simulated();
+
+// --- simulated-drum fault injection (spec 5.9) ----------------------------
+// No-ops unless the column is simulated.  `slip` displaces the drum relative
+// to the motor; `miss` swallows the next N Hall edges - inject it before a
+// home for the sensor signature, after one for the jam signature.
+esp_err_t sim_inject_slip(int col, int32_t usteps);
+esp_err_t sim_inject_miss(int col, uint32_t edges);
+esp_err_t sim_clear_faults(int col);  // col < 0 = all
 
 }  // namespace motion
 }  // namespace swan

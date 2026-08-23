@@ -22,6 +22,30 @@ else()
 endif()
 message(STATUS "LOST Swan board: ${SWAN_BOARD}")
 
+# --- Simulated axes (spec 5.9) ----------------------------------------------
+# Compiled IN by default, because the whole point is that it is a RUNTIME
+# choice: a fresh NVS still boots every column real (column_mode.h static-
+# asserts that), and nothing simulates itself by accident.
+#
+# SWAN_RELEASE=1 is the gate for a build that must not be able to simulate at
+# all.  It is an error to ask for both: a release image with the sim compiled
+# in is exactly the thing that could be mistaken for the real display.
+option(SWAN_SIM_AXES "Compile the simulated-drum axes in (runtime-selectable)" ON)
+option(SWAN_RELEASE "Release build: refuse anything that could fake the mechanism" OFF)
+
+if(SWAN_RELEASE AND SWAN_SIM_AXES)
+    message(FATAL_ERROR
+        "SWAN_RELEASE=1 with SWAN_SIM_AXES=ON: a release image must not contain "
+        "simulated axes. Build with -DSWAN_SIM_AXES=OFF.")
+endif()
+
+idf_build_set_property(COMPILE_DEFINITIONS
+                       "SWAN_SIM_AXES=$<BOOL:${SWAN_SIM_AXES}>" APPEND)
+if(SWAN_RELEASE)
+    idf_build_set_property(COMPILE_DEFINITIONS "SWAN_RELEASE=1" APPEND)
+endif()
+message(STATUS "LOST Swan simulated axes: ${SWAN_SIM_AXES}  release: ${SWAN_RELEASE}")
+
 project(lost_swan_firmware)
 
 # --- LittleFS payload (spec 10.2; spec 15 phase 3, step e) -------------------
