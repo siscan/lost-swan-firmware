@@ -106,11 +106,16 @@ function onState(s) {
 // retry count, because a column thrashing through three re-homes and a column
 // quietly parked look identical otherwise.
 function renderMotion(s) {
+  renderRig(s);
   const el = $("motion");
+  const m = s.motion || {};
+  // A disabled column is EXPECTED to sit still.  Reporting it as "not settled"
+  // would train you to ignore the banner, which is the one thing it must never
+  // become. It is reported by the rig strip instead, as configuration.
   const busy = s.cols
     .map((c, i) => ({ i, c }))
-    .filter(({ c }) => c.state !== "IDLE" || c.index < 0);
-  if (busy.length === 0) {
+    .filter(({ c }) => c.mode !== "disabled" && (c.state !== "IDLE" || c.index < 0));
+  if (busy.length === 0 || m.maintenance) {
     el.className = "";
     el.textContent = "";
     return;
@@ -122,7 +127,14 @@ function renderMotion(s) {
   const parts = busy.map(({ i, c }) => {
     const n = "col " + (i + 1);
     if (c.state === "FAULT") {
-      return n + " FAULT" + (c.retry > 0 ? " (gave up after " + c.retry + " re-homes)" : "");
+      // The cause changes what you should DO, so it is in the banner, not
+      // buried in Diagnostics: a jam means stop touching the start button.
+      if (c.cause === "jam") return n + " JAMMED (stopped, not retried)";
+      const why = c.cause === "no_hall" ? " no hall edge — sensor, magnet or wiring"
+                : c.cause === "slip"    ? " lost registration"
+                : "";
+      return n + " FAULT" + why +
+             (c.retry > 0 ? " (gave up after " + c.retry + " re-homes)" : "");
     }
     if (c.state === "HOMING") {
       return n + (c.retry > 0 ? " re-homing " + c.retry + "/3" : " homing");
@@ -131,12 +143,36 @@ function renderMotion(s) {
     if (c.index < 0) return n + " position unknown";
     return n + " " + c.state.toLowerCase();
   });
+  const jammed = busy.some(({ c }) => c.cause === "jam");
   el.className = "show" + (faulted ? " bad" : "");
-  el.innerHTML = (faulted ? "MOTION FAULT — " : "COLUMNS NOT SETTLED — ") +
+  el.innerHTML = (jammed ? "MECHANICAL — " : faulted ? "MOTION FAULT — " : "COLUMNS NOT SETTLED — ") +
       "<b>" + parts.join(" · ") + "</b>" +
-      (faulted ? ". `home &lt;col&gt;` on the console, or REHOME on the Calibrate page."
-               : ". A homing pass takes ~7.5 s; a column tries three times before "
-                 + "giving up, so allow ~30 s from boot.");
+      (jammed ? ". The drum stopped while the motor kept stepping. Clear the "
+                + "obstruction before re-homing — retrying drives the motor into it."
+       : faulted ? ". `home &lt;col&gt;` on the console, or REHOME on the Calibrate page."
+                 : ". A homing pass takes ~7.5 s; a column tries three times before "
+                   + "giving up, so allow ~30 s from boot.");
+}
+
+// The rig strip: what this display IS, as opposed to how it is doing.  Sits
+// above the banner and is deliberately impossible to miss, because a simulated
+// display that looks real is worse than no display at all.
+function renderRig(s) {
+  const el = $("rig");
+  const m = s.motion || {};
+  const bits = [];
+  if (m.maintenance) bits.push("MAINTENANCE — nothing moves on its own");
+  if (m.sim_columns > 0) {
+    const which = s.cols.map((c, i) => (c.mode === "sim" ? i + 1 : 0)).filter(Boolean);
+    bits.push("SIMULATED MOTION on col " + which.join(", ") +
+              " — not driving real hardware");
+  }
+  if (m.disabled_columns > 0) {
+    const which = s.cols.map((c, i) => (c.mode === "disabled" ? i + 1 : 0)).filter(Boolean);
+    bits.push("col " + which.join(", ") + " DISABLED — parked, excluded from frames");
+  }
+  el.className = bits.length ? "show" : "";
+  el.innerHTML = bits.map((b) => "<b>" + b + "</b>").join(" · ");
 }
 
 function renderDiag(s) {
@@ -306,6 +342,55 @@ function renderSettings(s) {
 
   $("ring-info").textContent = "loaded from " + s.ring.source + " · " +
       s.ring.slots + " slots per drum";
+
+  renderColumnModes(s);
+  $("set-maint").checked = !!(s.motion && s.motion.maintenance);
+  $("maint-hint").textContent = s.motion && s.motion.maintenance
+      ? "suspended — nothing is scheduled and nothing re-homes"
+      : "";
+}
+
+// One row per column: what it is, and what it is doing.  Built once and then
+// only updated, so a <select> the pointer is inside is never rebuilt underneath.
+function renderColumnModes(s) {
+  const host = $("col-modes");
+  const N_COLS = s.cols.length;
+  if (host.children.length !== N_COLS) {
+    host.innerHTML = "";
+    for (let i = 0; i < N_COLS; ++i) {
+      const row = el("div", { class: "row" });
+      row.appendChild(el("label", { for: "col-mode-" + i }, "column " + (i + 1)));
+      const sel = el("select", { id: "col-mode-" + i, class: "col-mode" });
+      [["real", "real — drives the hardware"],
+       ["sim", "sim — modelled drum"],
+       ["disabled", "disabled — parked, left out of frames"]].forEach(([v, t]) => {
+        const o = el("option", { value: v }, t);
+        sel.appendChild(o);
+      });
+      sel.addEventListener("change", () => {
+        send("motion.column", { column: i, mode: sel.value });
+      });
+      row.appendChild(sel);
+      row.appendChild(el("span", { class: "hint", id: "col-mode-st-" + i }));
+      host.appendChild(row);
+    }
+  }
+  for (let i = 0; i < N_COLS; ++i) {
+    const sel = $("col-mode-" + i);
+    const c = s.cols[i];
+    if (document.activeElement !== sel) sel.value = c.mode;
+    // Only the "sim" option is gated by the build: greying out the whole
+    // control would hide which of the three is unavailable and why.
+    const opt = sel.querySelector('option[value="sim"]');
+    if (opt) opt.disabled = !(s.motion && s.motion.sim_available);
+    $("col-mode-st-" + i).textContent =
+        c.mode === "disabled" ? "parked, not homed" :
+        c.state === "FAULT" ? "FAULT · " + c.cause :
+        c.state === "IDLE" && c.index >= 0 ? "settled on " + c.face :
+        c.state.toLowerCase() + (c.retry > 0 ? " (attempt " + c.retry + "/3)" : "");
+  }
+  $("col-modes-hint").textContent =
+      s.motion && s.motion.sim_available ? "" : "this image has no simulated axes compiled in";
 }
 
 // Wear comes from the device, which walks a whole day and a whole run through
@@ -446,6 +531,12 @@ function wire() {
   $("set-clockland").onchange = () => pushConfig({ clock_land_on_tick: $("set-clockland").checked });
   $("set-dwell").onchange = () => pushConfig({ msg_dwell_s: +$("set-dwell").value });
   $("btn-config-save").onclick = () => send("config.save");
+
+  // Per-column mode and maintenance, through the same dispatcher as everything
+  // else.  "ALL SIM" is the one-click build-out setup; "ALL REAL" undoes it.
+  $("btn-cols-real").onclick = () => send("motion.column", { all: true, mode: "real" });
+  $("btn-cols-sim").onclick = () => send("motion.column", { all: true, mode: "sim" });
+  $("set-maint").onchange = (e) => send("motion.maintenance", e.target.checked);
 
   // Do not clobber a field while it is being typed into.
   document.querySelectorAll("#page-settings input, #page-settings select").forEach((n) => {

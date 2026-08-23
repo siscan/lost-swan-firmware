@@ -24,6 +24,9 @@
      hunting or faulted is a fact about the whole device, not a Diagnostics
      detail, and at boot there is a ~30 s window in which the display looks
      idle and is actually searching. -->
+<!-- What the display IS, above what it is doing.  A simulated or half-disabled
+     display must never be mistakable for a working one from across the room. -->
+<div id="rig"></div>
 <div id="motion"></div>
 
 <nav>
@@ -175,6 +178,32 @@
 
 <!-- ================= SETTINGS ================= -->
 <section id="page-settings">
+  <h2>Columns</h2>
+  <p class="hint"><b>real</b> drives the hardware. <b>sim</b> runs the same
+     control core against a modelled drum — real timing, real Hall edges, real
+     homing — so everything above the axis layer is exercised with no mechanism
+     attached. <b>disabled</b> parks the column on blank and leaves it out of
+     every frame: the mode keeps running and the display carries a hole. Set by
+     you, never inferred — a fault never disables a column, and it stays a fault
+     until you clear it.</p>
+  <div id="col-modes"></div>
+  <div class="row">
+    <button id="btn-cols-real">ALL REAL</button>
+    <button id="btn-cols-sim">ALL SIM</button>
+    <span class="hint" id="col-modes-hint"></span>
+  </div>
+
+  <h2>Maintenance</h2>
+  <p class="hint">Stops frame scheduling, suspends the modes, and turns off
+     automatic re-homing. Manual commands still work, so a suspect column can be
+     driven by hand from Calibrate. It <em>survives a reboot</em> — pulling power
+     mid-repair must not restart a countdown on top of your hands. Leaving it
+     re-arms everything and re-homes all five.</p>
+  <div class="row">
+    <label><input id="set-maint" type="checkbox"> maintenance mode</label>
+    <span class="hint" id="maint-hint"></span>
+  </div>
+
   <h2>Clock</h2>
   <div class="row">
     <label for="set-h24">24-hour</label>

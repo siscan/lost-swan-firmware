@@ -147,6 +147,26 @@ h2:first-child { margin-top: 0; }
 }
 
 /* --- motion banner: visible from every page ---------------------------- */
+/* The rig strip says what the display IS - simulated, disabled columns, under
+   maintenance.  Deliberately louder than the fault banner: a fault is a
+   temporary condition you will notice anyway, whereas a simulated display
+   looks completely normal, which is the whole hazard. */
+#rig {
+  display: none;
+  margin: 0 0 10px;
+  padding: 7px 18px;
+  background: repeating-linear-gradient(
+      135deg, #2a1d05, #2a1d05 10px, #241903 10px, #241903 20px);
+  border-top: 2px solid var(--warn);
+  border-bottom: 2px solid var(--warn);
+  color: var(--warn);
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  text-align: center;
+}
+#rig.show { display: block; }
+#rig b { font-weight: bold; color: var(--warn); }
+
 #motion {
   display: none;
   margin: 0 0 10px;

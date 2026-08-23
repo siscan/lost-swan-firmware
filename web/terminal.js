@@ -283,18 +283,31 @@ function onState(s) {
 
   // A column that is not settled is a fact about the whole device, so it shows
   // here too - a kiosk never opens the Diagnostics page.
+  // What the display IS comes before how it is doing.  A prop showing a
+  // simulated countdown on a CRT in a corridor must say so on its own face.
+  const m = s.motion || {};
+  const rig = $("rig");
+  const rigBits = [];
+  if (m.maintenance) rigBits.push("MAINTENANCE");
+  if (m.sim_columns > 0) rigBits.push("SIMULATED " + m.sim_columns + "/" + s.cols.length);
+  if (m.disabled_columns > 0) rigBits.push(m.disabled_columns + " DISABLED");
+  rig.style.display = rigBits.length ? "" : "none";
+  rig.textContent = rigBits.join(" · ");
+
   const busy = s.cols
     .map((c, i) => ({ i, c }))
-    .filter(({ c }) => c.state !== "IDLE" || c.index < 0);
+    .filter(({ c }) => c.mode !== "disabled" && (c.state !== "IDLE" || c.index < 0));
   const chip = $("motion");
-  if (busy.length === 0) {
+  if (busy.length === 0 || m.maintenance) {
     chip.style.display = "none";
   } else {
     const faulted = busy.some(({ c }) => c.state === "FAULT");
     const retry = busy.find(({ c }) => c.retry > 0);
     chip.style.display = "";
     chip.className = "chip " + (faulted ? "bad" : "warn");
-    chip.textContent = (faulted ? "FAULT " : "HOMING ") + busy.length + "/" + s.cols.length +
+    const jammed = busy.some(({ c }) => c.cause === "jam");
+    chip.textContent = (jammed ? "JAMMED " : faulted ? "FAULT " : "HOMING ") +
+        busy.length + "/" + s.cols.length +
         (retry && !faulted ? " · try " + retry.c.retry + "/3" : "");
   }
 

@@ -317,3 +317,12 @@ html, body {
   .dock { position: static; text-align: center; margin-top: 8px; }
   .dock-flaps { justify-content: center; }
 }
+
+/* The rig chip is not a status - it is a disclaimer, and it must not read as
+   one more amber warning among several. */
+.chip.rig {
+  color: #0b0805;
+  background: var(--warn, #d8a13a);
+  border-color: var(--warn, #d8a13a);
+  font-weight: bold;
+}
