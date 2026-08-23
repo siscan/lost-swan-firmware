@@ -123,6 +123,12 @@ class Client(threading.Thread):
         self.subs = {}
         self.will = None           # (topic, payload, qos, retain)
         self.alive = True
+        # Keepalive enforcement. Without it the will never fires for the case
+        # it exists for: a device that vanishes without closing the TCP
+        # connection - a power cut, a reset, a router that drops the flow.
+        # Nothing arrives, nothing errors, and the socket sits open for ever.
+        self.keepalive = 0
+        self.last_seen = time.time()
         self.wlock = threading.Lock()
         self.next_id = 1
 
@@ -163,10 +169,20 @@ class Client(threading.Thread):
     # -- reading ------------------------------------------------------------
     def recv_exact(self, n):
         while len(self.buf) < n:
-            chunk = self.sock.recv(65536)
+            try:
+                chunk = self.sock.recv(65536)
+            except socket.timeout:
+                # MQTT 3.1.1 3.1.2.10: if the keepalive is non-zero the server
+                # MUST disconnect a client that sends nothing within 1.5x it.
+                if self.keepalive and time.time() - self.last_seen > self.keepalive * 1.5:
+                    raise ConnectionError("keepalive expired")
+                if not self.alive:
+                    raise ConnectionError("closed by the broker")
+                continue
             if not chunk:
                 raise ConnectionError("closed")
             self.buf += chunk
+            self.last_seen = time.time()
         out, self.buf = self.buf[:n], self.buf[n:]
         return out
 
@@ -191,6 +207,9 @@ class Client(threading.Thread):
 
     # -- the loop -----------------------------------------------------------
     def run(self):
+        # A short read timeout so the loop can notice an expired keepalive; a
+        # blocking recv would sit there for ever and never reap anyone.
+        self.sock.settimeout(1.0)
         try:
             self.serve()
         except (ConnectionError, OSError, ValueError, struct.error) as e:
@@ -207,6 +226,8 @@ class Client(threading.Thread):
         level = body[i]
         cflags = body[i + 1]
         keepalive = struct.unpack_from("!H", body, i + 2)[0]
+        self.keepalive = keepalive
+        self.last_seen = time.time()
         i += 4
         self.client_id, i = self.take_str(body, i)
         if cflags & 0x04:                                   # will
@@ -237,8 +258,18 @@ class Client(threading.Thread):
             old = self.b.clients.get(self.client_id)
             self.b.clients[self.client_id] = self
         if old is not None and old is not self:
-            self.b.say("         (replacing an existing session with the same id)")
+            # Same client id reconnecting - typically after a reset, before the
+            # keepalive on the stale session has expired. Drop the OLD will:
+            # publishing "offline" moments after the device said "online" would
+            # leave the retained value wrong until the next change.
+            self.b.say("         (replacing an existing session with the same id; "
+                       "its will is discarded)")
+            old.will = None
             old.alive = False
+            try:
+                old.sock.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
             try:
                 old.sock.close()
             except OSError:
