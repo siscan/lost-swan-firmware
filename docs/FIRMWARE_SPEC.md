@@ -436,7 +436,18 @@ stepper into an obstruction for 7.5 s at a time.  The discriminator is
 Nico asked for two causes; there are two *responses* and three causes, because
 slip is retryable for a different reason than a dead sensor is, and folding it
 into `jam` would regress the recovery the simulated-axis suite has pinned since
-Phase 1.5.  `components/motion/fault_policy.h` states the rule; it is pure and
+Phase 1.5.
+
+**The thresholds in that table are `VERIFY`.**  They have only ever been
+exercised against `sim_drum.h`, a model written from the same assumptions as
+the classifier that reads it, so the test is circular: it proves the cause
+propagates and the escalation fires, and proves nothing about whether the
+numbers match real mechanics.  A Hall unplugged mid-run, in particular, is
+expected to be *misclassified* as `jam` — "no edge while stepping" is exactly
+the jam signature even though the drum is turning freely.  `docs/BRINGUP.md`
+step 20 lists the physical provocations that must be run on the first real
+column, and the thresholds are re-derived from those results, not from this
+table.  `components/motion/fault_policy.h` states the rule; it is pure and
 host-tested (`test/host/test_fault_policy.cpp`).
 
 **Escalation** is a whole-machine judgement, evaluated when a fault is raised:
@@ -1732,3 +1743,78 @@ reason, so nothing gets re-litigated.
     written `pip.exe` by hash.  The XIAO **app** builds and links clean
     locally, and Linux CI builds both boards in full — which is why CI is the
     reliability source of truth.
+
+- 2026-08-23 — **The mirror went stale because `/ws` was silently dropping most
+  of every frame** (Nico, three UI bugs from the board).  Diagnosed on the wire
+  rather than by reading code, which matters because the code read plausibly:
+  - **Measured:** `preset.set qmarks` emits five `go` events.  Exactly **two**
+    reached the browser — cols 0 and 1 — on every single attempt, never
+    varying.  The board was even saying so: `httpd_queue_work: ctrl socket
+    queue full, work not queued`, six times per frame, on a console nobody was
+    watching because `ws_broadcast` swallowed the failure with `delete job`.
+  - **Root cause, transport.**  `httpd_queue_work` posts over a UDP control
+    socket whose mbox holds `CONFIG_LWIP_UDP_RECVMBOX_SIZE` (6), guarded by a
+    counting semaphore of that size; past six outstanding jobs it returns
+    `ESP_FAIL`.  Queuing one job **per client per message** cannot deliver a
+    five-column frame: the modes task (priority 5) posts all five back to back
+    and httpd (3) never gets to drain on a single core.  Now there is one
+    outbound queue of our own and **one** drain job in flight, whatever the
+    message rate and however many clients — control-socket usage goes from
+    (messages x clients) to 1.  Bounded at 24 messages / 8 KB, oldest dropped,
+    and the count is published as `sys.ws_dropped` and shown in Diagnostics,
+    because the silence is what made this invisible.
+  - **Root cause, client.**  The mirror was driven ONLY by those events after a
+    single prime, and nothing ever reconciled it: the frame scheduler does not
+    re-command a column already at its target, so one lost event left that card
+    wrong for ever.  `flap.js` gained `reconcile(cols, flaps)`, called on every
+    state document (1–5 Hz) by both pages: the state document is the authority
+    and it repeats, so a dropped event now costs an animation, not correctness.
+    It catches up by *animating* forward, so a recovered card still looks like
+    the drum it mirrors.  `index < 0` beats `dest` — during a homing pass dest
+    is the home slot, and painting it would show a confident blank for a column
+    that has no idea where it is.
+  - **Nico's hypothesis — stale element references on detached nodes — was
+    wrong**, and worth recording as refuted: `build()` clears the host and
+    re-captures every reference in the same pass, and it only runs when the
+    column *count* changes, which it never does.  The "4" and "5" stuck on cols
+    4–5 were a real ring slot from an earlier clock face (ring A slot 45 is
+    digit 4, ring B slot 44 is digit 5 — i.e. a leftover `09:45`), not a
+    placeholder.  His deduction that it was *stateful and positional* was
+    exactly right; the state was in the transport, not the DOM.
+  - **`?????` not reaching all five was the same defect**, not a ring-lookup
+    bug: the wire shows the firmware targeting `[17,17,17,17,25]`, so the
+    `question` role IS resolved per column against each column's own ring
+    (ring A's qmark at slot 17, ring B's at 25).  Only the events were lost.
+  - **A second widget bug, found by the new test rather than by the report:**
+    `clearInterval` cannot cancel a `setTimeout` already in flight, so a
+    superseded animation landed one last stale paint ~20 ms into its
+    replacement — and at the end of every open-loop spin the deferred paint
+    overwrote `paintUnknown`, leaving the card showing a confident face for a
+    position nothing knows.  That is precisely the unknown-vs-blank distinction
+    of the 2026-08-23 entry above, defeated after every alarm spin.  Fixed with
+    a per-card generation counter that every deferred paint checks.
+  - **Colours: cols 4–5 are white cards with RED glyphs.**  They were painting
+    a red card with a dark glyph, because `SCHEMES["seconds"]` carried
+    `card.glyph = red`, read from the cols1234 manifest's part_note — "white
+    clock cards, red glyph cards".  Nico, looking at the physical cards: the
+    red stock is only the **straddle flaps**, which the manifests enumerate
+    separately and by slot (`straddle_flaps_col4 = [1, 37]`, col 5's
+    `[0, 14, 24, 39]`) — the tell that "red glyph cards" was never meant to
+    cover the whole glyph block.  **The part_note and the physical cards
+    disagree and the physical cards win**; the manifests are Nico's files and
+    are left untouched, with the discrepancy recorded in `tools/ringgen.py`.
+    Straddle slots are not rendered specially — a straddle flap is half of two
+    adjacent cards and has no single card colour — but the data is there if
+    that changes.
+  - **Regression test: `test/host/test_flap.js`**, the widget against a faked
+    DOM and a *virtual* clock, no npm — the bug was in JavaScript and a C++
+    port of the logic would test a copy rather than the thing that ships.  It
+    drives N frames in a row with events deliberately missing (including all
+    five) and asserts every card lands, including after a `setRing()`.  There
+    is no node on the Windows dev machine, so `test-host.ps1` reports it
+    SKIPPED rather than passing silently; CI runs it on every push.  Its logic
+    was validated in a real browser against the shipped `flap.js` before being
+    committed.
+  - Method note: the two "misses" seen while validating in a browser were
+    background-tab timer throttling (~1 Hz), not staleness — which is why the
+    committed test uses a virtual clock rather than wall time.

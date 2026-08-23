@@ -424,6 +424,68 @@ your hands in the mechanism:
 - [ ] Therefore: before touching a drum, `maint on` (which releases EN), not
       "wait for it to stop moving".
 
+### 20. The fault thresholds are UNVALIDATED — the sim proves nothing about them
+
+**Read this before trusting any classification you have seen so far.**
+
+Everything in steps 17–19 was exercised against `motion/sim_drum.h`, a drum
+model written from **the same assumptions as the classifier that reads it**.
+The sim asserts a Hall edge inside a window at a position the classifier
+expects, and suppresses edges on command. So of course `miss` classifies as
+`jam` and `slip` classifies as `slip` — the model was built to produce exactly
+the observations the thresholds were written against. That is circular. It
+demonstrates that the *plumbing* works: the cause propagates, the escalation
+fires, the retry is or is not attempted, the UI says the right thing. It
+demonstrates **nothing** about whether the thresholds match real mechanics.
+
+Three numbers are guesses until a real column exists:
+
+| constant | current value | what it assumes |
+|---|---|---|
+| `motion.hall_tol` | 41 µsteps (¼ flap) | edge repeatability, never measured (step 6) |
+| slip threshold | > 1 flap (165 µsteps) from expected | that a real card catching moves the edge by more than a flap |
+| `edge_overdue` (jam) | last edge + 1.5 revolutions | that a stopped drum is distinguishable from a slip within ~3.1 s at 15 flaps/s |
+
+**The first real column must be provoked deliberately**, and the classifications
+recorded. Do these with the drum loaded, at `flaps_s_normal`, with `stats` open:
+
+- [ ] **Hold the drum by hand mid-move.** Grip the spool rim and stop it while
+      the motor keeps stepping. Record: how long until a fault, which cause,
+      and whether the motor was still driving when it latched. Expected `jam`.
+      - Result: cause = ______, time to latch = ______ s
+- [ ] **Let go part-way through**, so the drum resumes but has lost
+      registration. Expected `slip`, retried, recovered.
+      - Result: cause = ______, `err` at the edge = ______ µsteps
+- [ ] **Slip the pinion on the shaft** (loosen the grub screw a little, or brace
+      the drum lightly so a tooth skips). This is the case the `slip` cause
+      exists for and the one the sim models least honestly.
+      - Result: cause = ______, `err` = ______ µsteps, recovered? ______
+- [ ] **Unplug a Hall mid-run.** The edge stops arriving while the drum keeps
+      turning freely. **This is the case most likely to be MISCLASSIFIED**: the
+      firmware will call it `jam` and stop, because "no edge while stepping" is
+      exactly the jam signature, when in fact the drum is fine and a retry would
+      be harmless. Record what actually happens — if it reads `jam`, decide
+      whether that is acceptable (failing safe) or whether the classifier needs
+      another discriminator.
+      - Result: cause = ______, acceptable? ______
+- [ ] **Unplug a Hall before a cold home.** Expected `no_hall`, three retries.
+      - Result: cause = ______
+- [ ] **A card catching on the bezel** without stopping the drum — if you can
+      provoke it. This is the case the firmware **cannot** see at all (see the
+      Notes below) and it is worth confirming that it stays invisible rather
+      than producing a spurious fault.
+      - Result: ______
+
+**Then re-derive the thresholds from what happened**, in this order: `hall_tol`
+from step 6's measured repeatability, the slip threshold from the smallest
+real slip worth reacting to, and `edge_overdue` from how long a genuinely
+stopped drum takes to be unambiguous. Update spec §5.4/§5.8 and this table with
+the measured values, and say in the §17 decision log that they came from the
+bench rather than from the model.
+
+Until that is done, treat every fault classification you have seen as
+*plumbing verified, physics assumed*.
+
 ## Notes
 
 - `step`, `spin` and `revs` are open-loop: they leave the displayed index
@@ -438,6 +500,9 @@ your hands in the mechanism:
   stopping a column stops it *stepping*; its coils still hold standstill
   current.  `en 0` (or `maint on`) is the only true de-energize and it takes
   the whole display with it.
+- **The fault thresholds have never met a real drum.** Everything so far was
+  tested against a model written from the classifier's own assumptions - see
+  step 20. Plumbing verified, physics assumed.
 - **The firmware cannot see a card.**  It detects a stalled drum, because that
   moves the Hall edge; it cannot detect a card fluttering, bouncing or failing
   to seat, because the drum position stays correct while the display looks

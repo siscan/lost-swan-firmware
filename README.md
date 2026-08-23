@@ -23,7 +23,7 @@ Target: ESP32-C5-DevKitC-1-N8R8 (XIAO ESP32-C5 map behind a board define).
 | gate | status |
 |---|---|
 | `set-target esp32c5` + `build` clean | passes — zero warnings, both board maps |
-| host tests green | 10/10 suites (rings, motion math, simulated axis, ring.json, TZ/DST, frame, modes, wear, fault policy, web API) |
+| host tests green | 10/10 C++ suites (rings, motion math, simulated axis, ring.json, TZ/DST, frame, modes, wear, fault policy, web API) plus the mirror widget's JS suite (CI; SKIPPED locally, no node) |
 | release image cannot carry the simulator | `-DSWAN_RELEASE=1` with `SWAN_SIM_AXES=ON` is a configure-time `FATAL_ERROR`; CI builds both halves |
 | Phase 3 adversarial review | 22 findings confirmed, all fixed — see spec §17 |
 | `git diff` empty after `tools/ringgen.py` | clean — header and ring.json both regenerate byte-identically |
@@ -381,6 +381,31 @@ commands still work regardless of fault state, so a suspect column is driven by
 hand from the Calibrate page.  It **survives a reboot** deliberately: pulling
 power mid-repair must not restart a countdown on top of your hands.  `maint
 off` re-arms everything and re-homes all five.
+
+### The mirror tracks the state document, not the event stream
+
+`go`/`spin` events drive the flip *animation*.  They are not the source of
+truth and must never be treated as one: they travel `/ws`, which is
+best-effort, and until 2026-08-23 the board delivered **two of every five** —
+`httpd_queue_work` posts over a control socket whose mbox is six deep, and
+queuing one job per client per message overran it on every frame.  Nothing
+corrected the drift, because the frame scheduler does not re-command a column
+already at its target, so one lost event left that card wrong for ever.
+
+Two fixes, and both matter:
+
+- `components/net/httpd.cpp` keeps **one** outbound queue and **one** drain job
+  in flight, whatever the message rate and however many clients.  Drops are
+  counted and published as `sys.ws_dropped` (Diagnostics) — the silence is what
+  made the bug invisible.
+- `web/flap.js` `reconcile(cols, flaps)` runs on every state document and
+  brings each card to the axis's authoritative face, animating forward rather
+  than snapping.  `index < 0` beats `dest`: a column hunting for its hall edge
+  must render as unknown, not as a confident blank.
+
+So a dropped event now costs an animation, never correctness.
+`test/host/test_flap.js` pins it by driving frames with events deliberately
+missing.
 
 ### Motion state is always visible
 
