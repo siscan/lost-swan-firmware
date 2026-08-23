@@ -16,6 +16,8 @@
 #include <string>
 #include <string_view>
 
+#include <mutex>
+
 #include "modes/mode_manager.h"
 #include "motion/column_mode.h"
 #include "motion/motion_types.h"
@@ -128,6 +130,24 @@ struct Context {
     SysInfoSource& sys;
     RingStaging& ring_upload;
     SystemOps& ops;
+
+    // ONE command at a time, whatever the transport.
+    //
+    // Each interface behind this Context is individually safe - ModeManager
+    // locks every public entry point and witnesses it - but handle_command is
+    // not atomic ACROSS them.  `motion.column` reads columns(), edits, writes
+    // set_columns(), then tells the scheduler: three separate critical
+    // sections, and two callers interleaving produce a ColumnConfig that
+    // neither asked for.  With only the HTTP task dispatching, that never
+    // happened.  Phase 4 adds MQTT and a terminal prop, and two concurrent
+    // callers become routine.
+    //
+    // CONTRACT, and it matters: the event sink runs UNDER ModeManager's own
+    // lock (mode_manager -> EventTapPort -> ws_queue), so nothing reachable
+    // from a sink may take this mutex, and nothing holding this mutex may
+    // block on a transport.  Today every sink is a bounded queue push. Keep it
+    // that way.
+    mutable std::mutex dispatch_mu;
 };
 
 // The full state document pushed on /ws (on change and at 1 Hz) and returned
@@ -151,7 +171,12 @@ std::string build_wear_doc(const RingSet& ring, bool h24, int seconds_live_s);
 
 // Parse and dispatch one command.  `body` is {"cmd":"...","payload":...}.
 // Always returns a JSON result: {"ok":true} or {"ok":false,"err":"..."}.
-std::string handle_command(Context& ctx, std::string_view body, int64_t utc_ms);
+//
+// `by` names the transport, for the commands that record who acted - the
+// countdown deadline, which spec 7.3 makes a peer-to-peer decision with no
+// master.  Everything else ignores it.
+std::string handle_command(Context& ctx, std::string_view body, int64_t utc_ms,
+                           Origin by = Origin::Unknown);
 
 // Upload limit (spec 4: the drum is physical, the table is small).  The
 // generated data/ring.json is ~9.4 KB; 24 KB is generous for a bigger drum or

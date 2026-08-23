@@ -33,6 +33,15 @@ enum class Cue : unsigned char { Warn4Min, Warn1Min, SystemFailure };
 const char* mode_name(Mode m);
 const char* cd_phase_name(CdPhase p);
 
+// Which transport set the deadline last.  Spec 7.3 is explicit that there is
+// no master - the display and the terminal prop are peers and "whoever set it
+// last wins" - so the wire has to say WHO, or a prop cannot tell its own echo
+// from somebody else's decision and will fight it.  Paired with CdPersist::seq,
+// which breaks the tie.
+enum class Origin : unsigned char { Unknown, Ui, Mqtt, Cli, Button, Ha };
+const char* origin_name(Origin o);
+bool origin_from_name(std::string_view s, Origin& out);
+
 // The persisted countdown deadline (spec 7.3): one NVS write per set or
 // phase milestone, never per tick.  seq breaks ties when the terminal prop
 // also sets deadlines.
@@ -40,6 +49,7 @@ struct CdPersist {
     CdPhase phase = CdPhase::Idle;
     int64_t target_utc = 0;
     uint32_t seq = 0;
+    Origin set_by = Origin::Unknown;
 };
 
 class CountdownStore {
@@ -123,11 +133,18 @@ public:
     Result cmd_mode_set(Mode m, int64_t utc_ms);
     Result cmd_message_set(const std::array<std::string, N_COLUMNS>& tokens, int dwell_s,
                            bool hold, int64_t utc_ms);
-    Result cmd_countdown_execute(std::string_view numbers, int64_t utc_ms);
-    Result cmd_countdown_start(int64_t utc_ms);
-    Result cmd_countdown_reset(int64_t utc_ms) { return cmd_countdown_start(utc_ms); }
-    Result cmd_countdown_cancel(int64_t utc_ms);
-    Result cmd_countdown_set_target(int64_t target_utc, int64_t utc_ms);
+    // The deadline-setting commands carry their origin so swan/countdown can
+    // say who set it (spec 7.3).  Defaulted so the CLI and the tests, which
+    // have no transport to name, stay readable.
+    Result cmd_countdown_execute(std::string_view numbers, int64_t utc_ms,
+                                 Origin by = Origin::Unknown);
+    Result cmd_countdown_start(int64_t utc_ms, Origin by = Origin::Unknown);
+    Result cmd_countdown_reset(int64_t utc_ms, Origin by = Origin::Unknown) {
+        return cmd_countdown_start(utc_ms, by);
+    }
+    Result cmd_countdown_cancel(int64_t utc_ms, Origin by = Origin::Unknown);
+    Result cmd_countdown_set_target(int64_t target_utc, int64_t utc_ms,
+                                    Origin by = Origin::Unknown);
     Result cmd_preset(std::string_view name, int64_t utc_ms);
     Result cmd_display_frame(const Frame& f, int64_t utc_ms);  // no mode change
     Result cmd_clock_format(bool h24, int64_t utc_ms);
@@ -176,6 +193,9 @@ public:
     Mode mode() const;
     CdPhase cd_phase() const;
     int64_t cd_target() const;
+    // Both halves of "whoever set it last wins" belong on the wire together.
+    uint32_t cd_seq() const;
+    Origin cd_set_by() const;
     bool wifi_glyph_shown() const;
     bool time_valid() const;
 
@@ -281,7 +301,7 @@ private:
     // A fresh set (execute/start/set_target): bumps seq and persists.  A past
     // target lands in Reveal SILENTLY - the choreography belongs to the
     // moment of zero, which already happened.
-    void countdown_arm(int64_t target_utc, int64_t utc_ms);
+    void countdown_arm(int64_t target_utc, int64_t utc_ms, Origin by);
     // Boot-time resume of a persisted deadline: no seq bump, no re-persist,
     // and never a replayed cue or spin.
     void countdown_resume(int64_t utc_ms);

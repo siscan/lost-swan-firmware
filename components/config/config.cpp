@@ -35,7 +35,7 @@ constexpr const char* NS = "swan";
 // countdown.spin_s             cd_spin
 // countdown.failure_timeout_s  cd_fail_to
 // countdown.reveal[5]          cd_reveal    (blob of 5 x int32)
-// (countdown deadline state)   cd_phase / cd_target / cd_seq
+// (countdown deadline state)   cd_phase / cd_target / cd_seq / cd_setby
 // column.mode[5]               col_mode     (blob of 5 x uint8)
 // column.maintenance           maint
 // wifi.ssid                    w_ssid
@@ -64,6 +64,7 @@ constexpr const char* K_CD_REVEAL = "cd_reveal";
 constexpr const char* K_CD_PHASE = "cd_phase";
 constexpr const char* K_CD_TARGET = "cd_target";
 constexpr const char* K_CD_SEQ = "cd_seq";
+constexpr const char* K_CD_SETBY = "cd_setby";
 constexpr const char* K_COL_MODE = "col_mode";
 constexpr const char* K_MAINT = "maint";
 constexpr const char* K_WIFI_SSID = "w_ssid";
@@ -305,9 +306,19 @@ public:
         const bool ok = nvs_get_u8(h, K_CD_PHASE, &phase) == ESP_OK &&
                         nvs_get_i64(h, K_CD_TARGET, &target) == ESP_OK &&
                         nvs_get_u32(h, K_CD_SEQ, &seq) == ESP_OK;
+        // Its OWN key, deliberately, rather than widening a blob: a blob whose
+        // size changes is dropped whole on the next boot (see the col_mode
+        // length check below), which would silently take the deadline with it
+        // across exactly the OTA this field exists to survive.  A missing key
+        // costs the origin and nothing else.
+        uint8_t setby = 0;
+        const bool have_setby = nvs_get_u8(h, K_CD_SETBY, &setby) == ESP_OK;
         nvs_close(h);
         if (!ok || phase > static_cast<uint8_t>(CdPhase::Reveal)) return false;
         out.phase = static_cast<CdPhase>(phase);
+        out.set_by = (have_setby && setby <= static_cast<uint8_t>(Origin::Ha))
+                         ? static_cast<Origin>(setby)
+                         : Origin::Unknown;
         out.target_utc = target;
         out.seq = seq;
         return true;
@@ -319,6 +330,7 @@ public:
         nvs_set_u8(h, K_CD_PHASE, static_cast<uint8_t>(s.phase));
         nvs_set_i64(h, K_CD_TARGET, s.target_utc);
         nvs_set_u32(h, K_CD_SEQ, s.seq);
+        nvs_set_u8(h, K_CD_SETBY, static_cast<uint8_t>(s.set_by));
         nvs_commit(h);
         nvs_close(h);
     }

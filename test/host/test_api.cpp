@@ -55,9 +55,27 @@ struct FakeMotion : api::MotionAdmin {
     }
     ColumnConfig cols;
     int sim_injects = 0;
-    ColumnConfig columns() override { return cols; }
+    // Deliberate instrumentation, on the same principle as FakePort's
+    // mailbox_lag: the real set_columns is one struct assignment, and a tear
+    // between two dispatchers would be a rare interleaving that a test could
+    // pass through by luck for years.  Widening the write to element-by-element
+    // with a yield between makes an unserialised race tear on essentially every
+    // run, so the test states the property instead of sampling it.
+    std::atomic<bool> widen_window{false};
+    ColumnConfig columns() override {
+        if (widen_window.load(std::memory_order_relaxed)) std::this_thread::yield();
+        return cols;
+    }
     bool set_columns(const ColumnConfig& c) override {
-        cols = c;
+        if (!widen_window.load(std::memory_order_relaxed)) {
+            cols = c;
+            return true;
+        }
+        for (int i = 0; i < N_COLUMNS; ++i) {
+            cols.mode[static_cast<size_t>(i)] = c.mode[static_cast<size_t>(i)];
+            std::this_thread::yield();
+        }
+        cols.maintenance = c.maintenance;
         return true;
     }
     bool sim_inject(int col, std::string_view kind, int32_t) override {
@@ -121,7 +139,7 @@ struct Rig {
     FakeSys sys;
     FakeOps ops;
     api::RingStager stager{ring};
-    api::Context ctx{mm, stager, motion, cfg, sys, stager, ops};
+    api::Context ctx{mm, stager, motion, cfg, sys, stager, ops, {}};
 
     Rig() {
         mm.set_config(ModesConfig{});
@@ -819,6 +837,109 @@ void test_maintenance_command() {
     CHECK_EQ(r.motion.last_home_col, -1);  // all five
 }
 
+
+// --------------------------------------------------------------------------
+// One command at a time, whatever the transport
+// --------------------------------------------------------------------------
+// handle_command is not atomic across its sub-interfaces: motion.column reads
+// columns(), edits a copy, writes set_columns(), then tells the scheduler -
+// three separate critical sections.  With only the HTTP task dispatching that
+// never mattered.  Phase 4 adds MQTT and a terminal prop, so two concurrent
+// callers become routine, and ModeManager's own witness cannot see this - it
+// only ever watches ModeManager.
+void test_dispatch_is_serialised() {
+    Rig r;
+    r.motion.widen_window.store(true, std::memory_order_relaxed);
+
+    // Two transports racing to set ALL FIVE columns to their own mode.  Every
+    // legal outcome is uniform; a mixture proves the read-modify-write tore.
+    std::atomic<int> errors{0};
+    auto driver = [&](const char* mode) {
+        const std::string cmd =
+            std::string(R"({"cmd":"motion.column","payload":{"all":true,"mode":")") + mode +
+            R"("}})";
+        for (int i = 0; i < 400; ++i) {
+            if (!is_ok(api::handle_command(r.ctx, cmd, r.time.utc_ms))) ++errors;
+            const ColumnConfig seen = r.motion.cols;
+            const ColumnMode first = seen.mode[0];
+            for (int c = 1; c < N_COLUMNS; ++c) {
+                if (seen.mode[static_cast<size_t>(c)] != first) ++errors;  // torn
+            }
+        }
+    };
+    std::thread a(driver, "real"), b(driver, "sim");
+    a.join();
+    b.join();
+    CHECK_EQ(errors.load(), 0);
+
+    // ... and the final state is one of the two, never a blend.
+    const ColumnMode first = r.motion.cols.mode[0];
+    CHECK(first == ColumnMode::Real || first == ColumnMode::Sim);
+    for (int c = 1; c < N_COLUMNS; ++c) {
+        CHECK(r.motion.cols.mode[static_cast<size_t>(c)] == first);
+    }
+}
+
+// --------------------------------------------------------------------------
+// The deadline says who set it and when (spec 7.3)
+// --------------------------------------------------------------------------
+void test_countdown_identity() {
+    Rig r;
+    auto cd = [&](const char* field) {
+        json::Value v;
+        CHECK(json::parse(r.state(), v, nullptr));
+        const json::Value* c = v.get("cd");
+        CHECK(c != nullptr);
+        return c->get(field);
+    };
+
+    // A fresh device has set nobody's deadline.
+    CHECK(cd("set_by")->as_str() == "unknown");
+    const int64_t seq0 = cd("seq")->as_int(-1);
+    CHECK(seq0 >= 0);
+
+    // The web UI arms it.
+    CHECK(is_ok(api::handle_command(
+        r.ctx, R"({"cmd":"countdown.execute","payload":"4 8 15 16 23 42"})", r.time.utc_ms,
+        Origin::Ui)));
+    CHECK(cd("set_by")->as_str() == "ui");
+    const int64_t seq1 = cd("seq")->as_int(-1);
+    CHECK(seq1 > seq0);
+
+    // The terminal prop resets it over MQTT: whoever set it LAST wins, and the
+    // sequence has to move or a peer cannot tell which of two retained
+    // documents is newer.
+    const int64_t tgt = r.time.utc_ms / 1000 + 3000;
+    CHECK(is_ok(api::handle_command(
+        r.ctx, R"({"cmd":"countdown.set_target","payload":)" + std::to_string(tgt) + "}",
+        r.time.utc_ms, Origin::Mqtt)));
+    CHECK(cd("set_by")->as_str() == "mqtt");
+    const int64_t seq2 = cd("seq")->as_int(-1);
+    CHECK(seq2 > seq1);
+    CHECK_EQ(cd("target")->as_int(0), tgt);
+
+    // A cancel is a decision too - it must not leave the last setter's name on
+    // a deadline they no longer own.
+    CHECK(is_ok(api::handle_command(r.ctx, R"({"cmd":"countdown.cancel"})", r.time.utc_ms,
+                                    Origin::Cli)));
+    CHECK(cd("set_by")->as_str() == "cli");
+    CHECK(cd("seq")->as_int(-1) > seq2);
+
+    // An unnamed transport is "unknown", never a guess.
+    CHECK(is_ok(api::handle_command(r.ctx, R"({"cmd":"countdown.start"})", r.time.utc_ms)));
+    CHECK(cd("set_by")->as_str() == "unknown");
+
+    // Round-trip of the names, since they go on the wire.
+    for (Origin o : {Origin::Unknown, Origin::Ui, Origin::Mqtt, Origin::Cli, Origin::Button,
+                     Origin::Ha}) {
+        Origin back{};
+        CHECK(origin_from_name(origin_name(o), back));
+        CHECK(back == o);
+    }
+    Origin junk{};
+    CHECK(!origin_from_name("prop", junk));
+}
+
 }  // namespace
 
 void run_tests() {
@@ -830,5 +951,7 @@ void run_tests() {
     test_ring_swap_vs_readers();
     test_column_commands();
     test_maintenance_command();
+    test_dispatch_is_serialised();
+    test_countdown_identity();
     test_no_unlocked_mode_access();
 }

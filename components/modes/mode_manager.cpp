@@ -50,6 +50,29 @@ const char* mode_name(Mode m) {
     return "?";
 }
 
+const char* origin_name(Origin o) {
+    switch (o) {
+        case Origin::Unknown: return "unknown";
+        case Origin::Ui:      return "ui";
+        case Origin::Mqtt:    return "mqtt";
+        case Origin::Cli:     return "cli";
+        case Origin::Button:  return "button";
+        case Origin::Ha:      return "ha";
+    }
+    return "unknown";
+}
+
+bool origin_from_name(std::string_view s, Origin& out) {
+    if (s == "ui") out = Origin::Ui;
+    else if (s == "mqtt") out = Origin::Mqtt;
+    else if (s == "cli") out = Origin::Cli;
+    else if (s == "button") out = Origin::Button;
+    else if (s == "ha") out = Origin::Ha;
+    else if (s == "unknown" || s.empty()) out = Origin::Unknown;
+    else return false;
+    return true;
+}
+
 const char* cd_phase_name(CdPhase p) {
     switch (p) {
         case CdPhase::Idle:    return "idle";
@@ -116,6 +139,16 @@ int64_t ModeManager::cd_target() const {
     const std::lock_guard<std::mutex> lock(mu_);
     const Enter witness(*this);
     return cd_.target_utc;
+}
+uint32_t ModeManager::cd_seq() const {
+    const std::lock_guard<std::mutex> lock(mu_);
+    const Enter witness(*this);
+    return cd_.seq;
+}
+Origin ModeManager::cd_set_by() const {
+    const std::lock_guard<std::mutex> lock(mu_);
+    const Enter witness(*this);
+    return cd_.set_by;
 }
 bool ModeManager::time_valid() const {
     const std::lock_guard<std::mutex> lock(mu_);
@@ -358,8 +391,9 @@ void ModeManager::tick_message(int64_t utc_ms) {
 // ---------------------------------------------------------------------------
 // Countdown (spec 7.3) - a deadline, not a timer.
 // ---------------------------------------------------------------------------
-void ModeManager::countdown_arm(int64_t target_utc, int64_t utc_ms) {
+void ModeManager::countdown_arm(int64_t target_utc, int64_t utc_ms, Origin by) {
     cd_.target_utc = target_utc;
+    cd_.set_by = by;
     ++cd_.seq;
     cd_shown_ = SHOWN_NONE;
     cd_scheduled_land_ = 0;
@@ -614,33 +648,38 @@ ModeManager::Result ModeManager::cmd_message_set(
 }
 
 ModeManager::Result ModeManager::cmd_countdown_execute(std::string_view numbers,
-                                                       int64_t utc_ms) {
+                                                       int64_t utc_ms, Origin by) {
     if (!numbers_valid(numbers)) return {false, "rejected"};  // wrong Numbers
-    return cmd_countdown_start(utc_ms);
+    return cmd_countdown_start(utc_ms, by);
 }
 
-ModeManager::Result ModeManager::cmd_countdown_start(int64_t utc_ms) {
+ModeManager::Result ModeManager::cmd_countdown_start(int64_t utc_ms, Origin by) {
     const std::lock_guard<std::mutex> lock(mu_);
     const Enter witness(*this);
     // "now + 6480" is meaningless before the first sync; a start issued on
     // the 1970 clock would detonate the alarm the moment SNTP steps time.
     if (!time_.valid()) return {false, "time not synced"};
-    countdown_arm(utc_ms / 1000 + COUNTDOWN_S, utc_ms);
+    countdown_arm(utc_ms / 1000 + COUNTDOWN_S, utc_ms, by);
     enter_mode(Mode::Countdown, utc_ms);  // countdown overrides whatever runs
     return {true, nullptr};
 }
 
-ModeManager::Result ModeManager::cmd_countdown_cancel(int64_t utc_ms) {
+ModeManager::Result ModeManager::cmd_countdown_cancel(int64_t utc_ms, Origin by) {
     const std::lock_guard<std::mutex> lock(mu_);
     const Enter witness(*this);
     cd_.phase = CdPhase::Idle;
     cd_shown_ = SHOWN_NONE;
+    // A cancel is a decision like any other, and a peer needs to know whose it
+    // was: seq bumps so an older retained set cannot look newer.
+    cd_.set_by = by;
+    ++cd_.seq;
     persist();
     if (mode_ == Mode::Countdown) tick_locked(utc_ms);
     return {true, nullptr};
 }
 
-ModeManager::Result ModeManager::cmd_countdown_set_target(int64_t target_utc, int64_t utc_ms) {
+ModeManager::Result ModeManager::cmd_countdown_set_target(int64_t target_utc, int64_t utc_ms,
+                                                          Origin by) {
     const std::lock_guard<std::mutex> lock(mu_);
     const Enter witness(*this);
     if (target_utc <= 0) return {false, "bad epoch"};
@@ -653,7 +692,7 @@ ModeManager::Result ModeManager::cmd_countdown_set_target(int64_t target_utc, in
     if (target_utc <= now_s || target_utc > now_s + MAX_TARGET_AHEAD_S) {
         return {false, "epoch out of range"};
     }
-    countdown_arm(target_utc, utc_ms);
+    countdown_arm(target_utc, utc_ms, by);
     enter_mode(Mode::Countdown, utc_ms);
     return {true, nullptr};
 }

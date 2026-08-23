@@ -251,7 +251,7 @@ int main(int argc, char** argv) {
     DevSys sysinfo;
     DevOps ops;
     // The stager is BOTH the pinned ring source and the upload sink.
-    api::Context ctx{modes, stager, sim, cfg_sink, sysinfo, stager, ops};
+    api::Context ctx{modes, stager, sim, cfg_sink, sysinfo, stager, ops, {}};
 
     sysinfo.s.wifi_state = "connected";
     sysinfo.s.ssid = "host-dev-server";

@@ -79,6 +79,11 @@ std::string build_state(Context& ctx, int64_t utc_ms) {
         .kv("seconds_mode", seconds_mode_name(cfg.seconds_mode))
         .kv("seconds_live_s", cfg.seconds_live_s)
         .kv("live", target > 0 && (target - utc_ms / 1000) <= cfg.seconds_live_s)
+        // Who set this deadline, and the tiebreak.  Spec 7.3 has no master:
+        // the display and the terminal prop are peers, so a peer has to be
+        // able to tell its own decision from somebody else's.
+        .kv("set_by", origin_name(ctx.modes.cd_set_by()))
+        .kv("seq", static_cast<int64_t>(ctx.modes.cd_seq()))
         .end_obj();
 
     // Device-wide honesty flags.  A simulated display must be impossible to
@@ -448,7 +453,9 @@ std::string do_config_set(Context& ctx, const RingSet& ring, const json::Value& 
 
 }  // namespace
 
-std::string handle_command(Context& ctx, std::string_view body, int64_t utc_ms) {
+std::string handle_command(Context& ctx, std::string_view body, int64_t utc_ms, Origin by) {
+    // Serialised across transports; see the contract on Context::dispatch_mu.
+    const std::lock_guard<std::mutex> dispatch_lock(ctx.dispatch_mu);
     // Pinned for the whole dispatch, same reason as build_state.
     const RingSet ring = ctx.ring.snapshot();
     json::Value doc;
@@ -487,16 +494,16 @@ std::string handle_command(Context& ctx, std::string_view body, int64_t utc_ms) 
                                        ? p.as_str()
                                        : (p.get("numbers") ? p.get("numbers")->as_str()
                                                            : std::string_view{});
-        return result_of(ctx.modes.cmd_countdown_execute(n, utc_ms));
+        return result_of(ctx.modes.cmd_countdown_execute(n, utc_ms, by));
     }
-    if (c == "countdown.start") return result_of(ctx.modes.cmd_countdown_start(utc_ms));
-    if (c == "countdown.reset") return result_of(ctx.modes.cmd_countdown_reset(utc_ms));
-    if (c == "countdown.cancel") return result_of(ctx.modes.cmd_countdown_cancel(utc_ms));
+    if (c == "countdown.start") return result_of(ctx.modes.cmd_countdown_start(utc_ms, by));
+    if (c == "countdown.reset") return result_of(ctx.modes.cmd_countdown_reset(utc_ms, by));
+    if (c == "countdown.cancel") return result_of(ctx.modes.cmd_countdown_cancel(utc_ms, by));
     if (c == "countdown.set_target") {
         const int64_t epoch = p.type == json::Type::Int
                                   ? p.number
                                   : (p.get("epoch") ? p.get("epoch")->as_int(0) : 0);
-        return result_of(ctx.modes.cmd_countdown_set_target(epoch, utc_ms));
+        return result_of(ctx.modes.cmd_countdown_set_target(epoch, utc_ms, by));
     }
 
     // ---- clock ----
