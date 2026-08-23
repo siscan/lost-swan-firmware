@@ -94,12 +94,29 @@ h2:first-child { margin-top: 0; }
   background: #0007;
 }
 
-.flap-card.small {
+.flap-text.small {
   font-size: 13px;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   padding: 0 4px;
   word-break: break-word;
+  line-height: 1.15;
+}
+
+/* The real artwork.  fill:currentColor means the card's own ink colour drives
+   it, so the per-column scheme applies to glyphs and text placeholders alike.
+   Sized to 86% and never stretched: the 100:127 viewBox is the flap card's
+   ratio and each glyph is pre-scaled inside it, so relative sizes across
+   glyphs match the printed cards. */
+.flap-glyph {
+  /* Absolutely positioned rather than a sized flex item: a percentage HEIGHT
+     on a replaced flex item does not resolve reliably (it collapsed to 8 px
+     here), while inset percentages resolve against the positioned card every
+     time.  The 7% inset keeps the artwork off the card edge. */
+  position: absolute;
+  inset: 7%;
+  fill: currentColor;
+  pointer-events: none;
 }
 
 .flap-card.flip { transform: scaleY(0.12); }
@@ -140,6 +157,19 @@ nav button {
 
 nav button:hover { color: var(--text); }
 nav button.active { color: var(--acc); border-bottom-color: var(--acc); }
+
+/* The presentation terminal is a page, not a tab: a kiosk points straight at
+   it and never sees this nav. */
+.navlink {
+  margin-left: auto;
+  align-self: center;
+  color: var(--dim);
+  text-decoration: none;
+  letter-spacing: 0.14em;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+.navlink:hover { color: var(--acc); }
 
 main { padding: 18px; max-width: 900px; }
 section { display: none; }
@@ -222,6 +252,6 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
 @media (max-width: 620px) {
   .flap-col { width: 54px; height: 74px; flex: 0 0 54px; }
   .flap-card { font-size: 30px; }
-  .flap-card.small { font-size: 10px; }
+  .flap-text.small { font-size: 10px; }
   .row > label { min-width: 100%; }
 }

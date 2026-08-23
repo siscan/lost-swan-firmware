@@ -1,9 +1,9 @@
 // The split-flap display widget.
 //
-// ONE renderer, shared by the live web UI (app.js, driven by /ws) and the
-// trace-replay simulator (sim/index.html, driven by recorded traces).  Both
-// consume the same ring document shape and the same go/spin events, so what
-// the simulator shows and what the UI shows can never drift apart.
+// ONE renderer, shared by the live web UI (app.js, driven by /ws), the
+// presentation terminal (terminal.js) and the trace-replay simulator
+// (sim/index.html).  All consume the same ring document and the same go/spin
+// events, so what they show can never drift apart.
 //
 // The ring document may be either data/ring.json or GET /api/ring: the first
 // carries a shared `slots` array with per-column overrides, the second gives
@@ -16,9 +16,58 @@
     ink: { default: "#e8e4da", glyph: "#b03a2e" },
   };
 
+  // Injected symbol ids are namespaced.  glyphs.svg carries the bare manifest
+  // names by design, but those are generic - `sun`, `hand`, `gate`, `wave` -
+  // and once injected they live in the page's single id space, where a clash
+  // with a page element would silently render the wrong picture.
+  const ID_PREFIX = "swan-glyph-";
+  const CONTAINER_ID = "swan-glyph-defs";
+  let available = null;   // Set of glyph ids, or null until a sheet is loaded
+
+  // Fetch the sheet once and inject it, so every <use> is a SAME-DOCUMENT
+  // reference.  External references (<use href="sheet.svg#id">) are not
+  // supported in WebKit at all and fail over file://, which would mean a
+  // display that works on desktop Chrome and is blank on an iPhone.
+  //
+  // Resolves false when the sheet cannot be loaded (file:// in the simulator,
+  // or a board whose LittleFS predates it); callers keep the text labels.
+  function loadGlyphs(url) {
+    if (available) return Promise.resolve(true);
+    return fetch(url)
+      .then((r) => (r.ok ? r.text() : Promise.reject(new Error("HTTP " + r.status))))
+      .then((text) => {
+        let host = document.getElementById(CONTAINER_ID);
+        if (!host) {
+          host = document.createElement("div");
+          host.id = CONTAINER_ID;
+          host.setAttribute("aria-hidden", "true");
+          host.style.display = "none";
+          document.body.appendChild(host);
+        }
+        host.innerHTML = text;
+        const ids = new Set();
+        host.querySelectorAll("symbol[id]").forEach((sym) => {
+          const name = sym.id;
+          sym.id = ID_PREFIX + name;
+          ids.add(name);
+        });
+        if (ids.size === 0) return false;
+        available = ids;
+        return true;
+      })
+      .catch(() => false);
+  }
+
+  function hasGlyph(id) {
+    return available !== null && available.has(id);
+  }
+
+  const SVG_NS = "http://www.w3.org/2000/svg";
+  const XLINK_NS = "http://www.w3.org/1999/xlink";
+
   class FlapDisplay {
     // host: a container element.  opts.gapAfter inserts the physical 3 + 2
-    // band gap (spec 1) after that column index; opts.size scales the cards.
+    // band gap (spec 1) after that column index.
     constructor(host, ring, opts) {
       this.host = host;
       this.opts = Object.assign({ gapAfter: 2, onFace: null }, opts || {});
@@ -31,6 +80,12 @@
       this.n = this.ring.slot_count || 50;
       const count = (this.ring.columns || []).length || 5;
       if (this.cols.length !== count) this.build(count);
+      for (let i = 0; i < this.cols.length; i++) this.paint(i, this.cols[i].idx || 0);
+    }
+
+    // Called after loadGlyphs() resolves, to swap text placeholders for the
+    // real artwork without rebuilding anything.
+    refresh() {
       for (let i = 0; i < this.cols.length; i++) this.paint(i, this.cols[i].idx || 0);
     }
 
@@ -48,9 +103,27 @@
         col.className = "flap-col";
         const card = document.createElement("div");
         card.className = "flap-card";
+
+        // Both faces exist for the life of the card and are toggled; building
+        // an element per flip would churn through hundreds of nodes during a
+        // 49-flip wrap.
+        const text = document.createElement("span");
+        text.className = "flap-text";
+        const svg = document.createElementNS(SVG_NS, "svg");
+        svg.setAttribute("class", "flap-glyph");
+        // The 100:127 box is the flap card's own ratio and every glyph is
+        // pre-scaled inside it, so relative sizes match the printed cards.
+        // Default preserveAspectRatio (xMidYMid meet) - never stretch.
+        svg.setAttribute("viewBox", "0 0 100 127");
+        svg.setAttribute("aria-hidden", "true");
+        const use = document.createElementNS(SVG_NS, "use");
+        svg.appendChild(use);
+
+        card.appendChild(text);
+        card.appendChild(svg);
         col.appendChild(card);
         this.host.appendChild(col);
-        this.cols.push({ card: card, idx: 0, timer: null, target: -1 });
+        this.cols.push({ card, text, svg, use, idx: 0, timer: null, target: -1, href: "" });
       }
     }
 
@@ -64,31 +137,49 @@
       return (this.ring.schemes || {})[c.scheme] || FALLBACK_SCHEME;
     }
 
-    // How a slot reads on a card.  Glyphs have no glyph font yet, so they
-    // render as their manifest name - which is also what makes a table/drum
+    // How a slot reads on a card.  Digits, AM/PM and blank are text; glyphs
+    // and the WiFi mark come from glyphs.svg when it loaded, and fall back to
+    // the manifest name otherwise - which is also what makes a table/drum
     // mismatch obvious on the Calibrate walk (spec 4).
     static face(slot) {
-      if (!slot) return { text: "?", small: true };
-      if (slot.cat === "blank") return { text: "", small: false };
+      if (!slot) return { text: "?", small: true, glyph: null };
+      if (slot.cat === "blank") return { text: "", small: false, glyph: null };
       if (slot.cat === "digit" || slot.cat === "ampm") {
-        return { text: slot.id, small: slot.id.length > 1 };
+        return { text: slot.id, small: slot.id.length > 1, glyph: null };
       }
-      if (slot.cat === "wifi") return { text: "☷", small: false };
-      return { text: slot.id, small: true };
+      return { text: slot.id, small: true, glyph: hasGlyph(slot.id) ? slot.id : null };
     }
 
     paint(i, idx) {
       const col = this.cols[i];
       if (!col) return;
-      const table = this.colTable(i);
-      const slot = table[idx];
+      const slot = this.colTable(i)[idx];
       const s = this.scheme(i);
-      const glyph = slot && slot.cat === "glyph";
+      const isGlyph = slot && (slot.cat === "glyph" || slot.cat === "wifi");
       const f = FlapDisplay.face(slot);
-      col.card.style.background = (glyph && s.card.glyph) || s.card.default;
-      col.card.style.color = (glyph && s.ink.glyph) || s.ink.default;
-      col.card.textContent = f.text;
-      col.card.classList.toggle("small", f.small);
+
+      col.card.style.background = (isGlyph && s.card.glyph) || s.card.default;
+      // The glyph artwork is fill="currentColor", so the card's colour drives
+      // both the text placeholders and the real thing: red on black for the
+      // minutes group, black on white/red for the seconds group.
+      col.card.style.color = (isGlyph && s.ink.glyph) || s.ink.default;
+
+      if (f.glyph) {
+        const href = "#" + ID_PREFIX + f.glyph;
+        if (col.href !== href) {
+          col.use.setAttributeNS(null, "href", href);
+          // Safari before 12 only honours the xlink form; harmless elsewhere.
+          col.use.setAttributeNS(XLINK_NS, "xlink:href", href);
+          col.href = href;
+        }
+        col.svg.style.display = "";
+        col.text.style.display = "none";
+      } else {
+        col.svg.style.display = "none";
+        col.text.style.display = "";
+        col.text.textContent = f.text;
+        col.text.classList.toggle("small", f.small);
+      }
       col.card.title = slot ? slot.label || slot.id : "slot " + idx;
       col.idx = idx;
       if (this.opts.onFace) this.opts.onFace(i, idx, slot);
@@ -106,7 +197,10 @@
       const per = Math.max(28, 1000 / (flaps || 15));
       clearInterval(col.timer);
       col.target = to;
-      if (col.idx === to) return;
+      if (col.idx === to) {
+        col.timer = null;
+        return;
+      }
       col.timer = setInterval(() => {
         if (col.idx === to) {
           clearInterval(col.timer);
@@ -136,7 +230,10 @@
           this.paint(i, next);
           col.card.classList.remove("flip");
         }, 18);
-        if (--left <= 0) clearInterval(col.timer);
+        if (--left <= 0) {
+          clearInterval(col.timer);
+          col.timer = null;
+        }
       }, per);
     }
 
@@ -161,5 +258,5 @@
     }
   }
 
-  global.SwanFlap = { FlapDisplay: FlapDisplay };
+  global.SwanFlap = { FlapDisplay, loadGlyphs, hasGlyph };
 })(window);

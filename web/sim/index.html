@@ -37,7 +37,8 @@
                transition:transform 40ms linear; }
   .flap-card::after { content:""; position:absolute; left:0; right:0; top:50%; height:2px;
                       background:#0007; }
-  .flap-card.small { font-size:20px; letter-spacing:.05em; text-transform:uppercase; }
+  .flap-text.small { font-size:20px; letter-spacing:.05em; text-transform:uppercase; }
+  .flap-glyph { position:absolute; inset:7%; fill:currentColor; }
   .flap-card.flip { transform:scaleY(.12); }
   #status { display:flex; gap:22px; color:var(--dim); font-size:13px; min-height:20px; }
   #cue { color:#d8b04a; } #skip { color:var(--dim); } #modelbl { color:var(--acc); }
@@ -59,6 +60,10 @@
 const TRACES = window.SWAN_TRACES;
 const disp = new SwanFlap.FlapDisplay(document.getElementById("display"),
                                       window.SWAN_RING, { gapAfter: 2 });
+// Real artwork when this page is served over HTTP.  Opened straight from disk
+// the fetch is blocked by file:// and the glyphs stay as their manifest names,
+// which is a fallback, not a failure.
+SwanFlap.loadGlyphs("../glyphs.svg").then((ok) => { if (ok) disp.refresh(); });
 
 // --- MockSocket: replays a trace with the /ws message shape ---------------
 // Long idle gaps are compressed to keep the replay watchable; the skip chip
