@@ -35,6 +35,8 @@ constexpr const char* NS = "swan";
 // countdown.failure_timeout_s  cd_fail_to
 // countdown.reveal[5]          cd_reveal    (blob of 5 x int32)
 // (countdown deadline state)   cd_phase / cd_target / cd_seq
+// wifi.ssid                    w_ssid
+// wifi.pass                    w_pass
 constexpr const char* K_CAL = "m_cal";
 constexpr const char* K_FS_NORM = "m_fs_norm";
 constexpr const char* K_FS_ALRM = "m_fs_alrm";
@@ -58,6 +60,8 @@ constexpr const char* K_CD_REVEAL = "cd_reveal";
 constexpr const char* K_CD_PHASE = "cd_phase";
 constexpr const char* K_CD_TARGET = "cd_target";
 constexpr const char* K_CD_SEQ = "cd_seq";
+constexpr const char* K_WIFI_SSID = "w_ssid";
+constexpr const char* K_WIFI_PASS = "w_pass";
 
 // Leaves *v alone when the key is absent, so defaults survive.
 void get_i32(nvs_handle_t h, const char* key, int32_t* v) {
@@ -181,6 +185,28 @@ esp_err_t load_app(AppConfig& c) {
 
     nvs_close(h);
     return ESP_OK;
+}
+
+esp_err_t load_wifi(WifiConfig& c) {
+    nvs_handle_t h;
+    const esp_err_t err = nvs_open(NS, NVS_READONLY, &h);
+    if (err == ESP_ERR_NVS_NOT_FOUND) return ESP_OK;  // never provisioned
+    if (err != ESP_OK) return err;
+    get_str(h, K_WIFI_SSID, &c.ssid);
+    get_str(h, K_WIFI_PASS, &c.pass);
+    nvs_close(h);
+    return ESP_OK;
+}
+
+esp_err_t save_wifi(const WifiConfig& c) {
+    nvs_handle_t h;
+    esp_err_t err = nvs_open(NS, NVS_READWRITE, &h);
+    if (err != ESP_OK) return err;
+    ESP_ERROR_CHECK(nvs_set_str(h, K_WIFI_SSID, c.ssid.c_str()));
+    ESP_ERROR_CHECK(nvs_set_str(h, K_WIFI_PASS, c.pass.c_str()));
+    err = nvs_commit(h);
+    nvs_close(h);
+    return err;
 }
 
 esp_err_t save_app(const AppConfig& c) {

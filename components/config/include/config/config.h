@@ -24,6 +24,15 @@ struct AppConfig {
     std::string ntp = "pool.ntp.org";           // time.ntp
 };
 
+// WiFi STA credentials (spec 11 wifi.ssid / wifi.pass).  Kept separate from
+// AppConfig so the CLI can write them without rewriting everything else, and
+// so the password never travels through the state payload.
+struct WifiConfig {
+    std::string ssid;
+    std::string pass;
+    bool configured() const { return !ssid.empty(); }
+};
+
 // Opens NVS, initialising the partition if it is new or was reformatted.
 esp_err_t init();
 
@@ -33,6 +42,8 @@ esp_err_t load(MotionParams& p);
 esp_err_t save(const MotionParams& p);
 esp_err_t load_app(AppConfig& c);
 esp_err_t save_app(const AppConfig& c);
+esp_err_t load_wifi(WifiConfig& c);
+esp_err_t save_wifi(const WifiConfig& c);
 
 // The countdown deadline store (spec 7.3): one write per set, never per tick.
 CountdownStore& countdown_store();
