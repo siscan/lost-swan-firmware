@@ -28,7 +28,14 @@ COMPRESS = {".html", ".css", ".js", ".json", ".svg", ".txt", ".map"}
 SOURCES = [
     (ROOT / "web", ""),            # the UI, at the filesystem root
 ]
-EXTRA_FILES = [
+
+# Files the FIRMWARE reads, not the browser.  These must never be compressed:
+# ring_store.cpp opens /fs/ring.json directly and knows nothing about gzip, so
+# shipping ring.json.gz meant the runtime table never loaded and the compiled
+# fallback silently covered for it.  Only a real flash showed it - the boot log
+# said "no /fs/ring.json; compiled ring table active" - because the fallback is
+# a correct table and nothing downstream looked wrong.
+NEVER_COMPRESS = [
     (ROOT / "data" / "ring.json", "ring.json"),  # the runtime ring table (spec 4)
 ]
 
@@ -51,9 +58,9 @@ def gather():
                 continue
             name = str(pathlib.PurePosixPath(prefix) / pathlib.PurePosixPath(rel)).lstrip("/")
             out.append((path, name, path.suffix.lower() in COMPRESS))
-    for path, name in EXTRA_FILES:
+    for path, name in NEVER_COMPRESS:
         if path.is_file():
-            out.append((path, name, path.suffix.lower() in COMPRESS))
+            out.append((path, name, False))
     return out
 
 
