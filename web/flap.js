@@ -123,7 +123,13 @@
         card.appendChild(svg);
         col.appendChild(card);
         this.host.appendChild(col);
-        this.cols.push({ card, text, svg, use, idx: 0, timer: null, target: -1, href: "" });
+        // `gen` is bumped by every new command.  Each animation captures it and
+        // its DEFERRED paints check it before touching the card: clearInterval
+        // stops an interval but cannot cancel a setTimeout already in flight,
+        // so without this a superseded animation lands one last stale paint
+        // ~20 ms into its replacement.
+        this.cols.push({ card, text, svg, use, idx: 0, timer: null, target: -1, href: "",
+                         gen: 0 });
       }
     }
 
@@ -223,12 +229,14 @@
       if (col.timer && col.target === to) return;
       const per = Math.max(28, 1000 / (flaps || 15));
       clearInterval(col.timer);
+      const gen = ++col.gen;
       col.target = to;
       if (col.idx === to) {
         col.timer = null;
         return;
       }
       col.timer = setInterval(() => {
+        if (col.gen !== gen) return;   // superseded
         if (col.idx === to) {
           clearInterval(col.timer);
           col.timer = null;
@@ -237,6 +245,7 @@
         const next = (col.idx + 1) % this.n;
         col.card.classList.add("flip");
         setTimeout(() => {
+          if (col.gen !== gen) return;
           this.paint(i, next);
           col.card.classList.remove("flip");
         }, 20);
@@ -248,19 +257,28 @@
       if (!col) return;
       const per = Math.max(28, 1000 / (flaps || 25));
       clearInterval(col.timer);
+      const gen = ++col.gen;
       col.target = -1;  // open loop: the landing index is unknown
       let left = (secs * 1000) / per;
       col.timer = setInterval(() => {
+        if (col.gen !== gen) return;   // superseded
         col.card.classList.add("flip");
         const next = (col.idx + 1) % this.n;
+        const last = --left <= 0;
         setTimeout(() => {
+          if (col.gen !== gen) return;
           this.paint(i, next);
           col.card.classList.remove("flip");
+          // Where an open-loop spin stopped is NOT known, and this has to
+          // happen after the final deferred paint rather than beside it: run
+          // alongside, paint() lands 18 ms later and overwrites the unknown
+          // state with a confident face - which is exactly what the unknown
+          // rendering exists to prevent, defeated at the end of every spin.
+          if (last) this.paintUnknown(i);
         }, 18);
-        if (--left <= 0) {
+        if (last) {
           clearInterval(col.timer);
           col.timer = null;
-          this.paintUnknown(i);   // open loop: where it stopped is not known
         }
       }, per);
     }
@@ -272,7 +290,48 @@
         clearInterval(this.cols[i].timer);
         this.cols[i].timer = null;
         this.cols[i].target = -1;
+        ++this.cols[i].gen;          // any animation in flight is superseded
         this.paint(i, indices[i]);   // -1 paints "unknown", never nothing
+      }
+    }
+
+    // Bring every card into line with the state document.
+    //
+    // THE STATE DOCUMENT IS THE AUTHORITY; go/spin events are an animation
+    // hint.  They travel a lossy path - the board's async-send queue silently
+    // dropped three of every five `go` events until 2026-08-23, measured on
+    // the wire - and there is no retransmit.  Worse, nothing ever corrects the
+    // drift: the frame scheduler does not re-command a column that is already
+    // where it should be, so one lost event left that card wrong for ever,
+    // while the Diagnostics table beside it - built from the same payload -
+    // was right.  This runs on every state document (1-5 Hz) and costs five
+    // integer comparisons.
+    //
+    // `cols` is the /ws cols array; `flaps` the rate to catch up at.
+    reconcile(cols, flaps) {
+      for (let i = 0; i < this.cols.length && i < cols.length; i++) {
+        const c = cols[i];
+        const card = this.cols[i];
+
+        // An open-loop spin is a deliberate "nobody knows where this is
+        // going".  It owns the card until it finishes.
+        if (card.timer && card.target < 0) continue;
+
+        // A negative index means the position is UNKNOWN - unhomed, hunting,
+        // or freshly spun.  Unknown beats dest: during a homing pass dest is
+        // the home slot, and painting it would show a confident blank for a
+        // column that has no idea where it is.
+        const want = c.index < 0 ? -1 : (c.dest >= 0 ? c.dest : c.index);
+
+        if (want < 0) {
+          if (card.idx >= 0 && !card.timer) this.paintUnknown(i);
+          continue;
+        }
+        if (card.timer && card.target === want) continue;  // already on its way
+        if (!card.timer && card.idx === want) continue;    // already there
+        // Catch up by ANIMATING, not snapping: forward-only, exactly as a real
+        // `go` would, so a recovered card looks like the drum it mirrors.
+        this.flipTo(i, want, flaps);
       }
     }
 
@@ -292,6 +351,7 @@
         clearInterval(c.timer);
         c.timer = null;
         c.target = -1;
+        ++c.gen;
         this.paint(i, 0);
       });
     }
