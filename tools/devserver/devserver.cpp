@@ -250,7 +250,8 @@ int main(int argc, char** argv) {
     DevCfgSink cfg_sink;
     DevSys sysinfo;
     DevOps ops;
-    api::Context ctx{modes, ring, sim, cfg_sink, sysinfo, stager, ops, tz};
+    // The stager is BOTH the pinned ring source and the upload sink.
+    api::Context ctx{modes, stager, sim, cfg_sink, sysinfo, stager, ops};
 
     sysinfo.s.wifi_state = "connected";
     sysinfo.s.ssid = "host-dev-server";
@@ -300,13 +301,12 @@ int main(int argc, char** argv) {
     server.on_http = [&](const HttpRequest& req) -> HttpResponse {
         if (req.path == "/api/state") return HttpResponse::json(state_now());
         if (req.path == "/api/ring") {
-            const std::lock_guard<std::mutex> lock(dev_mu);
-            return HttpResponse::json(api::build_ring_doc(ring));
+            return HttpResponse::json(api::build_ring_doc(stager.snapshot()));
         }
         if (req.path == "/api/wear") {
-            const std::lock_guard<std::mutex> lock(dev_mu);
             const ModesConfig mc = modes.config();
-            return HttpResponse::json(api::build_wear_doc(ring, mc.h24, mc.seconds_live_s));
+            return HttpResponse::json(
+                api::build_wear_doc(stager.snapshot(), mc.h24, mc.seconds_live_s));
         }
         if (req.path == "/api/cmd") {
             if (req.method != "POST") return HttpResponse::text(405, "POST only");
@@ -384,9 +384,13 @@ int main(int argc, char** argv) {
                 }
                 // The staged ring swap belongs to the modes context, never to
                 // the HTTP task (ring_store.h contract).
-                if (stager.apply_pending()) {
-                    std::printf("[dev] ring.json applied by the modes task\n");
-                    (void)stager.take_accepted_body();
+                if (stager.pending()) {
+                    bool applied = false;
+                    modes.cmd_ring_swap([&] { return applied = stager.apply_pending(); }, t);
+                    if (applied) {
+                        std::printf("[dev] ring.json applied by the modes task\n");
+                        (void)stager.take_accepted_body();
+                    }
                 }
                 const MotionParams mp = sim.params();
                 port.set_flaps(mp.flaps_s_normal);

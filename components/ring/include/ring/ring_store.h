@@ -2,11 +2,23 @@
 // process-wide RingSet, falling back to the compiled table on any failure
 // (spec 4).
 //
-// THREADING CONTRACT (phase 3 obligation, decision log): reload() mutates the
-// live RingSet in place with no lock, and every renderer holds a reference to
-// it.  It is safe ONLY at boot (before the modes task starts) or when invoked
-// FROM the modes task's own context - the upload handler must dispatch the
-// reload through the command path, never call it from the httpd task.
+// THREADING CONTRACT.  reload() and the upload swap mutate the live RingSet in
+// place, replacing shared_ptrs and thereby FREEING the outgoing tables.  Two
+// rules follow, and the second is the one the phase 3 review found missing:
+//
+//  1. WRITERS: only at boot (before the modes task starts) or from the modes
+//     task's own context, and the upload swap must go through
+//     ModeManager::cmd_ring_swap so it holds the same lock every command
+//     takes.  Never from the httpd task.
+//
+//  2. READERS OUTSIDE THE MODES TASK - the httpd task, the CLI - must not hold
+//     a `const RingTable&` or a `const RingSet&` across anything.  They take a
+//     pinned copy (api::RingSource::snapshot(), implemented by RingStager),
+//     which is cheap and keeps the tables alive for as long as the copy lives.
+//     Reading through get() from another task is a use-after-free waiting for
+//     an upload: the swap drops the last reference mid-read.  This was a live
+//     bug - /api/ring, /api/state, /api/wear and three CLI commands all did
+//     it, and only the host dev server's coarse lock hid it.
 #pragma once
 
 #include <string>

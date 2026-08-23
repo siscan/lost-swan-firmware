@@ -111,9 +111,16 @@ esp_err_t write_accepted(const std::string& body) {
         std::remove(TMP_PATH);
         return ESP_FAIL;
     }
-    std::remove(RING_PATH);  // LittleFS rename onto an existing name can fail
+    // Rename straight over the old file.  The previous code removed it first,
+    // on the belief that LittleFS cannot rename onto an existing name - it
+    // can: lfs_rename replaces a same-type file in a single directory commit,
+    // which is exactly why this pattern was chosen.  Removing first opened a
+    // window where a brownout (five columns spinning is the normal load) left
+    // NO ring.json at all and the next boot silently fell back to the compiled
+    // table, with the good upload sitting unread in ring.json.new.
     if (std::rename(TMP_PATH, RING_PATH) != 0) {
         ESP_LOGE(TAG, "rename %s -> %s failed", TMP_PATH, RING_PATH);
+        std::remove(TMP_PATH);
         return ESP_FAIL;
     }
     ESP_LOGI(TAG, "%s written (%u bytes)", RING_PATH, static_cast<unsigned>(body.size()));

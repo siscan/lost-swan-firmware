@@ -21,7 +21,7 @@
 namespace swan {
 namespace api {
 
-class RingStager : public RingStaging {
+class RingStager : public RingStaging, public RingSource {
 public:
     // `live` is the table the renderers use; only apply_pending() writes it,
     // and only the modes task may call that.
@@ -32,9 +32,20 @@ public:
     bool stage(std::string_view body, std::string* err) override;
 
     // Modes task ONLY.  Swaps a staged table in if one is waiting; returns
-    // true when it did.  Called from the same context that renders, which is
-    // what makes the unlocked swap safe (ring_store.h contract).
+    // true when it did.  The swap itself is done under mu_ so a concurrent
+    // snapshot() cannot observe half-assigned pointers; the modes task's own
+    // renderers are safe because they run on this same task.  Callers must
+    // also force a re-render afterwards - the drums are parked on slots chosen
+    // from the OLD table and nothing else will move them.
     bool apply_pending();
+
+    // Any task.  A cheap copy taken under the swap lock, which pins the live
+    // tables for as long as the returned set lives - see RingSource.  Every
+    // reader outside the modes task MUST come through here: apply_pending()
+    // drops the last reference to the outgoing tables and frees them, and a
+    // raw `const RingTable&` held across a response would be reading freed
+    // heap the moment an upload lands.
+    RingSet snapshot() const override;
 
     bool pending() const { return pending_.load(std::memory_order_acquire); }
 

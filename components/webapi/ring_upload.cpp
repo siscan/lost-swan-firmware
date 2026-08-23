@@ -29,6 +29,11 @@ bool RingStager::stage(std::string_view body, std::string* err) {
     return true;
 }
 
+RingSet RingStager::snapshot() const {
+    const std::lock_guard<std::mutex> lock(mu_);
+    return live_;  // shared_ptr copies: the tables outlive the next swap
+}
+
 bool RingStager::apply_pending() {
     if (!pending_.load(std::memory_order_acquire)) return false;
     const std::lock_guard<std::mutex> lock(mu_);

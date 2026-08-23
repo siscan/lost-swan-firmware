@@ -24,6 +24,7 @@ namespace {
 
 ModeManager* g_mm = nullptr;
 int64_t (*g_utc_ms)() = nullptr;
+const api::RingSource* g_ring = nullptr;
 
 bool modes_ready() {
     if (g_mm == nullptr || g_utc_ms == nullptr) {
@@ -61,6 +62,12 @@ bool parse_col(const char* s, int& out, bool allow_all) {
     if (v < 0 || v >= N_COLUMNS) return false;
     out = static_cast<int>(v);
     return true;
+}
+
+// A pinned copy, always.  Before bind_ring (boot only, single-threaded) fall
+// back to the live table.
+RingSet ring_now() {
+    return g_ring != nullptr ? g_ring->snapshot() : ring_store::get();
 }
 
 int cmd_pins(int, char**) {
@@ -144,7 +151,8 @@ int cmd_go(int argc, char** argv) {
     // compiled fallback) - never the compiled constants directly.  Resolved
     // from where the column is now: column 5 has two slots per digit and the
     // nearest one going forward wins.
-    const RingTable& table = ring_store::get().col(col);
+    const RingSet ring = ring_now();
+    const RingTable& table = ring.col(col);
     AxisInfo cur;
     motion::info(col, cur);
     int index = table.index_for_token(argv[2], cur.index);
@@ -283,7 +291,7 @@ int cmd_frame(int argc, char** argv) {
         return 1;
     }
     Frame f;
-    const RingSet& ring = ring_store::get();
+    const RingSet ring = ring_now();
     for (int i = 0; i < N_COLUMNS; ++i) {
         AxisInfo cur;
         motion::info(i, cur);
@@ -431,7 +439,8 @@ int cmd_stats(int, char**) {
 int cmd_ring(int argc, char** argv) {
     // The shared runtime table (a column with its own ring differs; the
     // Calibrate page's per-column walk arrives in Phase 3).
-    const RingTable& table = ring_store::get().col(0);
+    const RingSet ring = ring_now();
+    const RingTable& table = ring.col(0);
     if (argc == 2) {
         const int i = table.index_for_token(argv[1]);
         if (i < 0) {
@@ -443,7 +452,7 @@ int cmd_ring(int argc, char** argv) {
         return 0;
     }
     std::printf("source: %s   descending: %s\n",
-                ring_store::get().loaded_from_json() ? "ring.json" : "compiled",
+                ring.loaded_from_json() ? "ring.json" : "compiled",
                 table.is_descending() ? "yes" : "NO");
     for (int i = 0; i < table.slot_count(); ++i) {
         std::printf("%2d  %-12s %-28s %s\n", i, table.slot(i).id.c_str(),
@@ -497,6 +506,8 @@ void reg(const char* cmd, const char* help, esp_console_cmd_func_t fn) {
 }
 
 }  // namespace
+
+void bind_ring(const api::RingSource* src) { g_ring = src; }
 
 void bind_modes(ModeManager* mm, int64_t (*utc_ms_fn)()) {
     g_mm = mm;

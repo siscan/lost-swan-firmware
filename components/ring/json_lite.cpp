@@ -7,10 +7,20 @@ namespace {
 constexpr size_t MAX_INPUT = 256 * 1024;
 constexpr int MAX_DEPTH = 16;
 
+// A node budget, not just a byte budget.  Every Value is ~64 bytes on RV32
+// while the cheapest token is two ("0,"), so an input the length check waves
+// through can ask for ~32x its own size - in ONE contiguous vector.  With
+// exceptions off and no PSRAM, that allocation failing means abort() and a
+// reboot, reachable by POSTing a few kilobytes of "[0,0,0,...]".  ring.json is
+// ~1,100 nodes; 8,000 leaves generous headroom for a bigger drum without
+// letting a crafted document near the heap ceiling.
+constexpr int MAX_NODES = 8000;
+
 struct Parser {
     std::string_view s;
     size_t i = 0;
     std::string* err;
+    int nodes = 0;
 
     bool fail(const char* why) {
         if (err != nullptr && err->empty()) {
@@ -97,6 +107,7 @@ struct Parser {
 
     bool parse_value(Value& v, int depth) {
         if (depth > MAX_DEPTH) return fail("nesting too deep");
+        if (++nodes > MAX_NODES) return fail("document has too many values");
         skip_ws();
         if (i >= s.size()) return fail("unexpected end");
         const char c = s[i];

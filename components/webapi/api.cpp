@@ -53,6 +53,9 @@ void write_reveal(Writer& w, const RingSet& ring, const ModesConfig& cfg) {
 // State
 // ---------------------------------------------------------------------------
 std::string build_state(Context& ctx, int64_t utc_ms) {
+    // Pinned for the whole document: a ring upload applied mid-build would
+    // otherwise free the tables these lookups are reading.
+    const RingSet ring = ctx.ring.snapshot();
     const ModesConfig cfg = ctx.modes.config();
     const MotionParams mp = ctx.motion.params();
     const SysInfo sys = ctx.sys.get();
@@ -87,7 +90,7 @@ std::string build_state(Context& ctx, int64_t utc_ms) {
         w.obj()
             .kv("state", axis_state_name(a.state))
             .kv("index", a.index)
-            .kv("face", face_of(ctx.ring, i, a.index))
+            .kv("face", face_of(ring, i, a.index))
             .kv("dest", a.dest_index)
             .kv("cal", a.cal_offset)
             .kv("revs", static_cast<int64_t>(a.revs))
@@ -113,19 +116,19 @@ std::string build_state(Context& ctx, int64_t utc_ms) {
         .kv("failure_timeout_s", cfg.failure_timeout_s)
         .kv("clock_land_on_tick", cfg.clock_land_on_tick)
         .kv("cd_land_on_tick", cfg.cd_land_on_tick)
-        .kv("tz", ctx.tz)
+        .kv("tz", ctx.modes.tz_string())
         .kv("flaps_s_normal", mp.flaps_s_normal)
         .kv("flaps_s_alarm", mp.flaps_s_alarm)
         .kv("flaps_s_home", mp.flaps_s_home)
         .kv("accel", mp.accel)
         .kv("hall_tol", mp.hall_tol);
-    write_reveal(w, ctx.ring, cfg);
+    write_reveal(w, ring, cfg);
     w.end_obj();
 
     w.key("ring").obj()
-        .kv("source", ctx.ring.loaded_from_json() ? "ring.json" : "compiled")
-        .kv("slots", ctx.ring.col(0).slot_count())
-        .kv("descending", ctx.ring.col(0).is_descending() && ctx.ring.col(4).is_descending())
+        .kv("source", ring.loaded_from_json() ? "ring.json" : "compiled")
+        .kv("slots", ring.col(0).slot_count())
+        .kv("descending", ring.col(0).is_descending() && ring.col(4).is_descending())
         .end_obj();
 
     w.key("cal").obj()
@@ -269,7 +272,8 @@ std::string do_message_set(Context& ctx, const json::Value& p, int64_t utc_ms) {
     return result_of(ctx.modes.cmd_message_set(t, dwell, hold && hold->boolean, utc_ms));
 }
 
-std::string do_display_frame(Context& ctx, const json::Value& p, int64_t utc_ms) {
+std::string do_display_frame(Context& ctx, const RingSet& ring, const json::Value& p,
+                             int64_t utc_ms) {
     Frame f;
     if (const json::Value* idx = member(p, "indices")) {
         const auto* a = idx->as_array();
@@ -285,7 +289,7 @@ std::string do_display_frame(Context& ctx, const json::Value& p, int64_t utc_ms)
             return err_result("tokens must be 5 entries");
         }
         for (int i = 0; i < N_COLUMNS; ++i) {
-            const int got = ctx.ring.col(i).index_for_token((*a)[static_cast<size_t>(i)].as_str());
+            const int got = ring.col(i).index_for_token((*a)[static_cast<size_t>(i)].as_str());
             if (got < 0) return err_result("unknown token");
             f.idx[static_cast<size_t>(i)] = got;
         }
@@ -324,7 +328,8 @@ std::string do_motion_params(Context& ctx, const json::Value& p) {
     return ok_result();
 }
 
-std::string do_config_set(Context& ctx, const json::Value& p, int64_t utc_ms) {
+std::string do_config_set(Context& ctx, const RingSet& ring, const json::Value& p,
+                          int64_t utc_ms) {
     ModesConfig cfg = ctx.modes.config();
     int v = 0;
 
@@ -344,6 +349,11 @@ std::string do_config_set(Context& ctx, const json::Value& p, int64_t utc_ms) {
         if (v < 0 || v > ModeManager::COUNTDOWN_S) {
             return err_result("seconds_live_s must be 0..6480");
         }
+        // Whole minutes only, for the same reason granularity_min must divide
+        // 60: a boundary that does not land on a minute makes the displayed
+        // value jump - upward, here, which on a one-way ring is a near-full
+        // wrap in the wrong direction.
+        if (v % 60 != 0) return err_result("seconds_live_s must be a whole number of minutes");
         cfg.seconds_live_s = v;
     }
     if (as_int_field(p, "msg_dwell_s", v)) {
@@ -392,7 +402,7 @@ std::string do_config_set(Context& ctx, const json::Value& p, int64_t utc_ms) {
                 next[static_cast<size_t>(i)] = -1;
                 continue;
             }
-            const int got = ctx.ring.col(i).index_for_token(e.as_str());
+            const int got = ring.col(i).index_for_token(e.as_str());
             if (got < 0) {
                 return err_result("reveal glyph not on that column's ring");
             }
@@ -402,8 +412,10 @@ std::string do_config_set(Context& ctx, const json::Value& p, int64_t utc_ms) {
     }
 
     if (const json::Value* tz = member(p, "tz")) {
+        // ModeManager owns the string and hands it back under its lock; a
+        // mirror in Context would be written here on the HTTP task and read at
+        // 20 Hz on the modes task with nothing between them.
         if (!ctx.modes.set_tz(tz->as_str())) return err_result("bad POSIX TZ string");
-        ctx.tz = std::string(tz->as_str());
     }
 
     ctx.modes.set_config(cfg);
@@ -413,6 +425,8 @@ std::string do_config_set(Context& ctx, const json::Value& p, int64_t utc_ms) {
 }  // namespace
 
 std::string handle_command(Context& ctx, std::string_view body, int64_t utc_ms) {
+    // Pinned for the whole dispatch, same reason as build_state.
+    const RingSet ring = ctx.ring.snapshot();
     json::Value doc;
     std::string perr;
     if (!json::parse(body, doc, &perr)) return err_result("bad json: " + perr);
@@ -441,7 +455,7 @@ std::string handle_command(Context& ctx, std::string_view body, int64_t utc_ms) 
                                                                               : std::string_view{});
         return result_of(ctx.modes.cmd_preset(n, utc_ms));
     }
-    if (c == "display.frame") return do_display_frame(ctx, p, utc_ms);
+    if (c == "display.frame") return do_display_frame(ctx, ring, p, utc_ms);
 
     // ---- countdown ----
     if (c == "countdown.execute") {
@@ -516,10 +530,11 @@ std::string handle_command(Context& ctx, std::string_view body, int64_t utc_ms) 
     }
 
     // ---- config ----
-    if (c == "config.set") return do_config_set(ctx, p, utc_ms);
+    if (c == "config.set") return do_config_set(ctx, ring, p, utc_ms);
     if (c == "config.save") {
-        return ctx.cfg.save_app(ctx.modes.config(), ctx.tz) ? ok_result()
-                                                            : err_result("save failed");
+        return ctx.cfg.save_app(ctx.modes.config(), ctx.modes.tz_string())
+                   ? ok_result()
+                   : err_result("save failed");
     }
 
     // ---- ring upload (body carried separately by the HTTP route) ----

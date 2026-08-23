@@ -103,11 +103,24 @@ void modes_task(void*) {
         const int64_t now = utc_ms_now();
 
         // A ring uploaded by the HTTP task was validated into a staging table;
-        // the swap happens HERE, in the context that renders.
-        if (g_stager->apply_pending()) {
-            const std::string body = g_stager->take_accepted_body();
-            ESP_LOGI(TAG, "ring.json applied (%u bytes)", static_cast<unsigned>(body.size()));
-            swan::ring_store::write_accepted(body);  // persist only what validated
+        // the swap happens HERE, in the context that renders - and through
+        // ModeManager, so it holds the same lock every command takes and no
+        // task can be reading the table mid-assignment.  cmd_ring_swap also
+        // forces the re-render a software table change needs.
+        if (g_stager->pending()) {
+            bool applied = false;
+            g_modes->cmd_ring_swap([&] { return applied = g_stager->apply_pending(); }, now);
+            if (applied) {
+                const std::string body = g_stager->take_accepted_body();
+                ESP_LOGI(TAG, "ring.json applied (%u bytes)", static_cast<unsigned>(body.size()));
+                // Persist only what validated.  A failure here leaves RAM and
+                // flash disagreeing until the next boot, so say so loudly.
+                const esp_err_t werr = swan::ring_store::write_accepted(body);
+                if (werr != ESP_OK) {
+                    ESP_LOGE(TAG, "ring.json accepted but NOT persisted (%s); it will be lost "
+                                  "on reboot", esp_err_to_name(werr));
+                }
+            }
         }
 
         const swan::MotionParams mp = swan::motion::params();
@@ -186,10 +199,10 @@ extern "C" void app_main() {
     static swan::net::IdfSysInfo sysinfo;
     static swan::net::IdfSystemOps ops;
     g_stager = new swan::api::RingStager(swan::ring_store::mutable_ring());
-    g_api = new swan::api::Context{*g_modes,   swan::ring_store::get(),
-                                   motion_admin, cfg_sink,
-                                   sysinfo,    *g_stager,
-                                   ops,        g_app.tz};
+    // The stager is BOTH the ring source and the upload sink: it owns the lock
+    // that makes a snapshot safe against its own swap.
+    g_api = new swan::api::Context{*g_modes, *g_stager, motion_admin, cfg_sink,
+                                   sysinfo,  *g_stager, ops};
 
     xTaskCreate(status_task, "swan_status", 3072, nullptr, 2, nullptr);
     xTaskCreate(modes_task, "swan_modes", 8192, nullptr, 5, nullptr);
@@ -204,5 +217,6 @@ extern "C" void app_main() {
     }
 
     swan::cli::bind_modes(g_modes, utc_ms_now);
+    swan::cli::bind_ring(g_stager);
     ESP_ERROR_CHECK(swan::cli::start());
 }

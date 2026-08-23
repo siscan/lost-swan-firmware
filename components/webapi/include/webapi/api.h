@@ -68,6 +68,25 @@ public:
     virtual SysInfo get() = 0;
 };
 
+// A PINNED view of the ring.
+//
+// RingSet holds its tables through shared_ptr, so a copy is cheap - a handful
+// of refcount bumps - and, crucially, keeps those tables alive for as long as
+// the copy lives.  That is what makes it safe for the HTTP task to read the
+// ring across a long response while the modes task swaps in an uploaded table:
+// the swap replaces the pointers, the reader's copy keeps the old tables until
+// it goes out of scope.
+//
+// Taking the snapshot must be serialized against the swap (copying a
+// shared_ptr while another thread assigns it is a race in itself); holding it
+// afterwards need not be.  Every entry point below pins one at the top and
+// uses it throughout, so a single response can never mix two tables.
+class RingSource {
+public:
+    virtual ~RingSource() = default;
+    virtual RingSet snapshot() const = 0;
+};
+
 // A ring upload staged by the HTTP task.  Validation happens entirely on this
 // copy; the running table is untouched until the modes task applies it.
 class RingStaging {
@@ -88,13 +107,12 @@ public:
 
 struct Context {
     ModeManager& modes;
-    const RingSet& ring;
+    RingSource& ring;
     MotionAdmin& motion;
     ConfigSink& cfg;
     SysInfoSource& sys;
     RingStaging& ring_upload;
     SystemOps& ops;
-    std::string tz;  // mirror of time.tz for reporting; ModeManager owns parsing
 };
 
 // The full state document pushed on /ws (on change and at 1 Hz) and returned
@@ -112,14 +130,20 @@ std::string build_ring_doc(const RingSet& ring);
 // all three seconds modes in one document: the Settings page needs an exact
 // figure the instant a control moves, and a lookup table in JavaScript would
 // drift from the renderer the first time either changed.
+// Takes an already-pinned set: this walks tens of thousands of renders, so it
+// must not be re-resolving a shared reference the modes task may replace.
 std::string build_wear_doc(const RingSet& ring, bool h24, int seconds_live_s);
 
 // Parse and dispatch one command.  `body` is {"cmd":"...","payload":...}.
 // Always returns a JSON result: {"ok":true} or {"ok":false,"err":"..."}.
 std::string handle_command(Context& ctx, std::string_view body, int64_t utc_ms);
 
-// Upload limits (spec 4: the drum is physical, the table is small).
-inline constexpr size_t RING_UPLOAD_MAX = 64 * 1024;
+// Upload limit (spec 4: the drum is physical, the table is small).  The
+// generated data/ring.json is ~9.4 KB; 24 KB is generous for a bigger drum or
+// longer labels and keeps the transport's single contiguous allocation to
+// something the device can actually hold.  json_lite's node budget is the
+// other half of that defence - the byte count alone does not bound the DOM.
+inline constexpr size_t RING_UPLOAD_MAX = 24 * 1024;
 
 }  // namespace api
 }  // namespace swan
