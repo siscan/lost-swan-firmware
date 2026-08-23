@@ -86,7 +86,7 @@ user-scope MinGW-w64 GCC. On a POSIX machine the plain forms apply instead:
 
 ```
 idf.py set-target esp32c5 && idf.py build
-cmake -S test/host -B build/host && cmake --build build/host && ctest --test-dir build/host
+cmake -S test/host -B build_host && cmake --build build_host && ctest --test-dir build_host
 ```
 
 Pin the IDF version in `README.md` once the first build succeeds, and record

@@ -6,7 +6,7 @@
 // so the UI and the firmware logic are one codebase and the UI is clickable
 // months before a board exists.
 //
-//   build/host/devserver [--port 8080] [--root web] [--ring data/ring.json]
+//   build_host/devserver [--port 8080] [--root web] [--ring data/ring.json]
 //                        [--tz PST8PDT,M3.2.0,M11.1.0]
 //
 // Not firmware: esp_http_server serves the same routes on target.

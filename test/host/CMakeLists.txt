@@ -1,8 +1,8 @@
 # Host unit tests - plain CMake, no ESP-IDF (CLAUDE.md toolchain).
 #
-#   cmake -S test/host -B build/host
-#   cmake --build build/host
-#   ctest --test-dir build/host --output-on-failure
+#   cmake -S test/host -B build_host
+#   cmake --build build_host
+#   ctest --test-dir build_host --output-on-failure
 #
 # Only pure sources are compiled here.  Anything that includes an IDF header
 # belongs behind hal/ or a *_store/*_service shell and is not host-testable by
@@ -68,14 +68,14 @@ endforeach()
 
 # Not a test: the trace generator for the browser simulator (web/sim).
 # Run manually after mode/frame changes:
-#   build/host/gen_traces data/ring.json web/sim/traces.js
+#   build_host/gen_traces data/ring.json web/sim/traces.js
 add_executable(gen_traces gen_traces.cpp ${SWAN_PURE_SRC})
 target_link_libraries(gen_traces PRIVATE swan_test_cfg Threads::Threads)
 
 # Not a test: the host dev server (spec 15 phase 3, step a).  Serves web/ and
 # speaks the real /ws against the real ModeManager over simulated axes, so the
 # UI is clickable with no hardware:
-#   build/host/devserver --port 8080 --root web --ring data/ring.json
+#   build_host/devserver --port 8080 --root web --ring data/ring.json
 add_executable(devserver
     ${SWAN_ROOT}/tools/devserver/devserver.cpp
     ${SWAN_ROOT}/tools/devserver/httpd.cpp

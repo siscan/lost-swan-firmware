@@ -105,7 +105,7 @@ powershell -ExecutionPolicy Bypass -File ./build.ps1 build
 
 ```powershell
 .\test-host.ps1            # configure, build, run
-.\test-host.ps1 -Clean     # wipe build/host first
+.\test-host.ps1 -Clean     # wipe build_host first
 ```
 
 It uses the CMake and Ninja that `install.ps1` already put under
@@ -137,7 +137,7 @@ reinstalling Windows**. The retry loop makes the tests reliable without it.
 On a machine without those constraints the plain form in CLAUDE.md works as-is:
 
 ```bash
-cmake -S test/host -B build/host && cmake --build build/host && ctest --test-dir build/host --output-on-failure
+cmake -S test/host -B build_host && cmake --build build_host && ctest --test-dir build_host --output-on-failure
 ```
 
 ## Ring table
@@ -178,8 +178,7 @@ actually decided, through a MockSocket speaking the intended Phase 3 `/ws`
 shape.  Refresh the traces after mode/frame changes:
 
 ```powershell
-buildhostgen_traces data
-ing.json websim	races.js
+build_host\gen_traces.exe data\ring.json web\sim\traces.js
 ```
 
 ## Pin map (DevKitC-1, spec §2.2)

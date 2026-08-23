@@ -1,7 +1,7 @@
 # LOST Swan — host unit tests.  THE documented way to run them in this repo.
 #
 #   .\test-host.ps1            # configure, build, run
-#   .\test-host.ps1 -Clean     # wipe build/host first
+#   .\test-host.ps1 -Clean     # wipe build_host first
 #
 # Uses the CMake and Ninja that install.ps1 already put under ~/.espressif/tools
 # (no separate CMake install) plus a user-scope MinGW-w64 GCC from winget.
@@ -48,7 +48,7 @@ Write-Host "ninja : $ninja"
 Write-Host "g++   : $gxx"
 
 $root = $PSScriptRoot
-$build = Join-Path $root 'build\host'
+$build = Join-Path $root 'build_host'
 if ($Clean -and (Test-Path $build)) { Remove-Item -Recurse -Force $build }
 
 & $cmake -S (Join-Path $root 'test\host') -B $build -G Ninja `

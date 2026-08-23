@@ -27,14 +27,14 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: Configure
-        run: cmake -S test/host -B build/host
+        run: cmake -S test/host -B build_host
       - name: Build
-        run: cmake --build build/host
+        run: cmake --build build_host
       - name: Run
-        run: ctest --test-dir build/host --output-on-failure
+        run: ctest --test-dir build_host --output-on-failure
       - name: Simulator traces are current
         run: |
-          ./build/host/gen_traces data/ring.json /tmp/traces.js
+          ./build_host/gen_traces data/ring.json /tmp/traces.js
           diff /tmp/traces.js web/sim/traces.js
 
   firmware:
