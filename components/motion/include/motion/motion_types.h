@@ -5,6 +5,8 @@
 #include <cstdint>
 
 #include "hal/pins.h"  // N_COLUMNS - pins.h is deliberately pure (cstdint only)
+#include "motion/column_mode.h"
+#include "motion/fault_policy.h"
 
 namespace swan {
 
@@ -24,6 +26,10 @@ struct MotionParams {
     // this stays configurable rather than baked in.
     bool hall_active_low = true;
     int32_t cal[N_COLUMNS] = {0, 0, 0, 0, 0};
+    // Maintenance (spec 5.9).  Snapshotted into every control tick, so the
+    // core needs no separate channel: it suppresses automatic re-homing and
+    // opens `go` to a faulted column so a suspect drum can be driven by hand.
+    bool maintenance = false;
 };
 
 struct AxisInfo {
@@ -45,6 +51,8 @@ struct AxisInfo {
     int32_t last_hall_err;
     int32_t hall_to_hall;  // measured usteps between the last two edges
     uint8_t rehome_attempt; // automatic re-home in flight: 0, or 1..REHOME_RETRIES
+    FaultCause fault_cause; // why it last faulted - sensor-style, or a jam
+    ColumnMode mode;        // real / sim / disabled, from NVS
 };
 
 }  // namespace swan

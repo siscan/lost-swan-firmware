@@ -189,9 +189,17 @@ void test_edge_classification() {
     CHECK_EQ(edge_error(0, 8369), 127);
     CHECK(classify_edge_error(127, tol) == EdgeVerdict::Major);
 
+    // The missed-edge window is a revolution and a HALF, not a revolution and
+    // a flap.  At the old width a slip of just over one flap and a drum that
+    // had stopped dead were the same observation - "the edge is a little
+    // overdue" - and they need opposite responses.  Wide enough that a slip
+    // arrives as a late edge (Slip, retried) and only a real absence trips it
+    // (Jam, never retried).
     CHECK(!edge_overdue(0, 0));
     CHECK(!edge_overdue(8242, 0));
-    CHECK(edge_overdue(8242 + 166, 0));
+    CHECK(!edge_overdue(8242 + 166, 0));    // a one-flap slip is still just late
+    CHECK(!edge_overdue(8242 + 4000, 0));   // so is a big one
+    CHECK(edge_overdue(8242 + 4200, 0));    // past 1.5 revolutions: it stopped
 }
 
 // --------------------------------------------------------------------------

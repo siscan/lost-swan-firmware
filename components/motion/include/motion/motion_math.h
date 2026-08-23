@@ -98,9 +98,23 @@ constexpr EdgeVerdict classify_edge_error(int64_t err, const EdgeTolerances& tol
     return EdgeVerdict::Fault;
 }
 
-// No edge within one revolution + one flap of stepping -> FAULT (spec 5.4).
+// No edge within one revolution + HALF a revolution of stepping -> FAULT, and
+// that fault means the drum has stopped (spec 5.4, 5.8).
+//
+// The window used to be one revolution + one flap, and at that width a slip of
+// just over a flap and a completely stopped drum are indistinguishable: both
+// are "the edge is a little overdue".  They need opposite responses - a slip
+// re-homes and recovers, a jam must not be driven into - so the window is now
+// wide enough that a slip resolves as a LATE EDGE (handled by edge
+// verification, classified Slip, retried) and only a genuine absence trips it.
+//
+// The price is that a real jam is noticed up to half a revolution later:
+// ~3.1 s at 15 flaps/s.  That is much cheaper than the alternative, which was
+// to retry the missed edge and spend a full 7.5 s homing pass driving the
+// motor into whatever is resisting.
 constexpr bool edge_overdue(int64_t pos_abs, int64_t hall_abs) {
-    return (pos_abs - hall_abs) > USTEPS_PER_SPOOL_REV_NOMINAL + ring_target_usteps(1);
+    return (pos_abs - hall_abs) >
+           USTEPS_PER_SPOOL_REV_NOMINAL + USTEPS_PER_SPOOL_REV_NOMINAL / 2;
 }
 
 // ---------------------------------------------------------------------------

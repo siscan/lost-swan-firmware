@@ -24,13 +24,21 @@ struct TickCtx {
     }
 };
 
-void enter_fault(TickCtx& c, const char* why) {
+void enter_fault(TickCtx& c, const char* why, FaultCause cause) {
     AxisCtl& a = c.a;
     a.faults.fetch_add(1, RLX);
+    a.fault_cause.store(static_cast<uint8_t>(cause), RLX);
     c.ev.fault = true;
     c.ev.fault_reason = why;
+    c.ev.fault_cause = cause;
 
-    if (a.rehome_retries < REHOME_RETRIES) {
+    // A jam is never retried: the edges were arriving and stopped, which means
+    // something is resisting, and another homing pass drives the motor into it
+    // for 7.5 s against printed gear teeth.  Maintenance suppresses automatic
+    // re-homing outright - nothing moves on its own while someone has their
+    // hands in the mechanism.
+    if (fault_retry_allowed(cause) && !c.p.maintenance &&
+        a.rehome_retries < REHOME_RETRIES) {
         ++a.rehome_retries;
         a.rehome_attempt.store(a.rehome_retries, RLX);
         c.ev.rehome = true;
@@ -84,7 +92,11 @@ void on_hall_edge(TickCtx& c) {
                 c.ev.resync_major = true;
                 break;
             case EdgeVerdict::Fault:
-                enter_fault(c, "hall edge off by more than one flap");
+                // The edge ARRIVED, just in the wrong place: the drum turned and
+                // lost registration.  A re-home recovers it, and a homing
+                // pass into a free drum is harmless - so this retries.
+                enter_fault(c, "hall edge off by more than one flap",
+                            FaultCause::Slip);
                 return;
         }
     }
@@ -134,7 +146,16 @@ void apply_request(TickCtx& c, const Request& r) {
 
         case ReqKind::Go: {
             const AxisState s = a.state.load(RLX);
-            if ((s != AxisState::Idle && s != AxisState::Moving) || !a.hall_valid.load(RLX)) {
+            // Normally `go` is refused from FAULT, so nothing false is ever
+            // displayed (decision log 17).  In MAINTENANCE the operator is
+            // deliberately driving a suspect column by hand from the Calibrate
+            // page, and refusing would defeat the point - so any state except
+            // mid-homing is allowed.  A hall reference is still required in
+            // both cases: without one there is no such thing as index N.
+            const bool state_ok = c.p.maintenance ? (s != AxisState::Homing)
+                                                  : (s == AxisState::Idle ||
+                                                     s == AxisState::Moving);
+            if (!state_ok || !a.hall_valid.load(RLX)) {
                 c.ev.req_rejected = true;
                 break;
             }
@@ -230,10 +251,20 @@ IsrWrite axis_control_tick(AxisCtl& a, const IsrSnap& in, const Request& req,
                     a.home_phase = HomePhase::Seek;
                     c.set_target(in.pos + HOME_LIMIT);
                 } else if (in.pos >= c.tgt) {
-                    enter_fault(c, "hall never released");
+                    // Stuck asserted looks like a shorted sensor, not resistance:
+                    // the drum is probably turning freely, so retrying is safe.
+                    enter_fault(c, "hall never released", FaultCause::NoHallEver);
                 }
             } else if (a.home_phase == HomePhase::Seek) {
-                if (in.pos >= c.tgt) enter_fault(c, "no hall edge in 1.2 revolutions");
+                if (in.pos >= c.tgt) {
+                    // Never seen an edge at all -> sensor, magnet or wiring, and
+                    // the drum is almost certainly free.  Seen one before and
+                    // now cannot -> something changed mechanically; treat it as
+                    // a jam and stop rather than grind.
+                    enter_fault(c, "no hall edge in 1.2 revolutions",
+                                a.hall_valid.load(RLX) ? FaultCause::Jam
+                                                       : FaultCause::NoHallEver);
+                }
             } else if (a.home_phase == HomePhase::Settle) {
                 if (in.pos >= c.tgt) {
                     a.home_phase = HomePhase::None;
@@ -252,7 +283,11 @@ IsrWrite axis_control_tick(AxisCtl& a, const IsrSnap& in, const Request& req,
                 a.index.store(a.dest_index.load(RLX), RLX);
                 a.state.store(AxisState::Idle, RLX);
             } else if (a.hall_valid.load(RLX) && edge_overdue(in.pos, in.hall)) {
-                enter_fault(c, "missed hall edge while moving");
+                // An edge that never came within a revolution and a half is a
+                // STOPPED drum, not a slip - a slip arrives late and is
+                // caught by edge verification above.  Do not retry into it.
+                enter_fault(c, "no hall edge for 1.5 revolutions - drum stopped?",
+                            FaultCause::Jam);
             }
             break;
 
@@ -293,6 +328,7 @@ AxisPublished axis_read_published(const AxisCtl& a) {
         out.hall_to_hall = a.hall_to_hall.load(RLX);
         out.cal_offset = a.cal_offset.load(RLX);
         out.rehome_attempt = a.rehome_attempt.load(RLX);
+        out.fault_cause = static_cast<FaultCause>(a.fault_cause.load(RLX));
         std::atomic_thread_fence(std::memory_order_acquire);
         const uint32_t s2 = a.seq.load(std::memory_order_relaxed);
         if (s1 == s2) return out;

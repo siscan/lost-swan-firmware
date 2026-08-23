@@ -13,6 +13,7 @@
 #include <cstdint>
 
 #include "motion/motion_math.h"
+#include "motion/fault_policy.h"
 #include "motion/motion_types.h"
 #include "ring/ring.h"
 
@@ -124,6 +125,10 @@ struct AxisCtl {
     // Published so the UI can say "column 3, attempt 2 of 3" instead of
     // leaving a hunting column indistinguishable from an idle one.
     std::atomic<uint8_t> rehome_attempt{0};
+    // Why this axis last faulted.  Published because the two causes want
+    // opposite responses and the operator needs to be told which one it is:
+    // "sensor or wiring" and "it is jammed" are different call-outs.
+    std::atomic<uint8_t> fault_cause{static_cast<uint8_t>(FaultCause::None)};
 
     // Written by the calibration API from any task, read here.  A single value
     // with no companion invariant; live nudging during a move is intentional
@@ -172,6 +177,7 @@ struct TickEvents {
     bool homed = false;
     bool fault = false;
     const char* fault_reason = nullptr;
+    FaultCause fault_cause = FaultCause::None;
     bool rehome = false;              // fault -> automatic re-home scheduled
     uint8_t rehome_attempt = 0;
     bool gave_up = false;             // retries exhausted -> latched FAULT
@@ -203,6 +209,7 @@ struct AxisPublished {
     int32_t hall_to_hall;
     int32_t cal_offset;  // written by the cal API, not the tick; single value
     uint8_t rehome_attempt;  // 0 = not retrying, else 1..REHOME_RETRIES
+    FaultCause fault_cause;
 };
 AxisPublished axis_read_published(const AxisCtl& a);
 
