@@ -8,7 +8,10 @@ Target: ESP32-C5-DevKitC-1-N8R8 (XIAO ESP32-C5 map behind a board define).
 ## Status
 
 - **Spec v1.0** — all questions answered (spec §16); resolutions in the §17 decision log
-- Hardware: DevKitC-1 on order; **chip revision unverified** (checked on first flash)
+- Hardware: **DevKitC-1 V1.2 on the bench, chip revision v1.2** (production
+  silicon; the §2.0 risk is closed). Console on **COM3**, USB-Serial/JTAG.
+  Flashed and booting; nothing wired yet, so all five columns latch FAULT by
+  design
 - Code: **Phase 3 complete** (web UI, WiFi STA, mDNS, `/ws` + `/api`, ring
   upload, gzipped assets in LittleFS) on top of Phase 2 (fluid ring, frame
   scheduler, modes with the deadline countdown, time service, browser
@@ -23,7 +26,8 @@ Target: ESP32-C5-DevKitC-1-N8R8 (XIAO ESP32-C5 map behind a board define).
 | `git diff` empty after `tools/ringgen.py` | clean — header and ring.json both regenerate byte-identically |
 | motion cross-task handoff explicit | done — see `docs/MOTION_SYNC.md`, incl. the seqlock for multi-field reads |
 | CI | GitHub Actions on ubuntu — see below |
-| flashed to hardware | **not done — board not arrived** |
+| flashed to hardware | **done 2026-08-23** — boots, CLI up, ring.json loads from LittleFS, unwired homing faults cleanly |
+| chip revision | **v1.2** — production silicon, inside the image's v1.0–v1.99 window |
 
 ## CI — the reliability source of truth
 
@@ -60,6 +64,36 @@ re-home; negative and >1-revolution calibration offsets normalising; an
 revolution and never faulting; and mailbox ordering — commands in separate
 control periods all apply in order, two commands in one period apply exactly
 the newer one whole.
+
+## The board
+
+| | |
+|---|---|
+| board | ESP32-C5-DevKitC-1 **V1.2** (PCB silkscreen), N8R8 |
+| chip | **ESP32-C5 revision v1.2** — production silicon |
+| efuse block rev | v0.3 |
+| ROM | `esp32c5-eco3-20250704` |
+| features | Wi-Fi 6 dual-band, BT 5 LE, 802.15.4, single core + LP core, 240 MHz |
+| crystal | 48 MHz |
+| base MAC | `10:bd:a3:dd:a8:e8` |
+| port | **COM3**, USB-Serial/JTAG |
+
+```powershell
+.\build.ps1 -p COM3 flash
+.\build.ps1 -p COM3 monitor      # Ctrl+] to exit
+```
+
+**If a future IDF bump ever prints `Image requires chip rev <= …`, that is an
+IDF-version problem, not a board fault.** An image carries a supported chip
+revision range and the bootloader *aborts* rather than warns outside it. This
+build reports `Min chip rev: v1.0  Max chip rev: v1.99  Chip rev: v1.2`, so
+v1.2 sits inside the window. ESP-IDF v5.5.5 also offers
+`CONFIG_ESP32C5_REV_MIN_102`, i.e. it knows v1.2 as a shipping revision.
+
+Bench note for scripted console work: **pyserial asserts DTR and RTS on
+open**, and on USB-Serial-JTAG those drive EN and the boot pin — so opening the
+port per command silently resets the board between commands. Clear both before
+`open()`.
 
 ## Pinned versions
 

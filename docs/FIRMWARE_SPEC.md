@@ -27,7 +27,7 @@ Columns are physically grouped 3 + 2 with a band between (no colon column).
 
 | Item | Spec | Notes |
 |---|---|---|
-| MCU | **ESP32-C5-DevKitC-1-N8R8** — ordered 2026-08-21 (Amazon, third-party seller). Pin map in §2.2. | 8 MB flash, 8 MB PSRAM, USB-Serial-JTAG + USB-UART bridge. **Chip revision unverified until arrival**: the bootloader log prints `chip revision: v1.0` on first `idf.py flash monitor`; anything reporting v0.1 goes back. XIAO ESP32-C5 (also ordered) becomes the spare / project-#2 board; Pico 2 W remains plan B. |
+| MCU | **ESP32-C5-DevKitC-1-N8R8**, board V1.2 — **on the bench since 2026-08-23**. Pin map in §2.2. | 8 MB flash, 8 MB PSRAM, USB-Serial-JTAG + USB-UART bridge. **Chip revision v1.2, verified** (§2.0) — production silicon; the revision risk is closed. XIAO ESP32-C5 is the spare / project-#2 board; Pico 2 W remains plan B. |
 | Motors | 5 × NEMA 17, 17HS4401-class, 1.8° (200 full steps/rev) | `VERIFY` step angle on the motors actually bought. |
 | Drivers | 5 × TMC2209 modules, **standalone (no UART)** | MS1 = MS2 = high → 1/16 microstep, internal 256 interpolation. `VERIFY` against the vendor's silkscreen/doc; a different default pull changes every motion constant. Vref set for ~1.1–1.2 A RMS. Standstill current reduction left enabled. |
 | Drive | 33T pinion on motor → 85T gear cut into spool disc rim | Ratio **85/33 = 2.5758:1**, not 2.6. `VERIFY` teeth counts against BUILD/README v6. |
@@ -38,7 +38,38 @@ Columns are physically grouped 3 + 2 with a band between (no colon column).
 | Status | Onboard LED on GPIO27 on either C5 board | XIAO: single yellow LED, active low → blink patterns. DevKitC-1: WS2812 RGB → colour-coded status. |
 | Button | One user button `[Q6]` | Wired in parallel with the onboard BOOT button (GPIO28, active low) on either C5 board. Costs no GPIO. Must not be held low at reset except to enter the bootloader. |
 
-### 2.0 Board decision — DevKitC-1-N8R8 (ordered; revision check pending)
+### 2.0 Board decision — DevKitC-1-N8R8 (**arrived, verified 2026-08-23**)
+
+**The chip-revision risk is closed.**  The board on the bench is an
+ESP32-C5-DevKitC-1 **V1.2** (PCB silkscreen) carrying **ESP32-C5 revision
+v1.2** — production silicon, not an engineering sample.  `esptool chip_id` and
+the second-stage bootloader agree:
+
+```
+Chip is ESP32-C5 (revision v1.2)
+Features: Wi-Fi 6 (dual-band), BT 5 (LE), IEEE802.15.4, Single Core + LP Core, 240MHz
+Crystal is 48MHz          USB mode: USB-Serial/JTAG      BASE MAC: 10:bd:a3:dd:a8:e8
+I (22) boot: chip revision: v1.2
+I (22) boot: efuse block revision: v0.3
+ESP-ROM:esp32c5-eco3-20250704
+```
+
+Console is on **COM3**, USB-Serial/JTAG.
+
+Worth keeping in mind for future IDF bumps: an IDF image carries a *supported
+chip revision range*, and the bootloader **aborts rather than warns** if the
+chip is outside it — `Image requires chip rev <= …`.  That is an IDF-version
+problem, never a board fault.  This build reports:
+
+```
+I (257) efuse_init: Min chip rev: v1.0   Max chip rev: v1.99   Chip rev: v1.2
+```
+
+so v1.2 sits inside the window and there is no abort.  ESP-IDF v5.5.5 also
+offers `CONFIG_ESP32C5_REV_MIN_102`, i.e. it knows v1.2 as a shipping
+revision.
+
+### 2.0.1 Board options as originally weighed
 
 Three candidates were weighed. The firmware's pin map is one header selected by a
 board define, so the decision can be made on arrival; the rest of the spec is
@@ -910,6 +941,9 @@ reason, so nothing gets re-litigated.
   Open risk: chip revision. If v0.1 arrives, fall back to the XIAO map (§2.1)
   rather than wait. PCB-antenna module: mount away from the aluminium
   faceplate and check RSSI in Phase 1.
+  **CLOSED 2026-08-23** — board V1.2, chip revision **v1.2**, production
+  silicon. §2.0 has the full identification. The XIAO fallback is not needed;
+  it stays the spare / project-#2 board.
 - 2026-08-21 — **All open questions answered; spec cut to v1.0.** Defaults
   accepted except: TZ default US Pacific and UI-settable; ring treated as
   fluid runtime data (`ring.json`, per-column capable, regenerated from the
@@ -1345,4 +1379,37 @@ reason, so nothing gets re-litigated.
   - Method note: every fix that could be regression-tested was, and each new
     test was checked by reverting its fix and confirming it fails.  That caught
     two defects in my *own* first attempt at the scheduler fix.
+
+- 2026-08-23 — **First flash on real hardware.**  Board arrived; §2.0 open risk
+  closed (chip v1.2, production silicon, no revision abort).  What the board
+  showed that nothing else could:
+  - **`ring.json` was shipping gzipped and therefore never loading.**
+    `tools/webpack.py` compressed every `.json`, but `ring_store.cpp` opens
+    `/fs/ring.json` directly and knows nothing about gzip — so the image
+    carried `ring.json.gz`, the boot log said *"no /fs/ring.json; compiled ring
+    table active"*, and the compiled fallback silently covered for it.  Nothing
+    downstream looked wrong, because the fallback is a correct table; the fluid
+    runtime ring was simply dead.  Fixed: files the FIRMWARE reads are never
+    compressed, only browser assets are.  Now logs *"ring table loaded from
+    /fs/ring.json (50 slots)"*.  Payload 46,195 → 54,119 bytes gzipped.
+    A host test cannot catch this — it is a property of the flashed image.
+  - **Unwired homing fails exactly as designed.**  With no motors, drivers or
+    Halls attached, all five columns run 1.2 revolutions at homing speed, time
+    out, retry three times on the 250 ms stagger, then latch FAULT with
+    "gave up after 3 re-homes; `home 0` clears it".  Position freezes at
+    39,560 µsteps, velocity 0, and the console stays responsive throughout —
+    it fails, it does not hang.  `home 0` clears that column's fault and leaves
+    the other four latched, as documented.
+  - **Pin map initialises clean.**  `pins` reports STEP 8/9/10/11/12, HALL
+    0/1/4/5/23, EN 6, I2S 7/25/26, BUTTON 28, LED 27 — no STEP, EN or HALL on a
+    strapping pin, only the high-Z I2S inputs, matching §2.2.  Halls read
+    `raw=1 magnet=no` on all five, the correct unwired state for an
+    active-low input with a pull-up.
+  - Free heap after boot with WiFi initialised, httpd serving and LittleFS
+    mounted: **141 KB**.  App 1,260,128 bytes, 52 % of the partition free.
+    LittleFS 80/2048 KB used.
+  - Bench note recorded for the tooling: pyserial asserts DTR and RTS on open,
+    and on USB-Serial-JTAG those drive EN and the boot pin — so a naive
+    open-per-command **resets the board between commands**.  Any scripted
+    console interaction must clear both before `open()`.
 

@@ -6,8 +6,10 @@ the spec is wrong: fix `docs/FIRMWARE_SPEC.md` and append to its §17 decision l
 
 ## Verification status
 
-Phases 1-3.5 build and their host tests pass. Nothing has run on hardware — the
-board has not arrived, so every bench step below is still open.
+Phases 1-3.5 build and their host tests pass.  **The board arrived 2026-08-23
+and the firmware is flashed and booting**; nothing is wired to it yet, so the
+motion steps below still need the mechanics.  Steps 0-1 are done, and the
+unwired half of the fault path is verified.
 
 | gate | status |
 |---|---|
@@ -17,8 +19,11 @@ board has not arrived, so every bench step below is still open.
 | host tests (`.\test-host.ps1`) | **9/9 pass** — rings, motion math, simulated axis, ring.json, TZ/DST, frame, modes, wear, web API |
 | `git diff` empty after `tools/ringgen.py` | **clean** — regeneration is byte-identical |
 | motion cross-task handoff explicit | **done** — spinlock + request mailbox + relaxed atomics + the `AxisCtl::seq` seqlock (`docs/MOTION_SYNC.md`) |
-| chip revision ≥ v1.0 | **unknown** — board not arrived |
-| every bench step below | **not run** — needs hardware |
+| chip revision ≥ v1.0 | **v1.2** — production silicon, verified by esptool and the bootloader |
+| first flash + boot | **done** — CLI up on COM3, ring.json loads from LittleFS, no revision abort |
+| unwired homing fails cleanly | **done** — all five latch FAULT after 3 re-homes; no hang |
+| pin map, no strapping conflict | **done** — `pins` matches §2.2 |
+| every bench step needing mechanics | **not run** — needs motors, drivers and Halls |
 
 What passing host tests do and do not prove: `T(i)` rounding, the 8242/8243
 revolution alternation, forward-distance costs over all 2500 index pairs, edge
@@ -33,7 +38,31 @@ faceplate, or mDNS on a real LAN is verified by them.
 
 Run with one module on the bench, drivers powered from 12 V, logic from the buck.
 
-### 0. First flash
+### 0. First flash — **DONE 2026-08-23**
+
+Result, for the record:
+
+```
+Chip is ESP32-C5 (revision v1.2)      BASE MAC: 10:bd:a3:dd:a8:e8
+ESP-ROM:esp32c5-eco3-20250704         rst:0x15 (USB_UART_HPSYS)
+I (22) boot: chip revision: v1.2      efuse block revision: v0.3
+I (257) efuse_init: Min chip rev: v1.0   Max chip rev: v1.99   Chip rev: v1.2
+I (280) ring: littlefs mounted: 80/2048 KB used
+I (293) ring: ring table loaded from /fs/ring.json (50 slots)
+I (419) httpd: serving on port 80
+swan>
+```
+
+No revision warning and no abort — v1.2 is inside the image's window.  Free
+heap after boot with WiFi initialised and httpd serving: **141 KB**.
+
+Unwired behaviour, which is what this checklist step is really for: every
+column runs 1.2 revolutions at homing speed, times out, retries three times on
+the 250 ms stagger, then latches FAULT and stops.  Position freezes at 39,560
+µsteps, velocity 0, console responsive throughout.  `home 0` clears that
+column and leaves the others latched.
+
+### 0b. First flash — the original checklist
 
 ```bash
 idf.py set-target esp32c5
