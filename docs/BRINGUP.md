@@ -6,15 +6,15 @@ the spec is wrong: fix `docs/FIRMWARE_SPEC.md` and append to its §17 decision l
 
 ## Verification status
 
-Phases 1-3 build and their host tests pass. Nothing has run on hardware — the
+Phases 1-3.5 build and their host tests pass. Nothing has run on hardware — the
 board has not arrived, so every bench step below is still open.
 
 | gate | status |
 |---|---|
 | `.\build.ps1 set-target esp32c5` + `.\build.ps1` | **passes** — ESP-IDF v5.5.5, DevKitC-1 1,251 KB app (52% of the partition free), zero warnings |
 | `.\build.ps1 -DSWAN_BOARD=xiao build` | **passes** — 1,232 KB. Exercises the alternate pin map and its strapping-pin `static_assert`s |
-| LittleFS payload | **13,650 bytes** (UI + `ring.json`, gzipped) of a 2048 KB partition |
-| host tests (`.\test-host.ps1`) | **8/8 pass** — rings, motion math, simulated axis, ring.json, TZ/DST, frame, modes, web API |
+| LittleFS payload | **46,195 bytes** (UI, presentation terminal, glyph sheet + `ring.json`, gzipped) of a 2048 KB partition |
+| host tests (`.\test-host.ps1`) | **9/9 pass** — rings, motion math, simulated axis, ring.json, TZ/DST, frame, modes, wear, web API |
 | `git diff` empty after `tools/ringgen.py` | **clean** — regeneration is byte-identical |
 | motion cross-task handoff explicit | **done** — spinlock + request mailbox + relaxed atomics + the `AxisCtl::seq` seqlock (`docs/MOTION_SYNC.md`) |
 | chip revision ≥ v1.0 | **unknown** — board not arrived |
@@ -221,8 +221,38 @@ identically.
 ### 14. Assets
 
 - [ ] The UI loads with the browser cache disabled (gzipped assets served with
-      `Content-Encoding: gzip`).  Whole payload is ~14 KB; if a page is blank,
+      `Content-Encoding: gzip`). Whole payload is ~46 KB; if a page is blank,
       check the LittleFS image was flashed — `idf.py flash` writes it.
+- [ ] The glyph cards show **artwork**, not names. Names are the designed
+      fallback, so nothing breaks — it just looks wrong; check `GET /glyphs.svg`.
+- [ ] **Check it on an iPhone.** The sheet is injected and referenced
+      same-document precisely because WebKit does not support external `<use>`;
+      a regression there shows as blank cards on iOS only.
+
+### 15. The countdown freeze (spec §7.3)
+
+- [ ] Start a countdown. The display reads **MMM:00** and the last two columns
+      do not move at all for the first hour and three quarters — only the
+      minutes columns tick.
+- [ ] At **004:00** the seconds wake: column 4 takes the 45-flip 0→5 borrow and
+      column 5 the 16-flip 0→9 wrap, then 004:00 → 003:59 → 003:58. Watch that
+      it *lands* on the boundary rather than starting there — the frame is
+      issued ~3 s early on purpose.
+- [ ] The 4-minute cue fires as the seconds wake. That coincidence is the point.
+- [ ] `minutes` mode: cols 4–5 never move for the whole run.
+
+### 16. Presentation terminal
+
+- [ ] `http://lost.local/terminal.html` on the kiosk machine, fullscreen.
+- [ ] The keypad enters the Numbers and EXECUTE is accepted; a wrong entry says
+      so without touching the display.
+- [ ] Key clicks sound; toggling them off silences them and survives a reload.
+- [ ] The CRT toggle is off by default. Turn it on and **measure the frame rate
+      on the actual kiosk hardware** — a Pi compositing a fullscreen scanline
+      overlay is the case that matters, and the toggle exists because it may
+      not be free.
+- [ ] The readout counts down smoothly between state pushes (it derives from
+      the deadline locally) and agrees with the drums.
 
 ## Notes
 

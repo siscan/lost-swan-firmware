@@ -18,7 +18,7 @@ Target: ESP32-C5-DevKitC-1-N8R8 (XIAO ESP32-C5 map behind a board define).
 | gate | status |
 |---|---|
 | `set-target esp32c5` + `build` clean | passes — zero warnings, both board maps |
-| host tests green | 8/8 suites (rings, motion math, simulated axis, ring.json, TZ/DST, frame, modes, web API) |
+| host tests green | 9/9 suites (rings, motion math, simulated axis, ring.json, TZ/DST, frame, modes, wear, web API) |
 | `git diff` empty after `tools/ringgen.py` | clean — header and ring.json both regenerate byte-identically |
 | motion cross-task handoff explicit | done — see `docs/MOTION_SYNC.md`, incl. the seqlock for multi-field reads |
 | CI | GitHub Actions on ubuntu — see below |
@@ -205,13 +205,46 @@ Routes, identical on the host and on the device:
 | `GET /` | the UI (gzipped assets preferred) |
 | `GET /api/state` | the full state document |
 | `GET /api/ring` | per-column ring tables, glyph lists and colour schemes |
+| `GET /api/wear` | measured flips/day per granularity and flips/run per seconds mode |
 | `POST /api/cmd` | one §10.2a command, JSON body |
 | `POST /api/ring/upload` | a candidate `ring.json`, raw body |
 | `/ws` | state on change + 1 Hz heartbeat, plus `go`/`spin`/`mode`/`cue` events |
 
 Every `/ws` message carries an `"e"` discriminator, and `web/flap.js` renders
 both the live stream and a replayed simulator trace — one renderer, so the two
-cannot drift apart.
+cannot drift apart. `web/bus.js` is the one transport, shared by the control
+panel and the presentation terminal.
+
+### Presentation terminal — `/terminal.html`
+
+A separate fullscreen page (spec §15 phase 3.5), entirely browser-side: the
+Swan terminal face with a large countdown readout, an on-screen keypad for the
+Numbers, and the flap display docked small in a corner. The CRT effect
+(scanlines, phosphor glow, slight barrel, subtle flicker) defaults **off** —
+it costs readability and the compositing is real work on a phone GPU — and key
+clicks are synthesized in WebAudio rather than shipped as samples. Preferences
+persist in `localStorage`, per browser, never in NVS.
+
+It is laid out for a **kiosk screen** and scales down, because it is a
+candidate implementation of the terminal prop: a Pi in kiosk mode pointed at
+`lost.local`. Built that way the prop needs no MQTT and no second countdown
+implementation — it is the display's own page, so the deadline it renders is
+the display's by construction.
+
+### Glyphs
+
+`web/glyphs.svg` carries 37 `<symbol>`s (36 glyphs plus wifi) on a shared
+`0 0 100 127` viewBox, ids matching the manifest names. It is fetched once and
+**injected into the document**, so every `<use>` is a same-document reference:
+external references (`<use href="sheet.svg#id">`) are unsupported in WebKit
+and fail over `file://`, which would mean a display that works on desktop
+Chrome and is blank on an iPhone. The ids are namespaced on injection
+(`swan-glyph-…`) because names like `sun`, `hand` and `wave` would otherwise
+join the page's single id space.
+
+Glyphs are never stretched — the 100:127 box is the flap card's own ratio and
+each glyph is pre-scaled inside it — and take their colour from
+`fill: currentColor` under the per-column scheme.
 
 ### Asset budget
 
@@ -221,16 +254,23 @@ build turns that into `storage.bin`. Only the `.gz` copies ship, and
 
 | file | raw | gzipped |
 |---|---:|---:|
-| `app.js` | 15,274 | 4,865 |
-| `index.html` | 10,917 | 3,490 |
-| `flap.js` | 5,912 | 2,135 |
-| `style.css` | 5,117 | 1,719 |
+| `glyphs.svg` | 57,602 | 20,747 |
+| `app.js` | 16,978 | 5,488 |
+| `index.html` | 12,070 | 3,909 |
+| `terminal.js` | 10,418 | 3,865 |
+| `flap.js` | 9,882 | 3,657 |
+| `terminal.css` | 8,122 | 2,800 |
+| `style.css` | 6,199 | 2,185 |
 | `ring.json` | 9,361 | 1,441 |
-| **total** | **46,581** | **13,650** |
+| `bus.js` | 2,946 | 1,184 |
+| `terminal.html` | 2,126 | 919 |
+| **total** | **135,704** | **46,195** |
 
 Against a **2048 KB** partition, so the room is for audio (spec §9). The
 packer fails the build above a 256 KB budget rather than letting the UI
-quietly eat it.
+quietly eat it. The glyph sheet is 45% of the payload and worth it; digits,
+AM/PM and blank are still text placeholders, and exporting those too would add
+roughly 6 KB gzipped.
 
 ### Ring upload
 

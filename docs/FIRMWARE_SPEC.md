@@ -412,20 +412,44 @@ Renders happen when the floored *local* time changes — flooring in local time,
 not UTC, so zones whose offset is not a whole multiple of the granularity
 (India's +5:30 against a 15-minute grid) behave.
 
-Wear, measured from the manifests by walking a full day (not estimated):
+**`clock.granularity_min` must divide 60**: 1, 2, 3, 4, 5, 6, 10, 12, 15, 20,
+30, 60.  A non-divisor does not tile the hour — at 7 the flooring steps
+56 → 0 across the hour boundary, so the last window of every hour is four
+minutes long and the display jumps.  Rejected at the API, and the UI offers
+only the twelve.
 
-| granularity | col 5 | col 4 | col 3 | col 2 | total flips/day |
-|---|---|---|---|---|---|
-| 1 min | 32,400 | 6,000 | 1,000 | 100 | **39,500** |
-| 5 min | 3,600 | 6,000 | 1,000 | 100 | 10,700 |
-| **15 min** *(default)* | 1,200 | 3,600 | 1,000 | 100 | **5,900** |
-| 30 min | 0 | 1,200 | 1,000 | 100 | 2,300 |
-| 60 min | 0 | 0 | 1,000 | 100 | 1,100 |
+Wear, **measured** by walking a full day through the real renderer against the
+loaded ring (`components/modes/wear.cpp`, printed and asserted by
+`test/host/test_wear.cpp`) — not estimated, and exposed live at `GET /api/wear`
+so the Settings page shows the exact figure for any choice:
 
-Two things worth knowing from that table.  **Column 4, not column 5, is the
+| granularity | col 1 | col 2 | col 3 | col 4 | col 5 | total flips/day |
+|---|---:|---:|---:|---:|---:|---:|
+| 1 min | 50 | 100 | 1,000 | 6,000 | 32,400 | **39,550** |
+| 2 min | 50 | 100 | 1,000 | 6,000 | 14,400 | 21,550 |
+| 3 min | 50 | 100 | 1,000 | 6,000 | 8,400 | 15,550 |
+| 4 min | 50 | 100 | 1,000 | 6,000 | 5,400 | 12,550 |
+| 5 min | 50 | 100 | 1,000 | 6,000 | 3,600 | 10,750 |
+| 6 min | 50 | 100 | 1,000 | 6,000 | 2,400 | 9,550 |
+| 10 min | 50 | 100 | 1,000 | 6,000 | 0 | 7,150 |
+| 12 min | 50 | 100 | 1,000 | 4,800 | 2,400 | 8,350 |
+| **15 min** *(default)* | 50 | 100 | 1,000 | 3,600 | 1,200 | **5,950** |
+| 20 min | 50 | 100 | 1,000 | 2,400 | 0 | 3,550 |
+| 30 min | 50 | 100 | 1,000 | 1,200 | 0 | 2,350 |
+| 60 min | 50 | 100 | 1,000 | 0 | 0 | 1,150 |
+
+Three things worth knowing from that table.  **Column 4, not column 5, is the
 wear bottleneck** at 15 minutes (3,600 against 1,200): column 5 has the cheap
-double-block increment while column 4 pays ring A's full 49.  And at 30 minutes
-column 5 never moves at all — the ones-of-minutes digit is always 0.
+double-block increment while column 4 pays ring A's full 49.  At 20 minutes and
+above column 5 never moves — the ones-of-minutes digit is always 0.  And the
+cost is **not monotonic in the granularity**: 12 minutes (8,350) is worse than
+both 10 (7,150) and 15 (5,950), because 10 keeps the ones-of-minutes digit on 0
+while 12 walks it through 0,2,4,6,8 every hour.  That is precisely why the
+figure is computed rather than tabulated — an interpolated lookup would hide it.
+
+In 24 h the totals are identical at every granularity: column 1 stops moving
+(blank all day, −50) and column 3 gains a flip per hour (+50).  Column 1's 50
+flips a day are the two AM/PM changes, each a 25-slot move on ring A.
 
 Why col 1 and not col 5: the physical 3 + 2 grouping forces HH | MM across
 the band (cols 2–3 | 4–5), which leaves exactly one spare column, and it is
@@ -449,20 +473,49 @@ Five tokens (§4). Dwell `msg.dwell_s = 600` then return to the previous mode;
 
 ### 7.3 Countdown (108:00)
 
-- Total 6480 s.  `countdown.seconds_mode` selects the resolution:
+- Total 6480 s.  **The seconds columns are frozen on `00` for the bulk of the
+  run** and only come alive in the last `countdown.seconds_live_s` (default
+  **240**, which is also when the 4-minute cue fires — the display waking and
+  the warning sound are one moment).  Above the threshold the display is
+  `floor(remaining / 60) * 60` rendered **MMM:00**; below it the resolution
+  changes per `countdown.seconds_mode`:
 
-  - **`seconds` (default)** — **MMM:SS**, live one-second ticks.  Minutes in
-    cols 1–3, tens-of-seconds in col 4, ones-of-seconds in col 5.  Affordable
-    on the v3 rings: a decrement is **1 flip** on every column, and column 5's
-    0→9 wrap is 16 flips rather than 41 (§4).
-  - **`tens`** — **MMM:S0**, the original scheme; column 5 parks on 0.  Kept
-    because it is the low-wear option and the show's own prop is ambiguous.
+  - **`seconds` (default)** — then **MMM:SS**, live one-second ticks.  Minutes
+    in cols 1–3, tens-of-seconds in col 4, ones-of-seconds in col 5.  What the
+    show does.
+  - **`tens`** — then **MMM:S0**; column 5 stays on 0 all run.
+  - **`minutes`** — never shows seconds; **MMM:00** for the whole run.
 
-  This reverses the earlier "MMM:S0, decided, do not revisit" — see the §17
-  entry.  The reason it was decided is gone: ones-of-seconds cost 49 flips on
-  the old ascending single ring and now cost 1.
+  The mode selects nothing but the display **step** (60 / 10 / 1 s); the
+  renderer draws whatever value it is handed.  A step of 60 puts zeros in both
+  seconds columns *by construction*, which is why the quiet phase provably
+  cannot move them — there is no special case to get wrong.
 
-- **Timing budgets in seconds mode.**  A 1-flip tick takes ~0.1 s, comfortably
+  The transition is an ordinary step, not a mode switch: at 300 s the next
+  value is 240 (**004:00**), and at 240 the next is 239 (**003:59**), so the
+  display runs `004:00 → 003:59 → 003:58` with nothing jumping.
+
+  This supersedes both the original "MMM:S0 throughout" and the v3 "MMM:SS
+  throughout" — see the §17 entries.  **Measured cost of a full run**, walked
+  through the real renderers against the real manifests by
+  `test/host/test_wear.cpp` (these are its output, not estimates):
+
+  | scheme | total | col 1 | col 2 | col 3 | col 4 | col 5 |
+  |---|---:|---:|---:|---:|---:|---:|
+  | `minutes` | **559** | 1 | 50 | 508 | 0 | 0 |
+  | `tens` (freeze at 240) | **759** | 1 | 50 | 508 | 200 | 0 |
+  | **`seconds` (freeze at 240, default)** | **1,359** | 1 | 50 | 508 | 200 | 600 |
+  | `tens` throughout (pre-freeze) | 5,959 | 1 | 50 | 508 | 5,400 | 0 |
+  | `seconds` throughout (pre-freeze) | 22,159 | 1 | 50 | 508 | 5,400 | 16,200 |
+
+  So the default costs **1,359 flips a run against 22,159** — a 16× cut, and
+  the show-accurate live seconds are now cheaper than the old MMM:S0 design
+  was.  Note **column 3 is 508, not ~104**: the ones-of-minutes digit pays ring
+  A's 41-flip 0→9 wrap on each of the ten borrows (100→099, 090→089, … 010→009)
+  on top of 98 single flips.  It is the dominant cost of the quiet phase and
+  the reason a `minutes` run is not free.
+
+- **Timing budgets in the live window.**  A 1-flip tick takes ~0.1 s, comfortably
   inside the one-second window.  Two transitions do not fit their window and
   are handled by starting early and landing a little late rather than never:
   column 5's 16-flip wrap needs ~1.1 s at the default 15 flaps/s (~0.7 s at
@@ -470,12 +523,17 @@ Five tokens (§4). Dwell `msg.dwell_s = 600` then return to the previous mode;
   has ten seconds of slack — its value is valid for the whole next ten-second
   window — so a late landing there is invisible.  Column 5 catches up on the
   following tick, because a forward-only move simply extends when the target is
-  replaced.  A full 108-minute run costs about 22,200 flips, 16,200 of them on
-  column 5.
+  replaced.
+
+  Waking the seconds at the boundary is the single most expensive frame of the
+  run: column 4 pays the 45-flip 0→5 borrow and column 5 the 16-flip 0→9 wrap,
+  ~3.0 s and ~1.1 s at 15 flaps/s.  `countdown.land_on_tick` starts it early so
+  it *lands* on 240 — which is what pre-rendering the next value exists for.
 - Frame updates on every window boundary: `shown = floor(remaining / step) *
-  step`, where step is 1 s or 10 s per `countdown.seconds_mode`.  Note the
-  floor: 108:00 is the idle face, and a *running* countdown holds it only for
-  the start instant before rolling to the first window.
+  step`, where step is 60 s in the quiet phase and then 10 s or 1 s per
+  `countdown.seconds_mode`.  Note the floor: 108:00 is the idle face, and a
+  *running* countdown holds it only for the start instant before rolling to
+  107:00.
 
 **The display is self-sufficient.** Everything — entering the Numbers,
 switching modes, calibration — is done from the display's own web UI on any
@@ -589,6 +647,22 @@ Pages:
 - **Diagnostics** — per-column counters, RSSI, heap, uptime, reset reason, log
   ring buffer.
 - **Update** — OTA upload.
+- **Presentation** (`/terminal.html`, phase 3.5) — a separate fullscreen page,
+  not a tab: the Swan terminal face with a large countdown readout, an
+  on-screen keypad for the Numbers, and the flap display docked small in a
+  corner.  A toggleable CRT effect (scanlines, phosphor glow, slight barrel,
+  subtle flicker) defaults **off** — it costs readability and the compositing
+  is real work on a phone GPU — and key clicks are synthesized in WebAudio, so
+  no samples ship.  Everything about it is browser-side: the ESP32 pays only
+  the LittleFS bytes, and preferences live in `localStorage`, per browser,
+  never in NVS.
+
+  **This page is a candidate implementation of the terminal prop** (§7.3): a Pi
+  in kiosk mode pointed at `lost.local`, on a CRT or a monitor.  It is
+  therefore laid out for a kiosk screen and scales down, not designed for a
+  phone and stretched up.  A prop built this way needs no MQTT and no second
+  countdown implementation — it is the display's own page, so the deadline it
+  renders is the display's by construction.
 
 Auth `[Q7]` (default: none on LAN).
 
@@ -661,8 +735,9 @@ time.ntp                 default pool.ntp.org
 ring                     ring.json in LittleFS (not NVS); compiled fallback,
                          generated from BOTH manifests by tools/ringgen.py
 clock.h24
-clock.granularity_min    default 15  (1..60; the displayed minute is floored
-                         to it — see the §7.1 wear table)
+clock.granularity_min    default 15.  MUST divide 60: 1 2 3 4 5 6 10 12 15 20
+                         30 60.  The displayed minute is floored to it; a
+                         non-divisor does not tile the hour (§7.1)
 motion.cal[5]            int32 µsteps
 motion.flaps_s_normal    default 15
 motion.flaps_s_alarm     default 25
@@ -673,8 +748,13 @@ motion.en_idle_off       default false
 motion.fault_policy      [Q5]
 audio.volume / audio.mute / audio.quiet_start / audio.quiet_end
 msg.dwell_s              default 600
-countdown.seconds_mode   default seconds  (seconds = MMM:SS live |
-                         tens = MMM:S0, col 5 parked)
+countdown.seconds_mode   default seconds.  What the display does INSIDE the
+                         live window (§7.3): minutes = never shows seconds |
+                         tens = MMM:S0 | seconds = MMM:SS
+countdown.seconds_live_s default 240 (0..6480).  Seconds are frozen on 00 above
+                         this and tick below it.  240 is the 4-minute cue, so
+                         the display waking and the warning sound coincide.
+                         NVS key cd_live_s
 countdown.reveal[5]      ring indices, unset until Nico picks.  NOTE: an index
                          means a different character on col 5, whose ring
                          differs — set these by NAME when the web UI lands
@@ -771,6 +851,12 @@ Each phase ends with a flashable build and a bench checklist.
    assets gzipped into LittleFS (13,650 bytes for the whole UI plus
    `ring.json`).  Captive-portal provisioning, MQTT and OTA remain Phase 4;
    the Update page is a stub.
+3.5. **Presentation mode** — the fullscreen terminal page above, entirely
+   browser-side.  Delivered with the seconds freeze (§7.3), the measured wear
+   API (`GET /api/wear`) and the real glyph artwork (`web/glyphs.svg`, 37
+   symbols on a shared 100×127 viewBox, injected once and referenced
+   same-document because external `<use>` references are unsupported in
+   WebKit).
 4. **Integration** — MQTT + HA discovery, OTA with rollback, provisioning, mDNS.
 5. **Audio** — player, cue table, countdown cue wiring, placeholders.
 6. **Hardening** — fault policy, watchdogs, boot stagger, soak mode (run N
@@ -1081,3 +1167,92 @@ reason, so nothing gets re-litigated.
     phase.  No credentials is a supported state, not an error: the display is a
     standalone clock and shows the WiFi glyph after the grace period (§7.1,
     §10.0).
+
+- 2026-08-23 — **The countdown seconds freeze** (Nico, from clicking through the
+  dev server; a spec omission rather than a code defect).  The seconds columns
+  now hold `00` until the run has `countdown.seconds_live_s` left — default
+  **240**, the same instant as the 4-minute cue — and only then change
+  resolution.  `countdown.seconds_mode` is redefined to say what happens
+  *inside* that window: **minutes** (never), **tens** (MMM:S0), **seconds**
+  (MMM:SS, default, show-accurate).
+  - **The mode selects only the display step.**  60 s in the quiet phase, then
+    10 or 1.  `render_countdown` lost its mode parameter and simply draws the
+    value it is given; a step of 60 puts zeros in both seconds columns by
+    construction, so "no column moves in the quiet phase except minutes" is a
+    property of the arithmetic, not a special case that could rot.  The
+    boundary is an ordinary step too — `countdown_next_shown_s(300) = 240`,
+    `(240) = 239` — so land-on-tick crosses it with no extra logic.
+  - **Measured, not estimated** (`test/host/test_wear.cpp`, printed and
+    asserted).  Nico's estimate had column 5 at 600 and column 4 at 200 for the
+    live window: **both exactly right**.  Two corrections: column 3 is **508,
+    not ~104** — the ones-of-minutes digit pays ring A's 41-flip 0→9 wrap on
+    each of the ten borrows, so the run totals **1,359, not ~915**.  And the
+    pre-freeze baseline quoted as ~37,000 is neither of the two real ones:
+    MMM:S0 throughout is **5,959** and MMM:SS throughout is **22,159** (the
+    latter matching this spec's own earlier "~22,200, 16,200 on column 5").
+    The freeze is still the right call by a wide margin: **22,159 → 1,359**,
+    16×, and the show-accurate mode is now cheaper than the old low-wear one.
+  - The 108:00 face rolls off at once, as the floor semantics have always said
+    — a running countdown shows **107:00** half a second in.  Previously it
+    showed 107:59; the visible change is the last two columns reading 00.
+
+- 2026-08-23 — **Wear is computed, not tabulated.**  The Settings figure came
+  from a five-entry JavaScript lookup and only moved for those five values.
+  `components/modes/wear.cpp` now walks a whole day, and a whole run, through
+  the REAL renderers against the loaded ring, and `GET /api/wear` serves every
+  valid granularity and all three seconds modes.  Exact for any input, follows
+  a ring upload, and cannot drift from the renderer.
+  - **`clock.granularity_min` is constrained to divisors of 60** (Nico): a
+    non-divisor does not tile the hour — at 7 the flooring steps 56 → 0 across
+    the boundary.  Rejected at the API; the UI offers only the twelve.
+  - It surfaced a fact worth having: **cost is not monotonic in granularity**.
+    12 minutes (8,350/day) is worse than 10 (7,150) *and* 15 (5,950), because
+    10 keeps the ones-of-minutes digit on 0 while 12 walks it through 0,2,4,6,8
+    every hour.  An interpolated table would have hidden that.
+  - The old §7.1 table was also 50 flips light in every row: it omitted column
+    1's two AM/PM changes.  Corrected, with all twelve rows.
+  - Cost on the device is small because the walk iterates the *floored* values
+    rather than all 1440 minutes: ~4,700 renders for the entire document, on
+    the HTTP task at priority 3.
+
+- 2026-08-23 — **Real glyph artwork.**  `web/glyphs.svg` (Nico-supplied): 37
+  `<symbol>`s — 36 glyphs plus wifi, `?` among them as `qmark` — on a shared
+  `0 0 100 127` viewBox, ids matching the manifest names exactly, verified
+  against the compiled ring tables with no gaps either way.
+  - **Injected once and referenced same-document.**  `<use href="ext.svg#id">`
+    is unsupported in WebKit entirely and fails over `file://`, so an external
+    reference would have worked on desktop Chrome and rendered blank on iOS.
+    `flap.js` fetches the sheet, injects it hidden, and **namespaces the ids**
+    on the way in (`swan-glyph-…`): the file keeps the bare manifest names as
+    specified, but names like `sun`, `hand`, `gate` and `wave` would otherwise
+    join the page's single id space and could silently collide with a page
+    element.
+  - Not stretched: the 100:127 box is the flap card's ratio and each glyph is
+    pre-scaled inside it, so `preserveAspectRatio` is left at the default and
+    relative sizes match the printed cards.  Colour is `fill: currentColor`
+    driven by the per-column scheme, so glyphs are red on black for the minutes
+    group and black on white/red for the seconds group.
+  - Implementation note: a percentage **height** on the SVG as a flex item did
+    not resolve (it collapsed to 8 px); absolute positioning with `inset: 7%`
+    resolves against the card every time.
+  - Digits, AM/PM and blank remain text placeholders, and a missing symbol id
+    falls back to the manifest name — which is also what makes a table/drum
+    mismatch obvious on the Calibrate walk.  Cost: **+20,747 bytes gzipped**.
+
+- 2026-08-23 — **Phase 3.5, presentation mode** (`web/terminal.html`).  A
+  fullscreen Swan terminal with the flap display docked small, an on-screen
+  keypad, a CRT effect defaulting off, and WebAudio key clicks.  Recorded
+  decisions:
+  - **The curvature is a CSS approximation** — perspective tilt, rounded bezel,
+    corner vignette — not a true lens warp.  A real `feDisplacementMap` needs
+    an `feImage` source, is expensive to composite, and is unreliable in
+    WebKit; this is a presentation flourish, not instrumentation.
+  - **Preferences are `localStorage`, per browser, never NVS.**  Two people
+    looking at the same display should not fight over each other's scanlines.
+  - **The page is a candidate terminal prop** (§10.2) — a Pi in kiosk mode
+    against `lost.local` — so it is laid out for a kiosk screen and scales
+    down.  A prop built this way needs no MQTT and no second countdown
+    implementation.
+  - `web/bus.js` now carries the /ws transport for both pages; a second copy of
+    the reconnect logic is a second place for it to be subtly wrong.
+
