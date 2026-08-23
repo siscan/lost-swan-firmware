@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <string>
 #include <string_view>
+#include <type_traits>
 
 #include "ring/json_lite.h"
 
@@ -64,8 +65,14 @@ public:
     // --- key + value shorthands, which is most of the call sites ---
     Writer& kv(std::string_view k, std::string_view v) { return key(k).str(v); }
     Writer& kv(std::string_view k, const char* v) { return key(k).str(v); }
-    Writer& kv(std::string_view k, int64_t v) { return key(k).num(v); }
-    Writer& kv(std::string_view k, int v) { return key(k).num(v); }
+    // One template rather than int/int64_t overloads: on riscv32 int32_t is
+    // `long`, which matches neither exactly and made every kv(k, int32_t)
+    // call ambiguous.
+    template <typename T, typename = std::enable_if_t<std::is_integral_v<T> &&
+                                                      !std::is_same_v<T, bool>>>
+    Writer& kv(std::string_view k, T v) {
+        return key(k).num(static_cast<int64_t>(v));
+    }
     Writer& kv(std::string_view k, bool v) { return key(k).boolean(v); }
     Writer& kv_null(std::string_view k) { return key(k).null(); }
     Writer& kv_raw(std::string_view k, std::string_view v) { return key(k).raw(v); }
