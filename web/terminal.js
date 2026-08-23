@@ -319,6 +319,9 @@ const bus = new SwanBus({
     const el = $("link");
     el.textContent = up ? "ONLINE" : "OFFLINE";
     el.className = "chip " + (up ? "ok" : "bad");
+    // Re-prime on reconnect: snap to the display rather than animating a long
+    // catch-up one flap at a time.  A kiosk may have been offline for hours.
+    if (!up && flap) flap.primed = false;
   },
 });
 

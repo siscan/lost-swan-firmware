@@ -36,6 +36,11 @@ const bus = new SwanBus({
   onstatus: (up) => {
     $("link").textContent = up ? "connected" : "disconnected";
     $("link").className = up ? "ok" : "bad";
+    // The FlapDisplay outlives a reconnect, so without this the first document
+    // after a gap would animate the catch-up one flap at a time.  Re-priming
+    // snaps instead, which is what a page that has just found the display
+    // again should do.
+    if (!up && flap) flap.primed = false;
   },
 });
 
