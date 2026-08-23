@@ -1,0 +1,301 @@
+/* Presentation terminal (spec §15 phase 3.5).  Entirely browser-side: the
+   ESP32 pays nothing for this beyond the LittleFS bytes.
+
+   Built for a kiosk screen first - this view is a candidate implementation of
+   the terminal prop, a Pi pointed at lost.local - so type scales with the
+   viewport rather than assuming a phone. */
+
+:root {
+  --p: #6ee06e;          /* phosphor */
+  --p-dim: #2f7a3a;
+  --p-hot: #b9ffb9;
+  --amber: #d8b04a;
+  --red: #d8584a;
+  --bg: #05070500;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: #000;
+  color: var(--p);
+  font-family: "Courier New", Courier, monospace;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+.screen {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background:
+    radial-gradient(120% 120% at 50% 45%, #0a140a 0%, #050805 55%, #000 100%);
+  overflow: hidden;
+}
+
+.content {
+  position: relative;
+  z-index: 1;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: clamp(12px, 2.2vmin, 34px);
+  gap: clamp(8px, 1.6vmin, 22px);
+}
+
+/* --- CRT effect ---------------------------------------------------------
+   Off by default: it costs readability, and the compositing is real work on a
+   phone GPU.  The curvature is an honest approximation - perspective, a
+   rounded bezel and a corner vignette - rather than a true lens warp: a real
+   feDisplacementMap is expensive and unreliable in WebKit, and this is a
+   presentation flourish, not instrumentation. */
+.crt-glass,
+.crt-scan { display: none; }
+
+.crt .crt-glass,
+.crt .crt-scan {
+  display: block;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.crt .crt-glass {
+  border-radius: 2.4% / 3.4%;
+  box-shadow:
+    inset 0 0 clamp(40px, 9vmin, 150px) rgba(0, 0, 0, 0.95),
+    inset 0 0 clamp(10px, 2vmin, 30px) rgba(110, 224, 110, 0.06);
+  background:
+    radial-gradient(130% 120% at 50% 48%, rgba(0,0,0,0) 55%, rgba(0,0,0,0.72) 100%);
+}
+
+.crt .crt-scan {
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0) 0px,
+    rgba(0, 0, 0, 0) 2px,
+    rgba(0, 0, 0, 0.30) 3px,
+    rgba(0, 0, 0, 0.30) 4px);
+  mix-blend-mode: multiply;
+  animation: flicker 5.5s steps(1, end) infinite;
+}
+
+/* Slight barrel: a shallow perspective tilt plus a scale so the corners read
+   as pulled back.  One composited layer, no filters. */
+.crt .content {
+  transform: perspective(1500px) rotateX(0.45deg) scale(1.005);
+  transform-origin: 50% 45%;
+  text-shadow: 0 0 clamp(3px, 0.7vmin, 10px) rgba(110, 224, 110, 0.55);
+}
+
+@keyframes flicker {
+  0%, 96%, 100% { opacity: 1; }
+  97%           { opacity: 0.86; }
+  98%           { opacity: 1; }
+  99%           { opacity: 0.92; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .crt .crt-scan { animation: none; }
+}
+
+/* --- header -------------------------------------------------------------- */
+.head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  flex: 0 0 auto;
+}
+
+.brand { display: flex; flex-direction: column; line-height: 1.25; }
+.brand-1 { font-size: clamp(11px, 1.7vmin, 22px); letter-spacing: 0.42em; color: var(--p-dim); }
+.brand-2 { font-size: clamp(13px, 2.1vmin, 28px); letter-spacing: 0.3em; }
+
+.head-right { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+
+.chip {
+  border: 1px solid var(--p-dim);
+  padding: 2px 10px;
+  font-size: clamp(10px, 1.4vmin, 16px);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.chip.bad { color: var(--red); border-color: var(--red); }
+.chip.ok  { color: var(--p); }
+
+/* --- body ---------------------------------------------------------------- */
+.body {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(10px, 2.4vmin, 34px);
+  min-height: 0;
+}
+
+.readout { text-align: center; }
+
+.big {
+  font-size: clamp(56px, 19vmin, 260px);
+  line-height: 0.95;
+  letter-spacing: 0.06em;
+  font-weight: bold;
+  color: var(--p-hot);
+  font-variant-numeric: tabular-nums;
+}
+.big.warn { color: var(--amber); }
+.big.crit { color: var(--red); }
+
+.sub {
+  margin-top: clamp(4px, 1vmin, 14px);
+  font-size: clamp(11px, 1.8vmin, 22px);
+  letter-spacing: 0.34em;
+  color: var(--p-dim);
+  text-transform: uppercase;
+}
+
+/* --- entry --------------------------------------------------------------- */
+.entry { width: min(880px, 92%); text-align: center; }
+
+.prompt-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4em;
+  font-size: clamp(20px, 4.2vmin, 54px);
+  letter-spacing: 0.22em;
+  min-height: 1.4em;
+}
+
+.caret { color: var(--p-dim); }
+.entry-text { color: var(--p-hot); white-space: pre; }
+
+.cursor {
+  display: inline-block;
+  width: 0.55em;
+  height: 1.05em;
+  background: var(--p-hot);
+  animation: blink 1.06s steps(1, end) infinite;
+}
+@keyframes blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+
+.msg {
+  min-height: 1.5em;
+  margin: 0.3em 0 0.6em;
+  font-size: clamp(11px, 1.7vmin, 20px);
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--p-dim);
+}
+.msg.ok { color: var(--p); }
+.msg.err { color: var(--red); }
+
+.pad {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: clamp(5px, 1vmin, 12px);
+}
+
+.key {
+  background: #0a120a;
+  border: 1px solid var(--p-dim);
+  color: var(--p);
+  font: inherit;
+  font-size: clamp(15px, 2.8vmin, 34px);
+  letter-spacing: 0.1em;
+  padding: clamp(6px, 1.5vmin, 18px) 0;
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 60ms linear, color 60ms linear;
+}
+.key:hover { border-color: var(--p); }
+.key.down { background: var(--p); color: #04120a; }
+.key.wide { grid-column: span 2; font-size: clamp(11px, 1.9vmin, 22px); letter-spacing: 0.2em; }
+.key.go { grid-column: span 2; border-color: var(--p); color: var(--p-hot); }
+
+/* --- docked mirror ------------------------------------------------------- */
+.dock {
+  position: absolute;
+  right: clamp(12px, 2.2vmin, 34px);
+  bottom: clamp(46px, 7vmin, 90px);
+  z-index: 3;
+  text-align: right;
+  transition: opacity 200ms linear;
+}
+.dock.off { display: none; }
+
+.dock-flaps { display: flex; gap: 4px; justify-content: flex-end; }
+.dock-label {
+  margin-top: 4px;
+  font-size: clamp(8px, 1.05vmin, 12px);
+  letter-spacing: 0.3em;
+  color: var(--p-dim);
+}
+
+/* The widget's own classes, sized small for the dock. */
+.flap-gap { width: clamp(5px, 0.9vmin, 12px); }
+.flap-col {
+  width: clamp(26px, 4.2vmin, 58px);
+  height: clamp(35px, 5.7vmin, 79px);
+  perspective: 300px;
+}
+.flap-card {
+  width: 100%; height: 100%;
+  border-radius: 3px;
+  display: flex; align-items: center; justify-content: center;
+  position: relative; overflow: hidden;
+  font-size: clamp(15px, 2.5vmin, 34px);
+  font-weight: bold;
+  box-shadow: 0 2px 8px #000a, inset 0 -1px 0 #ffffff1a;
+  transition: transform 40ms linear;
+}
+.flap-card::after {
+  content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 1px; background: #0008;
+}
+.flap-card.flip { transform: scaleY(0.12); }
+.flap-text.small {
+  font-size: clamp(6px, 0.95vmin, 11px);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  padding: 0 2px;
+  word-break: break-word;
+  line-height: 1.1;
+}
+.flap-glyph { position: absolute; inset: 7%; fill: currentColor; pointer-events: none; }
+
+/* --- footer -------------------------------------------------------------- */
+.foot {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.tbtn {
+  background: none;
+  border: 1px solid #1e401e;
+  color: var(--p-dim);
+  font: inherit;
+  font-size: clamp(9px, 1.3vmin, 15px);
+  letter-spacing: 0.22em;
+  padding: 4px 12px;
+  cursor: pointer;
+  text-decoration: none;
+}
+.tbtn:hover { color: var(--p); border-color: var(--p-dim); }
+.tbtn.on { color: var(--p-hot); border-color: var(--p); }
+
+/* A phone in portrait: keep it usable, drop the mirror out of the way. */
+@media (max-width: 560px) {
+  .pad { grid-template-columns: repeat(4, 1fr); }
+  .dock { position: static; text-align: center; margin-top: 8px; }
+  .dock-flaps { justify-content: center; }
+}

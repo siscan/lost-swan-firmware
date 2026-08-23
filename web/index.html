@@ -27,6 +27,7 @@
   <button data-page="diagnostics">DIAGNOSTICS</button>
   <button data-page="settings">SETTINGS</button>
   <button data-page="update">UPDATE</button>
+  <a class="navlink" href="terminal.html">PRESENTATION &rarr;</a>
 </nav>
 
 <main>
@@ -179,20 +180,37 @@
   </div>
   <div class="row">
     <label for="set-gran">granularity (min)</label>
-    <input id="set-gran" type="number" min="1" max="60" style="width:90px">
+    <select id="set-gran"></select>
     <span class="hint" id="gran-hint"></span>
   </div>
-  <p class="hint">The rings descend, so a clock tick is the expensive direction:
-     ~39,500 flips/day at 1 minute against ~5,900 at 15.</p>
+  <p class="hint">Divisors of 60 only — at 7 the flooring would step 56&nbsp;→&nbsp;0
+     across the hour and the display would jump. The figures beside each choice
+     are measured on the device by walking a whole day through the real
+     renderer against the loaded ring, not looked up, so they are exact and
+     they follow a ring upload. Note 12 minutes costs <em>more</em> than 10
+     <em>or</em> 15: at 10 the ones-of-minutes digit is always 0, so column 5
+     never moves.</p>
+  <div class="row"><span class="hint" id="wear-detail"></span></div>
 
   <h2>Countdown</h2>
+  <p class="hint">Every mode holds <b>MMM:00</b> for the bulk of the run — the
+     seconds columns are frozen and cost nothing — and only changes resolution
+     once the run has <em>seconds live</em> left. That instant is also the
+     4-minute cue, so the display waking and the warning sound are one moment.</p>
   <div class="row">
     <label for="set-secmode">seconds mode</label>
     <select id="set-secmode">
-      <option value="seconds">seconds — MMM:SS, live</option>
-      <option value="tens">tens — MMM:S0, col 5 parked</option>
+      <option value="seconds">seconds — then MMM:SS (show-accurate)</option>
+      <option value="tens">tens — then MMM:S0</option>
+      <option value="minutes">minutes — MMM:00 throughout</option>
     </select>
   </div>
+  <div class="row">
+    <label for="set-live">seconds live (s)</label>
+    <input id="set-live" type="number" min="0" max="6480" style="width:110px">
+    <span class="hint" id="cd-wear-hint"></span>
+  </div>
+  <div class="row"><span class="hint" id="cd-wear-detail"></span></div>
   <div class="row">
     <label for="set-zero">zero hold (s)</label><input id="set-zero" type="number" min="0" max="60" style="width:90px">
     <label for="set-spin">spin (s)</label><input id="set-spin" type="number" min="0" max="120" style="width:90px">
@@ -259,6 +277,7 @@
 <div id="toast"></div>
 
 <script src="flap.js"></script>
+<script src="bus.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

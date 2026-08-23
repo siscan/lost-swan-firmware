@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SWAN · STATION 3</title>
+<link rel="stylesheet" href="terminal.css">
+</head>
+<body>
+
+<!-- Sized for a kiosk first: this view is a candidate implementation of the
+     terminal prop (spec §7.3, §10.2a) - a Pi in kiosk mode pointed at
+     lost.local - so the layout is built for a 1080p screen and scales down,
+     not the other way round. -->
+<div id="screen" class="screen">
+  <div class="crt-glass" aria-hidden="true"></div>
+  <div class="crt-scan" aria-hidden="true"></div>
+
+  <div class="content">
+    <header class="head">
+      <div class="brand">
+        <span class="brand-1">DHARMA INITIATIVE</span>
+        <span class="brand-2">STATION 3 &middot; THE SWAN</span>
+      </div>
+      <div class="head-right">
+        <span id="link" class="chip bad">OFFLINE</span>
+        <span id="mode" class="chip">—</span>
+      </div>
+    </header>
+
+    <main class="body">
+      <section class="readout">
+        <div id="clock" class="big">—</div>
+        <div id="sub" class="sub">SYSTEM STANDBY</div>
+      </section>
+
+      <section class="entry">
+        <div class="prompt-row">
+          <span class="caret">&gt;</span>
+          <span id="entry" class="entry-text"></span><span class="cursor"></span>
+        </div>
+        <div id="msg" class="msg"></div>
+        <div id="pad" class="pad"></div>
+      </section>
+    </main>
+
+    <div id="dock" class="dock">
+      <div id="display" class="dock-flaps"></div>
+      <div class="dock-label">DISPLAY MIRROR</div>
+    </div>
+
+    <footer class="foot">
+      <button data-toggle="crt" class="tbtn">CRT</button>
+      <button data-toggle="click" class="tbtn">KEY CLICK</button>
+      <button data-toggle="dock" class="tbtn">MIRROR</button>
+      <button id="full" class="tbtn">FULLSCREEN</button>
+      <a class="tbtn link" href="index.html">CONTROL PANEL</a>
+    </footer>
+  </div>
+</div>
+
+<script src="flap.js"></script>
+<script src="bus.js"></script>
+<script src="terminal.js"></script>
+</body>
+</html>

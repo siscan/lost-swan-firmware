@@ -17,12 +17,12 @@ const el = (tag, attrs, text) => {
 let ring = null;       // GET /api/ring
 let flap = null;       // the mirror
 let state = null;      // the last /ws state document
-let sock = null;
-let nextId = 1;
 let cfgDirty = false;  // a settings field is focused: do not overwrite it
+let wear = null;       // GET /api/wear, refetched when an input to it changes
+let wearKey = "";      // the (h24, live_s) the current table was computed for
 
 // --------------------------------------------------------------------------
-// Transport
+// Transport - bus.js, shared with the presentation terminal
 // --------------------------------------------------------------------------
 function toast(msg, ok) {
   const t = $("toast");
@@ -32,50 +32,23 @@ function toast(msg, ok) {
   toast.timer = setTimeout(() => { t.className = ""; }, 2600);
 }
 
-function send(cmd, payload) {
-  const body = { cmd: cmd, id: nextId++ };
-  if (payload !== undefined) body.payload = payload;
-  const text = JSON.stringify(body);
-  if (sock && sock.readyState === 1) {
-    sock.send(text);
-    return;
-  }
-  fetch("/api/cmd", { method: "POST", body: text })
-    .then((r) => r.json())
-    .then((r) => { if (!r.ok) toast(cmd + ": " + (r.err || "rejected"), false); })
-    .catch(() => toast("not connected", false));
-}
+const bus = new SwanBus({
+  onstatus: (up) => {
+    $("link").textContent = up ? "connected" : "disconnected";
+    $("link").className = up ? "ok" : "bad";
+  },
+});
 
-function connect() {
-  const proto = location.protocol === "https:" ? "wss:" : "ws:";
-  sock = new WebSocket(proto + "//" + location.host + "/ws");
-  sock.onopen = () => {
-    $("link").textContent = "connected";
-    $("link").className = "ok";
-  };
-  sock.onclose = () => {
-    $("link").textContent = "disconnected";
-    $("link").className = "bad";
-    sock = null;
-    setTimeout(connect, 1500);
-  };
-  sock.onerror = () => { if (sock) sock.close(); };
-  sock.onmessage = (m) => {
-    let e;
-    try { e = JSON.parse(m.data); } catch (_) { return; }
-    switch (e.e) {
-      case "state":  onState(e); break;
-      case "go":     flap.flipTo(e.col, e.idx, e.flaps); break;
-      case "spin":   flap.spin(e.col, e.flaps, e.secs); break;
-      case "mode":   $("s-mode").textContent = e.name; break;
-      case "cue":    toast("♪ " + e.name, true); break;
-      case "result":
-        if (e.res && e.res.ok === false) toast(e.res.err || "rejected", false);
-        break;
-      default: break;
-    }
-  };
-}
+const send = (cmd, payload) => bus.send(cmd, payload);
+
+bus.on("state", (e) => onState(e))
+   .on("go", (e) => flap && flap.flipTo(e.col, e.idx, e.flaps))
+   .on("spin", (e) => flap && flap.spin(e.col, e.flaps, e.secs))
+   .on("mode", (e) => { $("s-mode").textContent = e.name; })
+   .on("cue", (e) => toast("♪ " + e.name, true))
+   .on("result", (e) => {
+     if (e.res && e.res.ok === false) toast(e.res.err || "rejected", false);
+   });
 
 // --------------------------------------------------------------------------
 // State rendering
@@ -261,13 +234,14 @@ function renderSettings(s) {
   if (document.activeElement !== $("set-tz")) $("set-tz").value = s.cfg.tz;
   if (document.activeElement !== $("set-gran")) $("set-gran").value = s.cfg.granularity_min;
   $("set-secmode").value = s.cfg.seconds_mode;
+  if (document.activeElement !== $("set-live")) $("set-live").value = s.cfg.seconds_live_s;
   $("set-zero").value = s.cfg.zero_hold_s;
   $("set-spin").value = s.cfg.spin_s;
   $("set-ftimeout").value = s.cfg.failure_timeout_s;
   $("set-cdland").checked = s.cfg.cd_land_on_tick;
   $("set-clockland").checked = s.cfg.clock_land_on_tick;
   $("set-dwell").value = s.cfg.msg_dwell_s;
-  $("gran-hint").textContent = wearHint(s.cfg.granularity_min);
+  loadWear(s.cfg, false).then(() => renderWear(s.cfg));
 
   SLIDERS.forEach(([slider, out, key]) => {
     const node = $(slider);
@@ -284,11 +258,60 @@ function renderSettings(s) {
       s.ring.slots + " slots per drum";
 }
 
-// The measured table from spec §7.1, so the cost of a change is visible where
-// the change is made.
-function wearHint(min) {
-  const known = { 1: "≈39,500", 5: "≈10,700", 15: "≈5,900", 30: "≈2,300", 60: "≈1,100" };
-  return known[min] ? known[min] + " flips/day" : "";
+// Wear comes from the device, which walks a whole day and a whole run through
+// the REAL renderer against the loaded ring.  Nothing is interpolated and
+// nothing is hard-coded here, so the figure cannot drift from the renderer and
+// it follows a ring upload.
+function fmt(n) {
+  return n.toLocaleString();
+}
+
+function wearFor(granularity) {
+  if (!wear) return null;
+  return (wear.clock || []).find((e) => e.granularity_min === granularity) || null;
+}
+
+function cdWearFor(mode) {
+  if (!wear) return null;
+  return (wear.countdown || []).find((e) => e.mode === mode) || null;
+}
+
+function colBreakdown(w) {
+  return w.cols.map((v, i) => "col" + (i + 1) + " " + fmt(v)).join(" · ");
+}
+
+function renderWear(cfg) {
+  const g = wearFor(cfg.granularity_min);
+  $("gran-hint").textContent = g ? fmt(g.wear.total) + " flips/day" : "…";
+  $("wear-detail").textContent = g
+      ? colBreakdown(g.wear) + "  (nominal 24 h; a DST day differs slightly)"
+      : "";
+
+  const c = cdWearFor(cfg.seconds_mode);
+  $("cd-wear-hint").textContent = c ? fmt(c.wear.total) + " flips/run" : "…";
+  $("cd-wear-detail").textContent = c ? colBreakdown(c.wear) : "";
+
+  // Every granularity on the dropdown carries its own measured cost.
+  const sel = $("set-gran");
+  Array.from(sel.options).forEach((opt) => {
+    const e = wearFor(parseInt(opt.value, 10));
+    opt.textContent = opt.value + (e ? "  —  " + fmt(e.wear.total) + " flips/day" : "");
+  });
+}
+
+// The table depends on h24 and seconds_live_s, so it is refetched when either
+// moves - and on a ring upload, which changes what a flip costs.
+function loadWear(cfg, force) {
+  const key = (cfg.h24 ? "24" : "12") + ":" + cfg.seconds_live_s;
+  if (!force && key === wearKey) return Promise.resolve();
+  wearKey = key;
+  return fetch("/api/wear")
+    .then((r) => r.json())
+    .then((doc) => {
+      wear = doc;
+      renderWear(cfg);
+    })
+    .catch(() => { wearKey = ""; });
 }
 
 function pushConfig(patch) {
@@ -360,7 +383,11 @@ function wire() {
   // Settings apply live too; SAVE persists.
   $("set-h24").onchange = () => send("clock.format", { h24: $("set-h24").checked });
   $("set-tz").onchange = () => pushConfig({ tz: $("set-tz").value.trim() });
-  $("set-gran").onchange = () => pushConfig({ granularity_min: +$("set-gran").value });
+  const GRANULARITIES = [1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30, 60];
+  const gsel = $("set-gran");
+  GRANULARITIES.forEach((g) => gsel.appendChild(el("option", { value: String(g) }, String(g))));
+  gsel.onchange = () => pushConfig({ granularity_min: +gsel.value });
+  $("set-live").onchange = () => pushConfig({ seconds_live_s: +$("set-live").value });
   $("set-secmode").onchange = () => pushConfig({ seconds_mode: $("set-secmode").value });
   $("set-zero").onchange = () => pushConfig({ zero_hold_s: +$("set-zero").value });
   $("set-spin").onchange = () => pushConfig({ spin_s: +$("set-spin").value });
@@ -385,6 +412,7 @@ function wire() {
         if (r.ok) {
           toast("ring accepted - the modes task will swap it in", true);
           loadRing();
+          if (state) loadWear(state.cfg, true);  // a new ring changes flip costs
         } else {
           toast("rejected: " + r.err, false);
         }
@@ -407,9 +435,16 @@ function loadRing() {
     });
 }
 
+// The glyph sheet is fetched once and injected, so every <use> is a
+// same-document reference - external ones are unsupported in WebKit and would
+// leave an iPhone staring at blank cards.  A failure just keeps the names.
+SwanFlap.loadGlyphs("glyphs.svg").then((ok) => {
+  if (ok && flap) flap.refresh();
+});
+
 loadRing().then(() => {
   wire();
-  connect();
+  bus.connect();
 }).catch(() => {
   toast("could not load /api/ring", false);
 });
