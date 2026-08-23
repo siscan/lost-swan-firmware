@@ -143,7 +143,7 @@ inline constexpr const RingSlot* RING_TABLE_FOR_COLUMN[RING_COLUMN_COUNT] = {
 // simulator mirror what the wall actually looks like even on a board that
 // has no ring.json yet.  Firmware behaviour never reads these.
 inline constexpr const char* RING_SCHEMES_JSON =
-    "{\"minutes\":{\"card\":{\"default\":\"#181818\"},\"ink\":{\"default\":\"#e8e4da\",\"glyph\":\"#b03a2e\"}},\"seconds\":{\"card\":{\"default\":\"#e8e4da\",\"glyph\":\"#b03a2e\"},\"ink\":{\"default\":\"#181818\"}}}";
+    "{\"minutes\":{\"card\":{\"default\":\"#181818\"},\"ink\":{\"default\":\"#e8e4da\",\"glyph\":\"#b03a2e\"}},\"seconds\":{\"card\":{\"default\":\"#e8e4da\"},\"ink\":{\"default\":\"#181818\",\"glyph\":\"#b03a2e\"}}}";
 inline constexpr const char* RING_COLUMN_SCHEME[RING_COLUMN_COUNT] = {
     "minutes", "minutes", "minutes", "seconds", "seconds",
 };
