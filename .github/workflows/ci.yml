@@ -20,7 +20,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: Generated ring table is current
-        run: python3 tools/gen_ring_table.py --check
+        run: python3 tools/ringgen.py --check
 
   host-tests:
     runs-on: ubuntu-latest

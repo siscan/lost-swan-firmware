@@ -202,60 +202,86 @@ Speeds (µsteps/s = flaps/s × 164.85):
 Flap fall is gravity-limited at roughly 20–25 flaps/s regardless of motor.
 The real ceiling is measured in Phase 1, not assumed.
 
-Wrap costs on an ascending ring (cost up + cost down = 50):
+Transition costs on the **descending** v3 rings (cost one way + cost the other
+= 50).  Ring A is columns 1–4, ring B is column 5 with its two digit blocks;
+see §4.  All measured from the manifests, not estimated.
 
-| transition | flips | time @ 20 flaps/s |
-|---|---|---|
-| clock minute-units 9→0 | 41 | 2.05 s (every 10 min) |
-| clock minute-tens 5→0 | 45 | 2.25 s (every hour) |
-| countdown decrement (any digit −1) | 49 | 2.45 s |
-| blank → wifi glyph | 49 | 2.45 s |
+| transition | ring A | ring B | time @ 20 flaps/s (ring A) |
+|---|---|---|---|
+| countdown decrement (any digit −1) | **1** | **1** | 0.09 s |
+| clock increment (any digit +1) | 49 | 24 | 2.45 s / 1.22 s |
+| digit 0 → 9 (wrap) | 41 | **16** | 2.05 s / 0.84 s |
+| tens-of-seconds 0 → 5 (minute rollover) | 45 | — | 2.25 s |
+| blank → wifi glyph | 1 | n/a — no wifi on ring B | 0.09 s |
+
+The decrement being one flip on **every** column is the point of the redesign:
+it is the show's single-flap tick, and it is what makes live seconds possible
+(§7.3).  The price is that clock increments became the expensive direction,
+which §7.1's granularity setting exists to manage.
 
 ---
 
-## 4. Ring (50 positions — a *fluid* data table, not code)
+## 4. Ring (50 positions — two *fluid* data tables, not code)
 
-Ascending order. Index 0 is the home/magnet position. The current expected
-layout:
+**v3, descending, frozen 2026-08-22.**  Two rings ship, from two manifests in
+`docs/ref/`:
 
-| index | character | notes |
-|---|---|---|
-| 0 | blank | home; shown for leading spaces |
-| 1–10 | digits 0–9 | index = digit + 1 |
-| 11 | AM | |
-| 12 | PM | |
-| 13–48 | 36 hieroglyphs | names and order **from `manifest.json`** — do not invent |
-| 49 | wifi glyph | boot / no-signal state |
+| ring | columns | manifest | contents |
+|---|---|---|---|
+| **A** | 1, 2, 3, 4 | `manifest_cols1234.json` | blank @0, wifi @1, 36 glyphs @2–37, PM @38, AM @39, digits @40–49 (`slot = 49 − digit`) |
+| **B** | 5 | `manifest_col5.json` | blank @0, 14 glyphs, digits @15–24 (`slot = 24 − digit`), `?` @25, 14 glyphs, digits @40–49 (`slot = 49 − digit`) |
 
-**Nico's answer to Q3:** all drums carry the same characters; columns 4–5 use
-a different colour scheme (white card / red card for glyphs, black characters)
-versus columns 1–3 (black card, white digits, red glyphs). And the ring order
-and placement are **still fluid and may change.** Design consequences:
+**Descending.** One forward flip *decrements* the displayed digit.  The drum
+turns one way, so a transition costs `(target − current) mod 50` flips; making
+the ring descend turns every countdown decrement into a single flip.  Clock
+increments become the expensive direction — accepted deliberately, and managed
+by `clock.granularity_min` (§7.1).
 
-- The ring table is a **runtime file**, `ring.json` in LittleFS, loaded at
-  boot, with a compiled-in copy as fallback. It can be replaced from the web
-  UI (Settings → Ring → upload) without reflashing firmware.
-- `tools/ringgen.py` generates `ring.json` from the pipeline `manifest.json`.
-  Nobody edits `ring.json` by hand.
-- Each column may carry its own table (`columns[i].ring`), defaulting to the
-  shared one, so a per-column placement change is a file edit.
-- **No code references a ring index directly.** The clock renderer asks the
-  table for `digit(7)`, `ampm(PM)`, `blank`, `wifi`; the message parser asks by
-  name. If a lookup fails, the column shows blank and a diagnostic is raised.
-  The simulator renders each column in its own colour scheme from the table.
-- Per-column calibration offsets live in NVS, independent of the table, so a
+**Column 5 carries two digit blocks, 25 slots apart.**  That drops its 0→9
+wrap from 41 flips to 16, which is what makes live seconds affordable (§7.3).
+It is paid for by dropping AM/PM (rendered on column 1), the wifi glyph
+(column 3) and seven glyphs; all nine on-screen canon glyphs and `?` survive.
+
+**Consequence — a digit does not have one slot.**  Every lookup takes the
+column's *current* slot and returns the nearest match in the **forward**
+direction.  Column 5's physical position is therefore genuinely not predictable
+from the displayed digit: showing `7` may mean slot 17 or slot 42.  That is
+correct behaviour, not a fault — `docs/BRINGUP.md` says so where the
+calibration walk would otherwise raise the alarm.
+
+Design consequences carried over from Q3 and still in force:
+
+- The ring tables are a **runtime file**, `data/ring.json` in LittleFS, loaded
+  at boot, with compiled-in copies as fallback.  Replaceable from the web UI
+  (Settings → Ring → upload) without reflashing.
+- `tools/ringgen.py` generates `ring.json` **and** the compiled fallback header
+  from the two manifests.  Nobody edits either output by hand.
+- Each column may carry its own table (`columns[i].ring`; `slots` accepted as
+  an alias).  Columns 1–4 use the shared table; column 5 always carries its own.
+- **No code references a ring index directly.**  Renderers ask for roles —
+  `blank`, `digit(n)`, `am`, `pm`, `wifi`, `question` — and the message parser
+  asks by name.
+- **Role coverage is validated at load, not at render.**  Every column must be
+  able to render blank, `?` and digits 0–9; column 1 must have AM/PM; the
+  centre column must have the wifi glyph.  A table that fails is rejected and
+  the compiled fallback stays active, so a bad upload surfaces at boot rather
+  than as a blank column mid-show.  Column 5 legitimately lacks AM/PM and wifi
+  and is never asked for them.
+- Per-column calibration offsets live in NVS, independent of the tables, so a
   ring change never invalidates calibration.
-- The Calibrate page's index walk shows the *expected* character name beside
-  each stop, which is how a table/drum mismatch is caught in seconds.
+- The Calibrate page's index walk shows the *expected* character beside each
+  stop, which is how a table/drum mismatch — or a swapped drum, since there are
+  now three part numbers — is caught in seconds.
 
 Rules:
-- A move from index *c* to index *t* always costs `(t − c) mod 50` flips.
+- A move from slot *c* to slot *t* always costs `(t − c) mod 50` flips, and the
+  result is never negative: no move can ask for a reverse DIR.
 - Column count and ring size are config, so the second split-flap project
-  reuses the codebase.
+  reuses the codebase.  A table of any size other than 50 is rejected — the
+  drums are physical and `T(i)` is compiled for that geometry.
 - Message tokens: ring names from the table, `_` for blank, or `#n` for a raw
-  index.
-- Roles the code may ask the table for: `blank`, `digit(n)`, `am`, `pm`,
-  `wifi`, `question` (the `?` glyph). Anything else is addressed by name.
+  index.  A name may match two slots on column 5; the nearest forward wins.
+  `#n` is always exact.
 
 ---
 
@@ -377,7 +403,29 @@ message overrides clock with a dwell; FAULT overlay never changes the mode.
 
 Layout (Q2, **confirmed**): col 1 = AM/PM (blank in 24 h) · cols 2–3 = hours ·
 cols 4–5 = minutes. 12 h: hours 1–12, col 2 blank below 10. 24 h: leading zero.
-Renders at second 0 of every local minute; DST handled by the TZ string.
+DST handled by the TZ string.
+
+**Granularity.** The v3 rings descend, so a clock tick is the expensive
+direction (§3): +1 costs 49 flips on ring A and 24 on ring B.  The displayed
+minute is therefore floored to `clock.granularity_min`, **default 15**.
+Renders happen when the floored *local* time changes — flooring in local time,
+not UTC, so zones whose offset is not a whole multiple of the granularity
+(India's +5:30 against a 15-minute grid) behave.
+
+Wear, measured from the manifests by walking a full day (not estimated):
+
+| granularity | col 5 | col 4 | col 3 | col 2 | total flips/day |
+|---|---|---|---|---|---|
+| 1 min | 32,400 | 6,000 | 1,000 | 100 | **39,500** |
+| 5 min | 3,600 | 6,000 | 1,000 | 100 | 10,700 |
+| **15 min** *(default)* | 1,200 | 3,600 | 1,000 | 100 | **5,900** |
+| 30 min | 0 | 1,200 | 1,000 | 100 | 2,300 |
+| 60 min | 0 | 0 | 1,000 | 100 | 1,100 |
+
+Two things worth knowing from that table.  **Column 4, not column 5, is the
+wear bottleneck** at 15 minutes (3,600 against 1,200): column 5 has the cheap
+double-block increment while column 4 pays ring A's full 49.  And at 30 minutes
+column 5 never moves at all — the ones-of-minutes digit is always 0.
 
 Why col 1 and not col 5: the physical 3 + 2 grouping forces HH | MM across
 the band (cols 2–3 | 4–5), which leaves exactly one spare column, and it is
@@ -390,7 +438,9 @@ Until time is valid: after homing, show all blank; if SNTP has not synced
 within `WIFI_GLYPH_GRACE_S = 15`, show the WiFi glyph on the **centre column**
 (col 3), blanks elsewhere — per the handoff, which is DECIDED there. A WiFi
 drop after a successful sync keeps free-running time and does **not** show the
-glyph.
+glyph.  The centre column is ring A, which carries the wifi glyph; ring B does
+not, and the role validator (§4) enforces that the column that needs it has
+it.
 
 ### 7.2 Message
 
@@ -399,11 +449,33 @@ Five tokens (§4). Dwell `msg.dwell_s = 600` then return to the previous mode;
 
 ### 7.3 Countdown (108:00)
 
-- Total 6480 s. Display is **MMM:S0** — minutes in cols 1–3, tens-of-seconds in
-  col 4, col 5 fixed at 0. The ones-of-seconds can never move: a decrement is
-  49 flips and a second is 1 s. Decided; do not revisit.
-- Frame updates on every 10 s boundary: `shown = floor(remaining / 10) * 10`.
-  Each boundary may spin col 4 (49 flips) and, every minute, a minutes column.
+- Total 6480 s.  `countdown.seconds_mode` selects the resolution:
+
+  - **`seconds` (default)** — **MMM:SS**, live one-second ticks.  Minutes in
+    cols 1–3, tens-of-seconds in col 4, ones-of-seconds in col 5.  Affordable
+    on the v3 rings: a decrement is **1 flip** on every column, and column 5's
+    0→9 wrap is 16 flips rather than 41 (§4).
+  - **`tens`** — **MMM:S0**, the original scheme; column 5 parks on 0.  Kept
+    because it is the low-wear option and the show's own prop is ambiguous.
+
+  This reverses the earlier "MMM:S0, decided, do not revisit" — see the §17
+  entry.  The reason it was decided is gone: ones-of-seconds cost 49 flips on
+  the old ascending single ring and now cost 1.
+
+- **Timing budgets in seconds mode.**  A 1-flip tick takes ~0.1 s, comfortably
+  inside the one-second window.  Two transitions do not fit their window and
+  are handled by starting early and landing a little late rather than never:
+  column 5's 16-flip wrap needs ~1.1 s at the default 15 flaps/s (~0.7 s at
+  25), and column 4's 45-flip tens-of-seconds rollover needs ~3.0 s.  Column 4
+  has ten seconds of slack — its value is valid for the whole next ten-second
+  window — so a late landing there is invisible.  Column 5 catches up on the
+  following tick, because a forward-only move simply extends when the target is
+  replaced.  A full 108-minute run costs about 22,200 flips, 16,200 of them on
+  column 5.
+- Frame updates on every window boundary: `shown = floor(remaining / step) *
+  step`, where step is 1 s or 10 s per `countdown.seconds_mode`.  Note the
+  floor: 108:00 is the idle face, and a *running* countdown holds it only for
+  the start instant before rolling to the first window.
 
 **The display is self-sufficient.** Everything — entering the Numbers,
 switching modes, calibration — is done from the display's own web UI on any
@@ -586,8 +658,11 @@ wifi.ssid / wifi.pass
 mqtt.host / mqtt.port / mqtt.user / mqtt.pass / mqtt.base / mqtt.enabled
 time.tz                  default PST8PDT,M3.2.0,M11.1.0
 time.ntp                 default pool.ntp.org
-ring                     ring.json in LittleFS (not NVS); compiled fallback
+ring                     ring.json in LittleFS (not NVS); compiled fallback,
+                         generated from BOTH manifests by tools/ringgen.py
 clock.h24
+clock.granularity_min    default 15  (1..60; the displayed minute is floored
+                         to it — see the §7.1 wear table)
 motion.cal[5]            int32 µsteps
 motion.flaps_s_normal    default 15
 motion.flaps_s_alarm     default 25
@@ -598,7 +673,11 @@ motion.en_idle_off       default false
 motion.fault_policy      [Q5]
 audio.volume / audio.mute / audio.quiet_start / audio.quiet_end
 msg.dwell_s              default 600
-countdown.reveal[5]      ring indices, unset until Nico picks
+countdown.seconds_mode   default seconds  (seconds = MMM:SS live |
+                         tens = MMM:S0, col 5 parked)
+countdown.reveal[5]      ring indices, unset until Nico picks.  NOTE: an index
+                         means a different character on col 5, whose ring
+                         differs — set these by NAME when the web UI lands
 countdown.land_on_tick   default true
 clock.land_on_tick       default false
 countdown.zero_hold_s    default 3
@@ -887,3 +966,47 @@ reason, so nothing gets re-litigated.
     zones; the host FakePort now mirrors real open-loop index semantics and a
     non-instant-move test exercises the Moving paths; the simulator records
     the initial mode event and resets its mode label.
+- 2026-08-22 — **Ring v3: descending, and two rings instead of one.**  The
+  mechanical chat confirmed the redesign and generated
+  `docs/ref/manifest_cols1234.json` (ring A, cols 1–4) and
+  `docs/ref/manifest_col5.json` (ring B, col 5); the single
+  `manifest.json` is retired.  Substance:
+  - **All rings descend.**  A countdown decrement is now **1 flip on every
+    column**, the show's single-flap tick.  Clock increments become the
+    expensive direction (49 flips on ring A, 24 on ring B) — accepted, and
+    managed by the new `clock.granularity_min`.  Reversing cols 1–4 is a
+    **fidelity choice, not a timing requirement** (the mechanical chat's own
+    correction): cols 1–4 would meet every deadline either way; they descend so
+    the whole display ticks the same direction as the prop.  Column 5 is the
+    one where descending is load-bearing.
+  - **Column 5 gets two digit blocks** 25 slots apart, so its 0→9 wrap costs
+    16 flips instead of 41.  That is what makes live seconds affordable, so
+    **`countdown.seconds_mode` defaults to `seconds` (MMM:SS)** — reversing the
+    earlier "MMM:S0, decided, do not revisit".  The reason for that decision
+    was that a ones-of-seconds decrement cost 49 flips; it now costs 1.  MMM:S0
+    survives as the low-wear `tens` option.
+  - **A digit no longer has one slot.**  Lookups take the column's current slot
+    and return the nearest match forward, so column 5's physical position is
+    not predictable from the displayed digit.  Recorded in `docs/BRINGUP.md` so
+    the calibration walk does not read it as a fault.
+  - **`clock.granularity_min` defaults to 15.**  Measured from the manifests by
+    walking a full day: 39,500 flips/day at 1 minute against 5,900 at 15.  Two
+    corrections to the figures that prompted this: the ~43,000 col-5 estimate is
+    actually **32,400** for col 5 alone (39,500 across all four moving columns),
+    and **~2,300 is the total at 30-minute granularity**, not 15.  Also worth
+    recording: at 15 minutes **column 4 is the wear bottleneck, not column 5**
+    (3,600 against 1,200), because column 4 pays ring A's 49-flip increment
+    while column 5 has the cheap 24-flip double-block one.
+  - Correction to the stated flip costs: **col 4's minute rollover is 45 flips,
+    not 49** (tens-of-seconds 0→5 on ring A).  49 is ring A's *increment* cost.
+    Either number fits the 10-second budget — 45 flips is ~3.0 s at 15 flaps/s.
+  - **Role coverage is now asserted at ring-load time** and the load is rejected
+    on failure, so a table that cannot render something its column will be asked
+    for fails loudly at boot rather than showing a blank column mid-show.
+    Column 5 lacking AM/PM and wifi is legal and never asked.
+  - The character-level helpers in `ring/ring.h` were **deleted**: they assumed
+    one ascending digit block.  `ring.h` is slot arithmetic only, and
+    `ring_forward_distance` remains direction-agnostic and never negative —
+    which is the standing guarantee that no move can produce a reverse DIR.
+  - `docs/ref/FIRMWARE_HANDOFF.md` §2 still described the ascending ring; its
+    ring section is corrected in place and marked superseded by this spec.

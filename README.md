@@ -16,7 +16,7 @@ Target: ESP32-C5-DevKitC-1-N8R8 (XIAO ESP32-C5 map behind a board define).
 | gate | status |
 |---|---|
 | `set-target esp32c5` + `build` clean | passes — zero warnings, both board maps |
-| host tests green | 7/7 suites (ring, motion math, simulated axis, ring.json, TZ/DST, frame, modes) |
+| host tests green | 7/7 suites (rings, motion math, simulated axis, ring.json, TZ/DST, frame, modes) |
 | `git diff` empty after `tools/ringgen.py` | clean — header and ring.json both regenerate byte-identically |
 | motion cross-task handoff explicit | done — see `docs/MOTION_SYNC.md`, incl. the seqlock for multi-field reads |
 | CI | GitHub Actions on ubuntu — see below |
@@ -30,7 +30,7 @@ none of the Windows dev machine's constraints exist:
 
 | job | what |
 |---|---|
-| `ring-table` | `python3 tools/gen_ring_table.py --check` — the committed header AND `data/ring.json` must match the manifest |
+| `ring-table` | `python3 tools/ringgen.py --check` — the committed header AND `data/ring.json` must match the two manifests |
 | `host-tests` | native CMake build + ctest of all seven pure-logic suites, then a freshness diff of the committed simulator traces against a live `gen_traces` run |
 | `firmware` | both board maps (`devkitc1`, `xiao`) built inside Espressif's official `espressif/idf:v5.5.5` Docker image |
 
@@ -142,9 +142,19 @@ cmake -S test/host -B build/host && cmake --build build/host && ctest --test-dir
 
 ## Ring table
 
-The generator is `tools/ringgen.py` (spec §4 name); it emits BOTH the compiled
-fallback header and `data/ring.json` (the runtime table for LittleFS).
-Regenerate after any change to `docs/ref/manifest.json`:
+**Ring v3 is descending, and there are two rings.**  Ring A drives columns 1–4;
+ring B drives column 5 and carries each digit **twice** (slots 15–24 and 40–49)
+so its 0→9 wrap costs 16 flips instead of 41.  One forward flip *decrements* the
+digit, which makes a countdown tick a single flip on every column — and makes a
+clock tick the expensive direction, hence `clock.granularity_min` (default 15).
+Because a digit has no single slot on column 5, every lookup resolves to the
+nearest match **going forward**; column 5's physical position is therefore not
+predictable from its displayed digit (see `docs/BRINGUP.md`).
+
+The generator is `tools/ringgen.py`; it emits BOTH the compiled fallback header
+(two tables plus the per-column assignment) and `data/ring.json` (the runtime
+table for LittleFS), and validates descending order and per-column role coverage
+as it goes.  Regenerate after any change to either manifest in `docs/ref/`:
 
 ```powershell
 python tools/ringgen.py
@@ -152,6 +162,11 @@ python tools/ringgen.py
 
 `--check` fails if either committed artifact is stale; CI runs it.
 `gen_ring_table.py` remains as a forwarding shim.
+
+A ring table that cannot render a role its column will be asked for — column 1
+without AM/PM, the centre column without the wifi glyph, any column missing a
+digit or `?` — is **rejected at load**, leaving the compiled fallback active, so
+a bad upload fails at boot rather than as a blank column mid-show.
 
 ## Browser simulator
 
@@ -163,7 +178,8 @@ actually decided, through a MockSocket speaking the intended Phase 3 `/ws`
 shape.  Refresh the traces after mode/frame changes:
 
 ```powershell
-buildhostgen_traces dataing.json websim	races.js
+buildhostgen_traces data
+ing.json websim	races.js
 ```
 
 ## Pin map (DevKitC-1, spec §2.2)

@@ -19,23 +19,44 @@ hard-code; make it a config value).
   flip accumulates ~5 flaps of error per hour of continuous stepping.
 - µsteps per full drum revolution = 272000/33 exactly.
 
-## 2. Ring semantics — DECIDED (see manifest.json / RING_ORDER.md)
-- Slot 0 = **blank = home** (magnet position). Ascending slot order; one
-  forward flip advances the displayed slot by +1.
-- Digits occupy slots 1-10 ('0'-'9'), contiguous → a clock tick is one flip.
-- Blank adjacent to digit '0' (leading-zero suppression is one flip).
-- AM = 11, PM = 12, adjacent (noon/midnight is one flip on that column).
-- Slot 49 = **WiFi glyph**, wraps to blank: boot/no-signal state is WiFi
-  glyph on the centre column, blanks elsewhere.
-- Slot 33 = **'?'** → the ????? full-display state is all columns to 33.
-- Countdown-zero display (which five glyphs at 00:00): **user has not
-  chosen yet** — make it a config array of five slot indices.
-- Clock is 12-hour with AM/PM (column 5 carries AM/PM; columns are, left to
-  right: minutes-hundreds? No — layout is 3 + 2: cols 1-3 = minutes
-  (000-108), cols 4-5 = seconds). Countdown shows MMM:SS across 3+2.
-  Clock mode: HH : MM across the gap with col 5 showing AM/PM — exact
-  digit-to-column assignment in clock mode is firmware's choice; the ring
-  supports it either way.
+## 2. Ring semantics — **SUPERSEDED 2026-08-22 by FIRMWARE_SPEC.md §4**
+
+> This section described the **v2 ascending single ring**.  The ring was
+> redesigned to **v3 descending, two rings** (manifests `manifest_cols1234.json`
+> and `manifest_col5.json`), and `manifest.json` no longer exists.  The spec
+> §4 is authoritative; this section is corrected below so it cannot mislead,
+> but do not treat it as the source of truth.
+
+What changed, and why:
+
+- **Descending, not ascending.**  One forward flip now *decrements* the
+  displayed digit, so a countdown tick is 1 flip on every column.  Clock
+  increments became the expensive direction (49 flips on ring A, 24 on ring B),
+  managed by `clock.granularity_min` (spec §7.1).
+- **Two rings, three part numbers.**  Ring A on columns 1–4; ring B on column
+  5.  Ring order is identical for cols 1–4, but card colour is not, so cols 1–3
+  and col 4 are separate parts: cols 1–3 (black cards, 0 straddles), col 4
+  (white/red cards, straddles at flaps 1 and 37), col 5 (own ring, straddles at
+  0, 14, 24, 39).
+- **Digit placement.**  Ring A: digits at slots 40–49, `slot = 49 − digit`.
+  Ring B: **two** blocks, slots 15–24 (`slot = 24 − digit`) and 40–49
+  (`slot = 49 − digit`), 25 apart, so column 5's 0→9 wrap costs 16 flips
+  instead of 41.  A digit therefore does not have one slot on column 5.
+- **Blank = home = slot 0** on both rings.  Still true.
+- **AM/PM:** ring A slots 38 (PM) and 39 (AM).  **Absent from ring B** — AM/PM
+  renders on column 1, not column 5.  The claim below that "column 5 carries
+  AM/PM" was already contradicted in its own paragraph and is now impossible;
+  spec §7.1 puts AM/PM on column 1 and explains the geometry.
+- **WiFi glyph:** ring A slot 1.  **Absent from ring B** — it renders on the
+  centre column (column 3), which is ring A.
+- **`?`:** ring A slot 17, ring B slot 25.  The `?????` state is every column
+  to its own question slot; both rings carry one.
+- **Countdown-zero display:** still user-chosen, still a config array
+  (`countdown.reveal[5]`) — but note an index means a different character on
+  column 5, so pick these by name once the web UI exists.
+- **Countdown layout:** MMM:SS with live seconds is now the default
+  (`countdown.seconds_mode = seconds`), which the two-block column 5 made
+  affordable.  MMM:S0 survives as the low-wear `tens` option.
 
 ## 3. Homing — DECIDED in principle, geometry partly UNCERTAIN
 - One **Ø6×3 N35 magnet** per drum, glued into the pocket in the **idler-side
@@ -112,9 +133,10 @@ gear counts, ring order, and homing scheme are unchanged by any candidate
 fix.
 
 ## 9. Files in this package
-- `manifest.json` — machine-readable ring (generated live from
-  prodcol.build_ring(), cross-checked 50/50 against the printed Column 5
-  flap manifest).
-- `RING_ORDER.md` — same, human-readable.
+- `manifest_cols1234.json`, `manifest_col5.json` — the machine-readable v3
+  rings (descending; ring A for cols 1-4, ring B for col 5).  These replaced
+  the single v2 `manifest.json` on 2026-08-22.
+- `RING_ORDER.md` — the v2 ascending order, human-readable.  **Historical**:
+  it documents the retired ring.
 - `MECHANICAL_README.md`, `BOM.md` — verbatim copies.
 - `ring_poster.png` — the 50-character visual reference.

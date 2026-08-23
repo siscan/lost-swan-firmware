@@ -67,7 +67,9 @@ set `motion.hall_active_low` false. If `raw` never moves, it is the magnet
 
 ### 3. `step 0 200` — direction
 
-- [ ] Drum turns in the **ascending** direction (flap fronts fall forward).
+- [ ] Drum turns so the **flap fronts fall forward** — that is the one legal
+      direction, and on the v3 descending rings it is the direction in which
+      the displayed digit DECREMENTS.
 
 If not, move that driver's DIR tie to the other rail. DIR is tied per driver, so
 this is a per-column wiring fix; there is no firmware setting for it and coil
@@ -118,18 +120,41 @@ ceiling is measured here, not assumed.
 
 ### 8. Calibration
 
-- [ ] `cal 0 <±n>` until the blank card hangs flat against the bezel lip and the
-      next card is fully retained. `save`.
-- [ ] `go 0 <i>` for every index 0..49 — confirm the mapping, especially that
-      slot 1 shows digit `0` and slot 49 shows the wifi glyph.
+- [ ] `cal <col> <±n>` until the blank card hangs flat against the bezel lip and
+      the next card is fully retained. `save`.
+- [ ] `go <col> <i>` for every index 0..49 — confirm the mapping against the
+      table `ring` prints.
 
-`ring` lists the whole table if you need to check a name.
+`ring` lists the loaded table and says whether it came from `ring.json` or the
+compiled fallback, and whether it reads as descending.
 
-Note: the offset is normalised into [0, one revolution).  A negative nudge is
-reported as a large positive number and costs most of a revolution to become
-visible - that is the one-way ring, not a firmware bug.  Nudge forward.
+**Three part numbers — check you have the right drum on the right column.**
+The v3 rings differ by column, and a swapped drum is diagnosed from this walk,
+not from a fault:
 
-- Result: cal[0] = ______
+| columns | ring | tell-tale during the walk |
+|---|---|---|
+| 1, 2, 3 | A, black cards, **0 straddle flaps** | slot 1 = wifi glyph, 38 = PM, 39 = AM, 40–49 = digits 9→0 |
+| 4 | A, white/red cards, **straddles at flaps 1 and 37** | same ring order as 1–3; only the card colour differs |
+| 5 | **B**, straddles at flaps 0, 14, 24, 39 | **digits appear twice** — 15–24 and 40–49, both 9→0; **no AM/PM, no wifi glyph** |
+
+So: if column 5 shows AM, PM or the wifi glyph anywhere in the walk, it has a
+cols-1–4 drum on it.  If columns 1–4 show digits twice, they have the column-5
+drum.  If column 4's cards are black rather than white/red, it has a 1–3 drum —
+the ring order will look right, which is exactly why the colour is the tell.
+
+**Column 5's position is not predictable from its digit — this is not a
+fault.** Because ring B carries each digit twice, the firmware picks whichever
+slot is nearest going *forward*, so showing `7` may mean slot 17 or slot 42, and
+the same displayed value can sit in either block at different times.  Expect
+that during the walk and during a countdown; it is the mechanism that makes the
+0→9 wrap cost 16 flips instead of 41 (spec §4).
+
+Note: the calibration offset is normalised into [0, one revolution).  A negative
+nudge is reported as a large positive number and costs most of a revolution to
+become visible — that is the one-way ring, not a firmware bug.  Nudge forward.
+
+- Result: cal[0..4] = ______ / ______ / ______ / ______ / ______
 
 ## Notes
 
