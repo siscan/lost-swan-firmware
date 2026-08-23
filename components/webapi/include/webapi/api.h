@@ -122,6 +122,28 @@ public:
     virtual bool reboot() = 0;
 };
 
+// The MQTT transport, as the dispatcher sees it.  Deliberately narrow: the API
+// layer validates and stores, and the transport decides when to reconnect -
+// stopping a client from the HTTP task would stall the single httpd task for
+// seconds.
+struct MqttStatus {
+    bool enabled = false;
+    bool connected = false;
+    std::string uri;
+    std::string base = "swan/";
+    uint32_t dropped = 0;
+};
+
+class MqttAdmin {
+public:
+    virtual ~MqttAdmin() = default;
+    virtual MqttStatus mqtt_status() = 0;
+    // Persist and ask the transport to re-apply.  The password is write-only
+    // from the API's point of view: it is never reported back.
+    virtual bool mqtt_configure(bool enabled, std::string_view uri, std::string_view user,
+                                std::string_view pass, std::string_view base) = 0;
+};
+
 struct Context {
     ModeManager& modes;
     RingSource& ring;
@@ -130,6 +152,7 @@ struct Context {
     SysInfoSource& sys;
     RingStaging& ring_upload;
     SystemOps& ops;
+    MqttAdmin& mqtt;
 
     // ONE command at a time, whatever the transport.
     //

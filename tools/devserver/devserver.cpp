@@ -62,6 +62,21 @@ struct MemStore final : CountdownStore {
     }
 };
 
+// The dev server has no broker.  Reporting "configured but never connected"
+// is the honest answer and keeps the Settings page exercisable.
+struct DevMqtt final : api::MqttAdmin {
+    api::MqttStatus st;
+    api::MqttStatus mqtt_status() override { return st; }
+    bool mqtt_configure(bool enabled, std::string_view uri, std::string_view,
+                        std::string_view, std::string_view base) override {
+        st.enabled = enabled;
+        st.uri = std::string(uri);
+        if (!base.empty()) st.base = std::string(base);
+        std::printf("mqtt.config enabled=%d uri=%s\n", enabled ? 1 : 0, st.uri.c_str());
+        return true;
+    }
+};
+
 struct DevOps final : api::SystemOps {
     std::atomic<int> reboots{0};
     bool reboot() override {
@@ -250,8 +265,9 @@ int main(int argc, char** argv) {
     DevCfgSink cfg_sink;
     DevSys sysinfo;
     DevOps ops;
+    DevMqtt mqtt;
     // The stager is BOTH the pinned ring source and the upload sink.
-    api::Context ctx{modes, stager, sim, cfg_sink, sysinfo, stager, ops, {}};
+    api::Context ctx{modes, stager, sim, cfg_sink, sysinfo, stager, ops, mqtt, {}};
 
     sysinfo.s.wifi_state = "connected";
     sysinfo.s.ssid = "host-dev-server";

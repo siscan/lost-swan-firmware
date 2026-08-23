@@ -34,6 +34,22 @@ struct WifiConfig {
     bool configured() const { return !ssid.empty(); }
 };
 
+// MQTT (spec 11 mqtt.*).  Separate from AppConfig for the same reasons as
+// WifiConfig: the password never travels through the state payload, and the
+// Settings page can rewrite the broker without touching display settings.
+//
+// OFF until configured, and the firmware never waits on it (spec 10.0) - the
+// display is a standalone clock and MQTT is an optional peer.
+struct MqttConfig {
+    bool enabled = false;
+    std::string uri;                    // mqtt://host:1883
+    std::string user;
+    std::string pass;
+    std::string base = "swan/";         // spec 10.3
+    std::string ha_prefix = "homeassistant";  // HA's own discovery_prefix
+    bool configured() const { return enabled && !uri.empty(); }
+};
+
 // Opens NVS, initialising the partition if it is new or was reformatted.
 esp_err_t init();
 
@@ -45,6 +61,8 @@ esp_err_t load_app(AppConfig& c);
 esp_err_t save_app(const AppConfig& c);
 esp_err_t load_wifi(WifiConfig& c);
 esp_err_t save_wifi(const WifiConfig& c);
+esp_err_t load_mqtt(MqttConfig& c);
+esp_err_t save_mqtt(const MqttConfig& c);
 
 // Per-column mode and maintenance (spec 5.9).  Separate from AppConfig so a
 // repair can be recorded without rewriting display settings, and so a fresh

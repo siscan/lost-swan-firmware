@@ -1,5 +1,7 @@
 #include "net/httpd.h"
 
+#include "net/mqtt.h"
+
 #include <sys/time.h>
 #include <unistd.h>
 
@@ -521,7 +523,10 @@ void ws_broadcast(const std::string& msg) {
     ws_queue(msg);
 }
 
-bool has_state_consumers() { return ws_clients() > 0; }
+bool has_state_consumers() {
+    // A wall clock feeding a terminal prop has no browser open at all.
+    return ws_clients() > 0 || mqtt_connected();
+}
 
 uint32_t ws_dropped() {
     const std::lock_guard<std::mutex> lock(g_ws_mu);

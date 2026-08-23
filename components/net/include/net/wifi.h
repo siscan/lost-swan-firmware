@@ -41,6 +41,17 @@ esp_err_t set_credentials(const std::string& ssid, const std::string& pass);
 
 WifiStatus status();
 
+// Told when the STA gains or loses an IP.
+//
+// on_got_ip used to write the status struct and tell nobody, so a second
+// subsystem had no way to learn it could open a socket short of polling.  MQTT
+// must not start before there is a route: an unreachable broker with no link
+// logs a connection error every few seconds for ever.
+//
+// Runs on the system event task - do not block, do not call back into net::.
+using LinkCallback = void (*)(bool up);
+void on_link_change(LinkCallback cb);
+
 // Starts mDNS so the UI is at http://lost.local/ (spec 10.1).  Safe to call
 // before the link is up.
 esp_err_t mdns_start(const char* hostname, const char* instance);

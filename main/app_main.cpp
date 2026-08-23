@@ -25,11 +25,13 @@
 #include "motion/motion.h"
 #include "net/bindings.h"
 #include "net/httpd.h"
+#include "net/mqtt.h"
 #include "net/wifi.h"
 #include "ring/ring_store.h"
 #include "timesvc/time_service.h"
 #include "webapi/api.h"
 #include "webapi/event_tap.h"
+#include "webapi/mqtt_bridge.h"
 #include "webapi/ring_upload.h"
 
 namespace {
@@ -97,6 +99,9 @@ void modes_task(void*) {
     swan::Mode last_mode = g_modes->mode();
     std::string last_payload;
     int64_t last_push = 0;
+    int64_t last_mqtt = 0;
+    std::string last_mqtt_slice;
+    std::string last_countdown;
 
     for (;;) {
         vTaskDelayUntil(&last, pdMS_TO_TICKS(50));
@@ -162,6 +167,41 @@ void modes_task(void*) {
             last_push = now;
             last_payload = std::move(tail);
             swan::net::ws_broadcast(payload);
+        }
+
+        // MQTT is NOT /ws, and the difference is the retain flag.  A browser
+        // is animating, so 5 Hz plus a 1 Hz heartbeat is right for it.  Every
+        // retained publish rewrites the broker's store and makes Home
+        // Assistant re-evaluate every template that reads it, so the broker
+        // gets: on change, at most 1 Hz, and a 30 s floor so a peer learns the
+        // display is still there.  The floor pairs with the 30 s keepalive -
+        // a prop knows within ~45 s that the display is gone.
+        //
+        // go/spin/cue are /ws only.  A prop renders from the absolute
+        // deadline (spec 7.3); per-flap animation events are the browser's
+        // business.
+        if (swan::net::mqtt_connected()) {
+            std::string slice = swan::api::display_slice(payload);
+            const bool mq_changed = (slice != last_mqtt_slice) && (now - last_mqtt >= 1000);
+            if (mq_changed || now - last_mqtt >= 30000) {
+                last_mqtt = now;
+                last_mqtt_slice = std::move(slice);
+                swan::net::mqtt_publish(swan::api::TOPIC_STATE, payload, true, 1);
+
+                const std::string cd = swan::api::countdown_doc(
+                    swan::cd_phase_name(g_modes->cd_phase()), g_modes->cd_target(),
+                    swan::origin_name(g_modes->cd_set_by()), g_modes->cd_seq());
+                if (cd != last_countdown) {
+                    last_countdown = cd;
+                    swan::net::mqtt_publish(swan::api::TOPIC_COUNTDOWN, cd, true, 1);
+                }
+            }
+        } else {
+            // Force a full re-assert on the next connect: the retained set is
+            // state to restate, and a broker restart must not leave the
+            // display's last word stale for ever.
+            last_mqtt_slice.clear();
+            last_countdown.clear();
         }
     }
 }
@@ -244,11 +284,12 @@ extern "C" void app_main() {
     static swan::net::IdfConfigSink cfg_sink(g_app);
     static swan::net::IdfSysInfo sysinfo;
     static swan::net::IdfSystemOps ops;
+    static swan::net::IdfMqttAdmin mqtt_admin;
     g_stager = new swan::api::RingStager(swan::ring_store::mutable_ring());
     // The stager is BOTH the ring source and the upload sink: it owns the lock
     // that makes a snapshot safe against its own swap.
     g_api = new swan::api::Context{*g_modes, *g_stager, motion_admin, cfg_sink,
-                                   sysinfo,  *g_stager, ops, {}};
+                                   sysinfo,  *g_stager, ops, mqtt_admin, {}};
 
     xTaskCreate(status_task, "swan_status", 3072, nullptr, 2, nullptr);
     xTaskCreate(modes_task, "swan_modes", 8192, nullptr, 5, nullptr);
@@ -260,6 +301,11 @@ extern "C" void app_main() {
     swan::net::mdns_start("lost", "LOST Swan Timer");
     if (swan::net::httpd_start(*g_api) != ESP_OK) {
         ESP_LOGE(TAG, "web server failed to start");
+    }
+    // MQTT last: off until configured, never waited on, and the display is a
+    // complete standalone clock without it (spec 10.0).
+    if (swan::net::mqtt_init(*g_api) != ESP_OK) {
+        ESP_LOGE(TAG, "mqtt transport failed to start");
     }
 
     swan::cli::bind_modes(g_modes, utc_ms_now);

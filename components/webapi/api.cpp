@@ -1,5 +1,7 @@
 #include "webapi/api.h"
 
+#include "webapi/mqtt_bridge.h"
+
 #include <array>
 #include <vector>
 
@@ -95,6 +97,17 @@ std::string build_state(Context& ctx, int64_t utc_ms) {
         .kv("disabled_columns", cols.count(ColumnMode::Disabled))
         .kv("maintenance", cols.maintenance)
         .kv("sim_available", ctx.motion.sim_available())
+        .end_obj();
+
+    // The external API's own state.  A display that thinks it is publishing
+    // and is not looks identical to one nobody is listening to.
+    const MqttStatus mq = ctx.mqtt.mqtt_status();
+    w.key("mqtt").obj()
+        .kv("enabled", mq.enabled)
+        .kv("connected", mq.connected)
+        .kv("uri", mq.uri)
+        .kv("base", mq.base)
+        .kv("dropped", static_cast<int64_t>(mq.dropped))
         .end_obj();
 
     w.kv("time_valid", ctx.modes.time_valid());
@@ -628,6 +641,25 @@ std::string handle_command(Context& ctx, std::string_view body, int64_t utc_ms, 
     // ---- later phases ----
     if (c == "audio.volume" || c == "audio.mute" || c == "audio.play") {
         return err_result("audio arrives in phase 5");
+    }
+    if (c == "mqtt.config") {
+        const json::Value* en = member(p, "enabled");
+        const json::Value* uri = member(p, "uri");
+        if (uri == nullptr || uri->type != json::Type::Str) return err_result("need uri");
+        const bool want = en == nullptr || en->boolean;
+        std::string why;
+        // Validated HERE, so a bad URI is a rejected command with a reason
+        // rather than a client that fails to connect for ever with a log line
+        // nobody is watching.
+        if (want && !broker_uri_valid(uri->as_str(), why)) return err_result(why);
+        const json::Value* user = member(p, "user");
+        const json::Value* pass = member(p, "pass");
+        const json::Value* base = member(p, "base");
+        const bool ok = ctx.mqtt.mqtt_configure(
+            want, uri->as_str(), user != nullptr ? user->as_str() : std::string_view{},
+            pass != nullptr ? pass->as_str() : std::string_view{},
+            base != nullptr ? base->as_str() : std::string_view{"swan/"});
+        return ok ? ok_result() : err_result("could not apply");
     }
     if (c == "system.reboot") {
         return ctx.ops.reboot() ? ok_result() : err_result("reboot unavailable");

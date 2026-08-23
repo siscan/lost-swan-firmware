@@ -8,6 +8,8 @@
 #include "esp_check.h"
 #include "esp_console.h"
 #include "net/wifi.h"
+#include "net/mqtt.h"
+#include "webapi/mqtt_bridge.h"
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -466,6 +468,59 @@ int cmd_ring(int argc, char** argv) {
 
 // spec 13 `wifi ...`.  Credentials live in NVS; provisioning over a captive
 // portal is Phase 4, so this is how the display joins a network for now.
+int cmd_mqtt(int argc, char** argv) {
+    config::MqttConfig c;
+    config::load_mqtt(c);
+    if (argc == 1 || std::strcmp(argv[1], "status") == 0) {
+        std::printf("mqtt     : %s\n", c.enabled ? (net::mqtt_connected() ? "CONNECTED"
+                                                                          : "enabled, offline")
+                                                  : "off");
+        std::printf("broker   : %s\n", c.uri.empty() ? "(none)" : c.uri.c_str());
+        std::printf("user     : %s\n", c.user.empty() ? "(none)" : c.user.c_str());
+        std::printf("base     : %s\n", c.base.c_str());
+        std::printf("dropped  : %lu\n", static_cast<unsigned long>(net::mqtt_dropped()));
+        return 0;
+    }
+    if (std::strcmp(argv[1], "off") == 0) {
+        c.enabled = false;
+        const esp_err_t err = config::save_mqtt(c);
+        if (err == ESP_OK) net::mqtt_reconfigure();
+        std::printf("%s\n", err == ESP_OK ? "mqtt off" : esp_err_to_name(err));
+        return err == ESP_OK ? 0 : 1;
+    }
+    if (argc < 2) {
+        std::printf("usage: mqtt <uri> [user] [pass] | mqtt status | mqtt off | "
+                    "mqtt base <topic>\n");
+        return 1;
+    }
+    if (std::strcmp(argv[1], "base") == 0) {
+        if (argc < 3) {
+            std::printf("usage: mqtt base <topic>\n");
+            return 1;
+        }
+        c.base = argv[2];
+        const esp_err_t err = config::save_mqtt(c);
+        if (err == ESP_OK) net::mqtt_reconfigure();
+        std::printf("%s\n", err == ESP_OK ? "saved" : esp_err_to_name(err));
+        return err == ESP_OK ? 0 : 1;
+    }
+    // Validated with the same pure check the API uses, so the console and the
+    // Settings page reject exactly the same strings for the same reasons.
+    std::string why;
+    if (!api::broker_uri_valid(argv[1], why)) {
+        std::printf("rejected: %s\n", why.c_str());
+        return 1;
+    }
+    c.enabled = true;
+    c.uri = argv[1];
+    if (argc >= 3) c.user = argv[2];
+    if (argc >= 4) c.pass = argv[3];
+    const esp_err_t err = config::save_mqtt(c);
+    if (err == ESP_OK) net::mqtt_reconfigure();
+    std::printf("%s\n", err == ESP_OK ? "saved; connecting" : esp_err_to_name(err));
+    return err == ESP_OK ? 0 : 1;
+}
+
 int cmd_wifi(int argc, char** argv) {
     if (argc == 1 || std::strcmp(argv[1], "status") == 0) {
         const net::WifiStatus w = net::status();
@@ -655,6 +710,8 @@ esp_err_t start() {
     reg("cal", "cal <col> <+/-usteps> - nudge the calibration offset", cmd_cal);
     reg("save", "persist the current config to NVS", cmd_save);
     reg("wifi", "wifi <ssid> <pass> | wifi status | wifi clear", cmd_wifi);
+    reg("mqtt", "mqtt <uri> [user] [pass] | mqtt status | mqtt off | mqtt base <topic>",
+        cmd_mqtt);
     reg("col", "col [<0-4>|all real|sim|disabled] - per-column mode", cmd_col);
     reg("sim", "sim all|<col> [off] | sim fault <col> slip|miss|clear", cmd_sim);
     reg("maint", "maint [0|1] - maintenance mode", cmd_maint);

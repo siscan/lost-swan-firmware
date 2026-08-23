@@ -45,6 +45,13 @@ public:
     api::SysInfo get() override;
 };
 
+class IdfMqttAdmin final : public api::MqttAdmin {
+public:
+    api::MqttStatus mqtt_status() override;
+    bool mqtt_configure(bool enabled, std::string_view uri, std::string_view user,
+                        std::string_view pass, std::string_view base) override;
+};
+
 class IdfSystemOps final : public api::SystemOps {
 public:
     bool reboot() override;

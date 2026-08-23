@@ -1,5 +1,7 @@
 #include "net/bindings.h"
 
+#include "net/mqtt.h"
+
 #include "esp_app_desc.h"
 #include "esp_log.h"
 #include "esp_heap_caps.h"
@@ -124,7 +126,42 @@ api::SysInfo IdfSysInfo::get() {
     return s;
 }
 
+api::MqttStatus IdfMqttAdmin::mqtt_status() {
+    config::MqttConfig c;
+    config::load_mqtt(c);
+    api::MqttStatus s;
+    s.enabled = c.enabled;
+    s.connected = mqtt_connected();
+    s.uri = c.uri;
+    s.base = c.base;
+    s.dropped = mqtt_dropped();
+    return s;   // note: the password is deliberately absent
+}
+
+bool IdfMqttAdmin::mqtt_configure(bool enabled, std::string_view uri, std::string_view user,
+                                  std::string_view pass, std::string_view base) {
+    config::MqttConfig c;
+    config::load_mqtt(c);
+    c.enabled = enabled;
+    c.uri = std::string(uri);
+    c.user = std::string(user);
+    // An empty password KEEPS the stored one, so the Settings page can send the
+    // form back without having been shown the secret it is about to resave.
+    if (!pass.empty()) c.pass = std::string(pass);
+    if (!base.empty()) c.base = std::string(base);
+    if (config::save_mqtt(c) != ESP_OK) return false;
+    // Staged, never applied here: stopping the client waits with portMAX_DELAY
+    // on a task that may be parked for seconds, and this runs on the single
+    // httpd task.
+    return mqtt_reconfigure() == ESP_OK;
+}
+
 bool IdfSystemOps::reboot() {
+    // Say goodbye first.  esp_mqtt_client_stop sends a clean DISCONNECT and the
+    // broker then DISCARDS the will, so without this a reboot from the UI
+    // leaves the display looking online to Home Assistant until the keepalive
+    // expires - reporting "available" for a device that is mid-restart.
+    mqtt_go_offline();
     return xTaskCreate(reboot_task, "swan_reboot", 2048, nullptr, 4, nullptr) == pdPASS;
 }
 

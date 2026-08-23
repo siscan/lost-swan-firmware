@@ -34,6 +34,18 @@ void set_state(WifiState s) {
     g_status.state = s;
 }
 
+// Told on every link transition.  A single slot, set once at boot before the
+// WiFi task exists, so no lock: adding a second consumer means a small array
+// and a mutex, not a second global.
+LinkCallback g_link_cb = nullptr;
+bool g_link_up = false;
+
+void notify_link(bool up) {
+    if (g_link_up == up) return;   // only transitions, never a repeat
+    g_link_up = up;
+    if (g_link_cb != nullptr) g_link_cb(up);
+}
+
 void schedule_retry() {
     const int idx = g_attempt < static_cast<int>(sizeof kBackoffMs / sizeof kBackoffMs[0])
                         ? g_attempt
@@ -63,6 +75,7 @@ void on_wifi_event(void*, esp_event_base_t base, int32_t id, void* data) {
                 g_status.rssi = 0;
                 g_status.state = WifiState::Failed;
             }
+            notify_link(false);
             const auto* e = static_cast<wifi_event_sta_disconnected_t*>(data);
             ESP_LOGW(TAG, "disconnected, reason %d", e != nullptr ? e->reason : -1);
             schedule_retry();
@@ -83,6 +96,7 @@ void on_got_ip(void*, esp_event_base_t, int32_t, void* data) {
         g_status.ip = buf;
     }
     g_attempt = 0;
+    notify_link(true);
     ESP_LOGI(TAG, "connected, ip %s", buf);
 }
 
@@ -175,6 +189,8 @@ esp_err_t set_credentials(const std::string& ssid, const std::string& pass) {
     }
     return start_sta(cfg);
 }
+
+void on_link_change(LinkCallback cb) { g_link_cb = cb; }
 
 WifiStatus status() {
     WifiStatus out;

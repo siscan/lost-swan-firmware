@@ -36,6 +36,9 @@ constexpr const char* NS = "swan";
 // countdown.failure_timeout_s  cd_fail_to
 // countdown.reveal[5]          cd_reveal    (blob of 5 x int32)
 // (countdown deadline state)   cd_phase / cd_target / cd_seq / cd_setby
+// mqtt.enabled / .host / .user / .pass / .base
+//                              mq_en / mq_uri / mq_user / mq_pass / mq_base
+// mqtt.ha_prefix               mq_hapfx
 // column.mode[5]               col_mode     (blob of 5 x uint8)
 // column.maintenance           maint
 // wifi.ssid                    w_ssid
@@ -67,6 +70,12 @@ constexpr const char* K_CD_SEQ = "cd_seq";
 constexpr const char* K_CD_SETBY = "cd_setby";
 constexpr const char* K_COL_MODE = "col_mode";
 constexpr const char* K_MAINT = "maint";
+constexpr const char* K_MQTT_EN = "mq_en";
+constexpr const char* K_MQTT_URI = "mq_uri";
+constexpr const char* K_MQTT_USER = "mq_user";
+constexpr const char* K_MQTT_PASS = "mq_pass";
+constexpr const char* K_MQTT_BASE = "mq_base";
+constexpr const char* K_MQTT_HAPFX = "mq_hapfx";
 constexpr const char* K_WIFI_SSID = "w_ssid";
 constexpr const char* K_WIFI_PASS = "w_pass";
 
@@ -216,6 +225,39 @@ esp_err_t save_wifi(const WifiConfig& c) {
     if (err != ESP_OK) return err;
     ESP_ERROR_CHECK(nvs_set_str(h, K_WIFI_SSID, c.ssid.c_str()));
     ESP_ERROR_CHECK(nvs_set_str(h, K_WIFI_PASS, c.pass.c_str()));
+    err = nvs_commit(h);
+    nvs_close(h);
+    return err;
+}
+
+esp_err_t load_mqtt(MqttConfig& c) {
+    nvs_handle_t h;
+    const esp_err_t err = nvs_open(NS, NVS_READONLY, &h);
+    // Fresh NVS: MQTT stays OFF.  The display is a standalone clock and must
+    // never come up talking to a broker nobody configured (spec 10.0).
+    if (err == ESP_ERR_NVS_NOT_FOUND) return ESP_OK;
+    if (err != ESP_OK) return err;
+    uint8_t en = 0;
+    if (nvs_get_u8(h, K_MQTT_EN, &en) == ESP_OK) c.enabled = en != 0;
+    get_str(h, K_MQTT_URI, &c.uri);
+    get_str(h, K_MQTT_USER, &c.user);
+    get_str(h, K_MQTT_PASS, &c.pass);
+    get_str(h, K_MQTT_BASE, &c.base);
+    get_str(h, K_MQTT_HAPFX, &c.ha_prefix);
+    nvs_close(h);
+    return ESP_OK;
+}
+
+esp_err_t save_mqtt(const MqttConfig& c) {
+    nvs_handle_t h;
+    esp_err_t err = nvs_open(NS, NVS_READWRITE, &h);
+    if (err != ESP_OK) return err;
+    ESP_ERROR_CHECK(nvs_set_u8(h, K_MQTT_EN, c.enabled ? 1 : 0));
+    ESP_ERROR_CHECK(nvs_set_str(h, K_MQTT_URI, c.uri.c_str()));
+    ESP_ERROR_CHECK(nvs_set_str(h, K_MQTT_USER, c.user.c_str()));
+    ESP_ERROR_CHECK(nvs_set_str(h, K_MQTT_PASS, c.pass.c_str()));
+    ESP_ERROR_CHECK(nvs_set_str(h, K_MQTT_BASE, c.base.c_str()));
+    ESP_ERROR_CHECK(nvs_set_str(h, K_MQTT_HAPFX, c.ha_prefix.c_str()));
     err = nvs_commit(h);
     nvs_close(h);
     return err;

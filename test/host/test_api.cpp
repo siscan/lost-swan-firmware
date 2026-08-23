@@ -126,6 +126,25 @@ struct FakeOps : api::SystemOps {
     }
 };
 
+struct FakeMqtt : api::MqttAdmin {
+    api::MqttStatus st;
+    int configures = 0;
+    std::string last_uri, last_user, last_pass, last_base;
+    api::MqttStatus mqtt_status() override { return st; }
+    bool mqtt_configure(bool enabled, std::string_view uri, std::string_view user,
+                        std::string_view pass, std::string_view base) override {
+        ++configures;
+        st.enabled = enabled;
+        st.uri = last_uri = std::string(uri);
+        last_user = std::string(user);
+        // An empty password keeps the stored one, exactly as the target does.
+        if (!pass.empty()) last_pass = std::string(pass);
+        last_base = std::string(base);
+        st.base = last_base;
+        return true;
+    }
+};
+
 struct Rig {
     RingSet ring = RingSet::compiled_fallback();
     FakePort port;
@@ -138,8 +157,9 @@ struct Rig {
     FakeCfgSink cfg;
     FakeSys sys;
     FakeOps ops;
+    FakeMqtt mqtt;
     api::RingStager stager{ring};
-    api::Context ctx{mm, stager, motion, cfg, sys, stager, ops, {}};
+    api::Context ctx{mm, stager, motion, cfg, sys, stager, ops, mqtt, {}};
 
     Rig() {
         mm.set_config(ModesConfig{});

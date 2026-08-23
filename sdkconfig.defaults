@@ -40,6 +40,13 @@ CONFIG_ESP_TASK_WDT_TIMEOUT_S=5
 CONFIG_COMPILER_CXX_EXCEPTIONS=n
 CONFIG_COMPILER_OPTIMIZATION_PERF=y
 
+# MQTT (spec 10.3).  A publish issued while the broker is unreachable
+# short-circuits before taking the client's API lock, instead of queuing into
+# an outbox that drains at about one message a second.  The display publishes
+# retained state that is re-asserted on every connect, so a message that cannot
+# go now has nothing to say later.
+CONFIG_MQTT_SKIP_PUBLISH_IF_DISCONNECTED=y
+
 # NOT enabled yet, deliberately:
 #   CONFIG_SPIRAM             — N8R8 has 8 MB PSRAM but nothing in Phase 1 needs
 #                               it; enabling untested PSRAM only adds boot risk.
