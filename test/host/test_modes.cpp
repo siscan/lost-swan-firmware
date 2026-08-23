@@ -188,73 +188,170 @@ void test_wifi_glyph() {
 // --------------------------------------------------------------------------
 // Countdown
 // --------------------------------------------------------------------------
-void test_countdown_seconds_mode() {
-    Rig r;  // default: SecondsMode::Seconds
+// The seconds freeze (spec 7.3).  Every mode holds MMM:00 until the run has
+// `seconds_live_s` left; only then does the resolution change.  The boundary
+// coincides with the 4-minute cue, so the display coming alive and the warning
+// sound are one moment.
+void test_countdown_step_rules() {
+    // Pure rules first - the driven cases below inherit whatever these say.
+    const int live = 240;
+
+    // Quiet phase: whole minutes, whatever the mode.
+    for (const SecondsMode m : {SecondsMode::Minutes, SecondsMode::Tens, SecondsMode::Seconds}) {
+        CHECK_EQ(countdown_step_s(m, 6480, live), 60);
+        CHECK_EQ(countdown_step_s(m, 241, live), 60);
+        CHECK_EQ(countdown_shown_s(m, 6480, live), 6480);
+        CHECK_EQ(countdown_shown_s(m, 299, live), 240);
+        CHECK_EQ(countdown_shown_s(m, 241, live), 240);
+        // A quiet-phase value is always a whole minute, which is what puts
+        // zeros in both seconds columns.
+        CHECK_EQ(countdown_shown_s(m, 6479, live) % 60, 0);
+    }
+
+    // At the boundary the modes part company.
+    CHECK_EQ(countdown_step_s(SecondsMode::Minutes, 240, live), 60);
+    CHECK_EQ(countdown_step_s(SecondsMode::Tens, 240, live), 10);
+    CHECK_EQ(countdown_step_s(SecondsMode::Seconds, 240, live), 1);
+
+    // 240 itself is already live, and floors to itself in every mode - so the
+    // frame at the boundary is 004:00 in all three and nothing jumps.
+    CHECK_EQ(countdown_shown_s(SecondsMode::Minutes, 240, live), 240);
+    CHECK_EQ(countdown_shown_s(SecondsMode::Tens, 240, live), 240);
+    CHECK_EQ(countdown_shown_s(SecondsMode::Seconds, 240, live), 240);
+
+    // One tick below: 004:00 -> 003:59 in seconds, 003:50 in tens, 003:00 in
+    // minutes.
+    CHECK_EQ(countdown_shown_s(SecondsMode::Seconds, 239, live), 239);
+    CHECK_EQ(countdown_shown_s(SecondsMode::Tens, 239, live), 230);
+    CHECK_EQ(countdown_shown_s(SecondsMode::Minutes, 239, live), 180);
+
+    // The scheduler's "next value" must cross the boundary without a special
+    // case: 300 -> 240 while quiet, then 240 -> 239 once live.
+    CHECK_EQ(countdown_next_shown_s(SecondsMode::Seconds, 300, live), 240);
+    CHECK_EQ(countdown_next_shown_s(SecondsMode::Seconds, 240, live), 239);
+    CHECK_EQ(countdown_next_shown_s(SecondsMode::Tens, 240, live), 230);
+    CHECK_EQ(countdown_next_shown_s(SecondsMode::Minutes, 240, live), 180);
+    CHECK_EQ(countdown_next_shown_s(SecondsMode::Seconds, 1, live), 0);
+    CHECK_EQ(countdown_next_shown_s(SecondsMode::Seconds, 0, live), 0);
+
+    // live_s = 0 is a legitimate "never show seconds" setting for any mode.
+    CHECK_EQ(countdown_step_s(SecondsMode::Seconds, 1, 0), 60);
+    CHECK_EQ(countdown_shown_s(SecondsMode::Seconds, 59, 0), 0);
+}
+
+void test_countdown_quiet_phase() {
+    Rig r;  // default: SecondsMode::Seconds, seconds_live_s = 240
     r.begin_at(utc_ms(2026, 1, 15, 17, 0, 0));
     const int64_t t0 = r.time.utc_ms;
 
     CHECK(!r.mm.cmd_countdown_execute("4 8 15 16 23 43", t0).ok);  // wrong Numbers
     CHECK(r.mm.cmd_countdown_execute(" 4  8 15 16 23 42 ", t0).ok);
     CHECK(r.mm.cd_phase() == CdPhase::Running);
-    // 108:00 is the idle face; a running countdown holds it only for the start
-    // instant before the first window lands (floor semantics, spec 7.3).
+
+    // 108:00 is the idle face; a running countdown rolls off it at once
+    // (floor semantics, spec 7.3), so half a second in the display reads
+    // 107:00.  The point of the change is the last two columns: 00, not 59.
     r.run_to(t0 + 500);
-    FACES(r, "1|0|7|5|9");
+    FACES(r, "1|0|7|0|0");
 
-    // Live seconds: one flip per second on column 5.  Sampled mid-window -
-    // frames land ON the boundary by design, so a boundary-instant sample sees
-    // the incoming value.
-    r.run_to(t0 + 1500);
-    FACES(r, "1|0|7|5|8");
-    r.run_to(t0 + 4500);
-    FACES(r, "1|0|7|5|5");
-
-    // Every one-second step costs column 5 exactly one flip - the whole point
-    // of the descending ring.
-    const int start = r.port.cols[4].index;
-    r.run_to(t0 + 8500);
-    CHECK_EQ(ring_forward_distance(start, r.port.cols[4].index), 4);
-
-    // The 0->9 wrap uses the second digit block: 16 flips, not the 41 a
-    // single-block ring would cost.  Asserted on the flip COST rather than
-    // frame timing: 16 flips need ~1.1 s at 15 flaps/s, more than the
-    // one-second window, so the scheduler correctly starts that frame early
-    // (spec 7.3 timing note) and it lands a little late.
-    int at_zero = -1, at_nine = -1;
-    for (int64_t t = t0 + 8500; t <= t0 + 13000 && at_nine < 0; t += 100) {
-        r.run_to(t);
-        const int slot = r.port.cols[4].index;
-        const std::string face = r.ring.col(4).slot(slot).id;
-        if (face == "0" && at_zero < 0) at_zero = slot;
-        if (face == "9" && at_zero >= 0) at_nine = slot;
-    }
-    CHECK(at_zero >= 0);
-    CHECK(at_nine >= 0);
-    if (at_zero >= 0 && at_nine >= 0) {
-        CHECK_EQ(ring_forward_distance(at_zero, at_nine), 16);
-    }
-    // The tens column crossed the same boundary with a single flip.
-    FACES(r, "1|0|7|4|9");
+    // From here on, only the minutes columns may move.  This is the assertion
+    // the whole redesign exists for.
+    r.port.gos.clear();
+    r.run_to(t0 + 600 * 1000);  // ten minutes in
+    FACES(r, "0|9|7|0|0");
+    CHECK_EQ(r.port.gos_for(3), 0);
+    CHECK_EQ(r.port.gos_for(4), 0);
+    // ...and the minutes columns did move: ten ones-digit steps and a borrow.
+    CHECK(r.port.gos_for(2) >= 10);
 }
 
-void test_countdown_tens_mode() {
+void test_countdown_freeze_boundary() {
     Rig r;
-    ModesConfig c;
-    c.seconds_mode = SecondsMode::Tens;
-    r.configure(c);
     r.begin_at(utc_ms(2026, 1, 15, 17, 0, 0));
     const int64_t t0 = r.time.utc_ms;
-    CHECK(r.mm.cmd_countdown_start(t0).ok);
-    // 108:00 holds only for the start instant; the first 10 s window lands
-    // immediately after (floor semantics, spec 7.3).
-    r.run_to(t0 + 500);
-    FACES(r, "1|0|7|5|0");
+    // 305 s out, so the boundary at 240 arrives 65 s in.
+    CHECK(r.mm.cmd_countdown_set_target(t0 / 1000 + 305, t0).ok);
 
-    // MMM:S0 - column 5 parks on 0 and never moves.
+    // Sampled mid-window throughout: frames land ON the boundary by design, so
+    // a boundary-instant sample would see the incoming value.
+    r.run_to(t0 + 500);
+    FACES(r, "0|0|5|0|0");     // 005:00
+    r.run_to(t0 + 10 * 1000);
+    FACES(r, "0|0|4|0|0");     // 004:00, and it holds for a full minute
+
+    const int col4 = r.port.cols[3].index;
     const int col5 = r.port.cols[4].index;
-    r.run_to(t0 + 25 * 1000);   // remaining 6455 -> floor to 6450 = 107:30
-    FACES(r, "1|0|7|3|0");
+
+    // Still frozen most of the way to the boundary.  Sampled at 55 s, not 64:
+    // land-on-tick COMMITS the waking frame a lead-time early (col 4's 45-flip
+    // borrow needs ~3 s at 15 flaps/s) so it arrives exactly on the boundary,
+    // and FakePort settles a move the instant it is issued.  On the wall the
+    // columns are in flight over that stretch; in the fake they teleport.
+    r.run_to(t0 + 55 * 1000);
+    FACES(r, "0|0|4|0|0");
+    CHECK_EQ(r.port.cols[3].index, col4);
     CHECK_EQ(r.port.cols[4].index, col5);
+
+    // Boundary: 004:00 -> 003:59 -> 003:58, one second apart.
+    r.run_to(t0 + 65500);
+    FACES(r, "0|0|3|5|9");
+    r.run_to(t0 + 66500);
+    FACES(r, "0|0|3|5|8");
+
+    // Waking the seconds costs column 4 the 0->5 borrow (45 flips on ring A)
+    // and column 5 the 0->9 wrap (16 on ring B, not the 41 a single digit
+    // block would cost), plus the one-flip step to 58.
+    CHECK_EQ(ring_forward_distance(col4, r.port.cols[3].index), 45);
+    CHECK_EQ(ring_forward_distance(col5, r.port.cols[4].index), 16 + 1);
+}
+
+void test_countdown_modes() {
+    // minutes: the seconds columns never move, even inside the live window.
+    {
+        Rig r;
+        ModesConfig c;
+        c.seconds_mode = SecondsMode::Minutes;
+        r.configure(c);
+        r.begin_at(utc_ms(2026, 1, 15, 17, 0, 0));
+        const int64_t t0 = r.time.utc_ms;
+        CHECK(r.mm.cmd_countdown_set_target(t0 / 1000 + 125, t0).ok);
+        r.run_to(t0 + 500);
+        FACES(r, "0|0|2|0|0");
+        r.port.gos.clear();
+        r.run_to(t0 + 70 * 1000);   // 55 s left: deep inside the live window
+        FACES(r, "0|0|0|0|0");
+        CHECK_EQ(r.port.gos_for(3), 0);
+        CHECK_EQ(r.port.gos_for(4), 0);
+    }
+    // tens: MMM:S0 inside the window, column 5 parked on 0 throughout.
+    {
+        Rig r;
+        ModesConfig c;
+        c.seconds_mode = SecondsMode::Tens;
+        r.configure(c);
+        r.begin_at(utc_ms(2026, 1, 15, 17, 0, 0));
+        const int64_t t0 = r.time.utc_ms;
+        CHECK(r.mm.cmd_countdown_set_target(t0 / 1000 + 245, t0).ok);
+        r.run_to(t0 + 500);
+        FACES(r, "0|0|4|0|0");
+        const int col5 = r.port.cols[4].index;
+        r.run_to(t0 + 20500);       // 224 s left -> floor to 220 = 003:40
+        FACES(r, "0|0|3|4|0");
+        CHECK_EQ(r.port.cols[4].index, col5);   // never moved
+    }
+    // seconds: live one-second ticks, one flip each on column 5.
+    {
+        Rig r;
+        r.begin_at(utc_ms(2026, 1, 15, 17, 0, 0));
+        const int64_t t0 = r.time.utc_ms;
+        CHECK(r.mm.cmd_countdown_set_target(t0 / 1000 + 100, t0).ok);
+        r.run_to(t0 + 500);
+        FACES(r, "0|0|1|3|9");      // 99 s -> 001:39
+        const int start = r.port.cols[4].index;
+        r.run_to(t0 + 4500);
+        FACES(r, "0|0|1|3|5");
+        CHECK_EQ(ring_forward_distance(start, r.port.cols[4].index), 4);
+    }
 }
 
 void test_countdown_cues_and_zero() {
@@ -504,8 +601,10 @@ void run_tests() {
     test_clock_dst_edges();
     test_clock_granularity();
     test_wifi_glyph();
-    test_countdown_seconds_mode();
-    test_countdown_tens_mode();
+    test_countdown_step_rules();
+    test_countdown_quiet_phase();
+    test_countdown_freeze_boundary();
+    test_countdown_modes();
     test_countdown_cues_and_zero();
     test_countdown_reveal_and_timeout();
     test_countdown_persistence_and_resume();

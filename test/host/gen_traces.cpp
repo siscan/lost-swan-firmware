@@ -179,26 +179,37 @@ int main(int argc, char** argv) {
         emit(out, "clock", "Clock at 15-min granularity: 11:00 then 11:15", r.rec);
         std::fprintf(out, ",\n");
     }
-    {  // Countdown in seconds mode: live one-flip ticks on column 5 and the
-       // 16-flip 0->9 wrap onto its second digit block.
+    {  // The quiet phase: MMM:00, only the minutes columns moving.  Started
+       // from the top so the first thing shown is 108:00 rolling to 107:00
+       // with the seconds columns dead (spec 7.3).
         Rig r;
         r.begin(base_utc());
         r.mm.cmd_countdown_execute(ModeManager::THE_NUMBERS, r.time.utc_ms);
         r.note_mode();
-        r.run_for(25 * 1000);
-        emit(out, "countdown", "MMM:SS live seconds, incl. the 16-flip 0->9 wrap", r.rec);
+        r.run_for(185 * 1000);   // three minute ticks
+        emit(out, "quiet", "Countdown quiet phase: MMM:00, seconds frozen", r.rec);
         std::fprintf(out, ",\n");
     }
-    {  // The same countdown in the original MMM:S0 scheme, for comparison.
+    {  // The freeze boundary: 004:00 holds a full minute, then the seconds
+       // wake - col 4 pays a 45-flip borrow, col 5 a 16-flip wrap - and tick.
+        Rig r;
+        r.begin(base_utc());
+        r.mm.cmd_countdown_set_target(r.time.utc_ms / 1000 + 302, r.time.utc_ms);
+        r.note_mode();
+        r.run_for(75 * 1000);
+        emit(out, "countdown", "Seconds wake at 004:00, then MMM:SS live", r.rec);
+        std::fprintf(out, ",\n");
+    }
+    {  // The same boundary in MMM:S0, for comparison: column 5 never moves.
         Rig r;
         ModesConfig cfg;
         cfg.seconds_mode = SecondsMode::Tens;
         r.mm.set_config(cfg);
         r.begin(base_utc());
-        r.mm.cmd_countdown_start(r.time.utc_ms);
+        r.mm.cmd_countdown_set_target(r.time.utc_ms / 1000 + 302, r.time.utc_ms);
         r.note_mode();
-        r.run_for(35 * 1000);
-        emit(out, "tens", "Countdown MMM:S0 - column 5 parked, 10 s windows", r.rec);
+        r.run_for(95 * 1000);
+        emit(out, "tens", "Same boundary in MMM:S0 - column 5 stays parked", r.rec);
         std::fprintf(out, ",\n");
     }
     {  // Zero choreography with a named-glyph reveal.
