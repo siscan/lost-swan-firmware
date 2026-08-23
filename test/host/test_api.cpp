@@ -299,8 +299,16 @@ void test_reveal_by_name() {
 
     // The picker's source of truth: per-column glyph lists.  Column 5's set is
     // smaller and must not contain the glyphs it dropped.
+    // /api/ring is ~1,850 nodes - far past the device's untrusted-input budget,
+    // and rightly so: it is a document WE generate for a browser, not something
+    // the board ever parses.  Say so explicitly rather than inheriting a limit
+    // meant for a hostile POST.
     json::Value doc;
-    CHECK(json::parse(api::build_ring_doc(r.ring), doc, nullptr));
+    CHECK(json::parse(api::build_ring_doc(r.ring), doc, nullptr, 20000));
+    if (doc.get("columns") == nullptr || doc.get("columns")->as_array() == nullptr) {
+        CHECK(false);
+        return;   // a failed parse must fail the check, not segfault the suite
+    }
     const auto* cols = doc.get("columns")->as_array();
     CHECK_EQ(cols->size(), 5u);
     const auto* g0 = (*cols)[0].get("glyphs")->as_array();
@@ -352,6 +360,35 @@ void test_state_payload() {
     CHECK_EQ(c2.get("revs")->as_int(), 7);
     // Faces are reported by name - a slot number means nothing to a reader.
     CHECK(c2.get("face")->as_str() == r.ring.col(2).slot(17).id);
+
+    // "index unknown" and "showing the blank flap" must be distinguishable in
+    // the payload - on the bench they rendered identically, so five columns
+    // hunting for their hall edge looked like an idle display.
+    r.motion.axes[0].state = AxisState::Homing;
+    r.motion.axes[0].index = RING_INVALID;
+    r.motion.axes[0].rehome_attempt = 2;
+    r.motion.axes[1].state = AxisState::Idle;
+    r.motion.axes[1].index = RING_HOME_SLOT;   // genuinely showing blank
+    json::Value vh;
+    CHECK(json::parse(r.state(), vh, nullptr));
+    const auto* ch = vh.get("cols")->as_array();
+    CHECK((*ch)[0].get("settled")->boolean == false);
+    CHECK_EQ((*ch)[0].get("index")->as_int(), RING_INVALID);
+    CHECK_EQ((*ch)[0].get("retry")->as_int(), 2);
+    CHECK((*ch)[0].get("state")->as_str() == "HOMING");
+    CHECK((*ch)[1].get("settled")->boolean == true);
+    CHECK_EQ((*ch)[1].get("retry")->as_int(), 0);
+    CHECK((*ch)[1].get("face")->as_str() == "blank");
+    // An Idle column with an unknown index - after an open-loop spin - is also
+    // not settled, even though its state says Idle.
+    r.motion.axes[2].state = AxisState::Idle;
+    r.motion.axes[2].index = RING_INVALID;
+    CHECK(json::parse(r.state(), vh, nullptr));
+    CHECK((*vh.get("cols")->as_array())[2].get("settled")->boolean == false);
+    r.motion.axes[0].state = AxisState::Idle;
+    r.motion.axes[0].index = 0;
+    r.motion.axes[0].rehome_attempt = 0;
+    r.motion.axes[2].index = 0;
 
     CHECK(v.get("sys")->get("wifi")->as_str() == "connected");
     CHECK(v.get("sys")->get("ip")->as_str() == "192.168.1.42");
@@ -488,6 +525,14 @@ void test_upload_validator() {
         flood += "0]";
         bad.push_back({"node-flood-under-byte-limit", flood});
     }
+    {
+        // 2,000 nodes is the count that rebooted the real board; the cap has
+        // to stop it well before the allocator does.
+        std::string flood = "{\"slots\":[";
+        for (int i = 0; i < 2000; ++i) flood += "0,";
+        flood += "0]}";
+        bad.push_back({"node-flood-2000", flood});
+    }
     bad.push_back({"no-slots", R"({"columns":[]})"});
     bad.push_back({"slots-not-array", R"({"slots":42})"});
     bad.push_back({"three-slots",
@@ -533,6 +578,14 @@ void test_upload_validator() {
         CHECK_EQ(r.ring.col(0).index_for_role(Role::Blank), RING_HOME_SLOT);
         CHECK(r.ring.validate_roles(nullptr));
     }
+
+    // The cap must admit a real ring.json with room to spare - it is 535 nodes
+    // against a 900 budget.  If a bigger drum ever pushes past this, the cap
+    // is not the thing to raise: the DOM is, and the answer is a streaming
+    // parse (the headroom on the device is thin, see json_lite.cpp).
+    CHECK(r.stager.stage(good, &err));
+    CHECK(r.stager.apply_pending());
+    (void)r.stager.take_accepted_body();
 
     // Rejected uploads never reach the "accepted body" the target persists.
     CHECK(r.stager.take_accepted_body().empty());
