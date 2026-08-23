@@ -7,8 +7,10 @@
 #include "config/config.h"
 #include "esp_check.h"
 #include "esp_console.h"
+#include "esp_app_desc.h"
 #include "net/wifi.h"
 #include "net/mqtt.h"
+#include "net/ota.h"
 #include "webapi/mqtt_bridge.h"
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
@@ -468,6 +470,78 @@ int cmd_ring(int argc, char** argv) {
 
 // spec 13 `wifi ...`.  Credentials live in NVS; provisioning over a captive
 // portal is Phase 4, so this is how the display joins a network for now.
+// What NVS ACTUALLY holds, read back rather than reported from RAM.
+//
+// This exists for the OTA survival test (BRINGUP 22-25).  /api/state cannot
+// answer the question: ModeManager DEFERS the countdown resume until SNTP has
+// synced, so cd.target reads 0 for the first seconds after any reboot even
+// when the deadline is perfectly intact - and reading the display too early
+// reports a correct rollback as a lost deadline.  `persist` needs no clock.
+int cmd_persist(int, char**) {
+    swan::ColumnConfig cols;
+    config::load_columns(cols);
+    std::printf("col_mode :");
+    for (int i = 0; i < N_COLUMNS; ++i) std::printf(" %s", column_mode_name(cols.mode[i]));
+    std::printf("\nmaint    : %s\n", cols.maintenance ? "ON" : "off");
+
+    swan::CdPersist cd;
+    const bool have = config::countdown_store().load(cd);
+    if (have) {
+        std::printf("cd_phase : %s\ncd_target: %lld\ncd_seq   : %lu\ncd_setby : %s\n",
+                    cd_phase_name(cd.phase), static_cast<long long>(cd.target_utc),
+                    static_cast<unsigned long>(cd.seq), origin_name(cd.set_by));
+    } else {
+        std::printf("cd_*     : (none stored)\n");
+    }
+
+    MotionParams mp;
+    config::load(mp);
+    std::printf("cal      :");
+    for (int i = 0; i < N_COLUMNS; ++i) std::printf(" %+ld", static_cast<long>(mp.cal[i]));
+    std::printf("\n");
+
+    config::WifiConfig w;
+    config::load_wifi(w);
+    std::printf("wifi     : %s\n", w.ssid.empty() ? "(none)" : w.ssid.c_str());
+    config::MqttConfig m;
+    config::load_mqtt(m);
+    std::printf("mqtt     : %s %s\n", m.enabled ? "on" : "off",
+                m.uri.empty() ? "(none)" : m.uri.c_str());
+
+    const esp_app_desc_t* d = esp_app_get_description();
+    const net::OtaState o = net::ota_status();
+    std::printf("image    : %s (%s)%s\n", d != nullptr ? d->version : "?",
+                o.running_partition.c_str(),
+                o.pending_verify ? "  PENDING_VERIFY" : "");
+    return 0;
+}
+
+int cmd_ota(int argc, char** argv) {
+    const net::OtaState o = net::ota_status();
+    if (argc == 1 || std::strcmp(argv[1], "status") == 0) {
+        const esp_app_desc_t* d = esp_app_get_description();
+        std::printf("image    : %s\n", d != nullptr ? d->version : "?");
+        std::printf("partition: %s\n", o.running_partition.c_str());
+        std::printf("pending  : %s\n", o.pending_verify ? "YES - must confirm or roll back"
+                                                         : "no (confirmed)");
+        std::printf("verdict  : %s\n", o.boot_verdict.c_str());
+        if (!o.last_error.empty()) std::printf("last err : %s\n", o.last_error.c_str());
+        return 0;
+    }
+    if (std::strcmp(argv[1], "confirm") == 0) {
+        const esp_err_t err = net::ota_confirm();
+        std::printf("%s\n", err == ESP_OK ? "confirmed" : esp_err_to_name(err));
+        return err == ESP_OK ? 0 : 1;
+    }
+    if (std::strcmp(argv[1], "rollback") == 0) {
+        std::printf("rolling back and rebooting\n");
+        net::ota_rollback_and_reboot();
+        return 0;
+    }
+    std::printf("usage: ota status | ota confirm | ota rollback\n");
+    return 1;
+}
+
 int cmd_mqtt(int argc, char** argv) {
     config::MqttConfig c;
     config::load_mqtt(c);
@@ -712,6 +786,8 @@ esp_err_t start() {
     reg("wifi", "wifi <ssid> <pass> | wifi status | wifi clear", cmd_wifi);
     reg("mqtt", "mqtt <uri> [user] [pass] | mqtt status | mqtt off | mqtt base <topic>",
         cmd_mqtt);
+    reg("persist", "persist - what NVS actually holds (needs no clock)", cmd_persist);
+    reg("ota", "ota status | ota confirm | ota rollback", cmd_ota);
     reg("col", "col [<0-4>|all real|sim|disabled] - per-column mode", cmd_col);
     reg("sim", "sim all|<col> [off] | sim fault <col> slip|miss|clear", cmd_sim);
     reg("maint", "maint [0|1] - maintenance mode", cmd_maint);

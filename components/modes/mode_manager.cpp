@@ -262,6 +262,27 @@ ModeManager::Result ModeManager::cmd_maintenance(bool on, int64_t utc_ms) {
     return {true, nullptr};
 }
 
+ModeManager::Result ModeManager::cmd_ota_hold(bool on, int64_t utc_ms) {
+    const std::lock_guard<std::mutex> lock(mu_);
+    const Enter witness(*this);
+    if (ota_hold_ == on) return {true, nullptr};
+    ota_hold_ = on;
+    if (on) {
+        sched_.cancel_pending();
+    } else {
+        // Re-render at once so the display is not left on whatever frame the
+        // upload interrupted.
+        tick_locked(utc_ms);
+    }
+    return {true, nullptr};
+}
+
+bool ModeManager::ota_hold() const {
+    const std::lock_guard<std::mutex> lock(mu_);
+    const Enter witness(*this);
+    return ota_hold_;
+}
+
 bool ModeManager::maintenance() const {
     const std::lock_guard<std::mutex> lock(mu_);
     const Enter witness(*this);
@@ -297,7 +318,7 @@ void ModeManager::tick_locked(int64_t utc_ms) {
     // should not silently cancel a countdown) but NOTHING is rendered or
     // scheduled.  Cues are held too - a system-failure alarm going off while
     // someone has their hands in the mechanism is exactly wrong.
-    if (maintenance_) return;
+    if (maintenance_ || ota_hold_) return;
 
     if (pending_resume_ && time_.valid()) {
         pending_resume_ = false;

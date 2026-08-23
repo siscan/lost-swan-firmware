@@ -166,6 +166,15 @@ public:
     // stops automatic re-homing.  Leaving re-arms and re-renders; the caller
     // re-homes.
     Result cmd_maintenance(bool on, int64_t utc_ms);
+
+    // The OTA hold (spec 10.4).  Suspends scheduling exactly as maintenance
+    // does, and is deliberately NOT maintenance: it is transient, never
+    // persisted, and never releases EN.  A hold that survived a reboot would
+    // be maintenance's brick-loop shape all over again, and dropping EN
+    // de-energizes all five (ganged) so a loaded drum may creep - which is
+    // also why an aborted upload can resume without a re-home.
+    Result cmd_ota_hold(bool on, int64_t utc_ms);
+    bool ota_hold() const;
     bool maintenance() const;
 
     // Columns the frame layer must skip (bit i = column i).  Set when a
@@ -276,6 +285,7 @@ private:
     bool spin_started_ = false;
     bool pending_resume_ = false;  // countdown resume deferred until time_valid
     bool maintenance_ = false;
+    bool ota_hold_ = false;
     int64_t last_tick_ms_ = INT64_MIN;
 
     // Calibration walk state (control-side only).
