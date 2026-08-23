@@ -147,7 +147,38 @@ void ws_drain_cb(void*) {
         for (const int fd : fds) {
             // ws_remove takes the same mutex, so it must not be called with it
             // held - hence the send loop runs outside the critical section.
-            if (httpd_ws_send_frame_async(g_server, fd, &frame) != ESP_OK) ws_remove(fd);
+            if (httpd_ws_get_fd_info(g_server, fd) != HTTPD_WS_CLIENT_WEBSOCKET) {
+                ws_remove(fd);
+                continue;
+            }
+            if (httpd_ws_send_frame_async(g_server, fd, &frame) == ESP_OK) continue;
+
+            // A send failure here is NOT proof the peer is gone, and dropping
+            // the fd quietly is how a healthy client goes deaf for ever.
+            // `send_wait_timeout = 1` sets a non-zero SO_SNDTIMEO, and lwIP
+            // reads any non-zero send timeout as "never block"
+            // (api_lib.c: `if (conn->send_timeout != 0) dontblock = 1;`), so a
+            // short TCP send buffer returns ERR_WOULDBLOCK **immediately**
+            // (api_msg.c) rather than waiting.  TCP_SND_BUF is 5760 and a state
+            // document is ~1.5 KB, so a phone whose radio naps for a few
+            // hundred ms is enough.  Unregistering without closing leaves the
+            // browser's socket OPEN: no `onclose`, so bus.js never reconnects,
+            // and the state documents the mirror reconciles against stop
+            // arriving - which would silently defeat that fix and look exactly
+            // like the stale-mirror bug all over again.  Commands would still
+            // work, because a reply goes back through the session's own
+            // handler, which is what would make it maddening on the bench.
+            //
+            // So: close the socket too.  The browser sees it, reconnects after
+            // 1500 ms, and ws_opened re-primes it.  A blip instead of a death.
+            ws_remove(fd);
+            const esp_err_t cerr = httpd_sess_trigger_close(g_server, fd);
+            if (cerr != ESP_OK) {
+                // It is itself an httpd_queue_work, so it can fail for the very
+                // reason we are here.  Say so rather than assuming.
+                ESP_LOGW(TAG, "ws: fd %d unregistered but not closed (%s)", fd,
+                         esp_err_to_name(cerr));
+            }
         }
     }
     // More to send: re-queue rather than looping, so a client that is slow to
