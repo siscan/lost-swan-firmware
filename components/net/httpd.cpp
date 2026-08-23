@@ -283,16 +283,53 @@ esp_err_t static_handler(httpd_req_t* req) {
 // ---------------------------------------------------------------------------
 // REST
 // ---------------------------------------------------------------------------
+// A recv timeout is retried, but NOT for ever: there is one httpd task, so a
+// client that opens a POST, announces a content-length and then stops sending
+// wedges the entire web UI for as long as it likes.  recv_wait_timeout is 5 s,
+// so the bound is expressed in wall clock and the retry count is a second
+// backstop against a peer that dribbles one byte per timeout.
+//
+// (The phase 3 review recorded this as fixed. It was not - the loop below had
+// a bare `continue`. Found again while reading the path the OTA upload was
+// about to copy.)
+// Bounded HARD, because there is one httpd task: whatever a stalled client
+// costs, it costs every other browser on the LAN at the same time.  Measured
+// on the board before this was tuned: a client that announced 4096 bytes and
+// sent 10 took the whole UI down for ~20 s.  With recv_wait_timeout at 2 s and
+// one retry, the worst case is ~4 s.  A legitimate 9.4 KB ring.json completes
+// in well under a second on a LAN, and progress resets the retry count, so a
+// genuinely slow client is not punished for being slow - only for being silent.
+constexpr int64_t BODY_DEADLINE_MS = 10000;
+constexpr int BODY_MAX_TIMEOUTS = 1;
+
 esp_err_t read_body(httpd_req_t* req, std::string& out) {
     const size_t len = req->content_len;
     if (len > MAX_BODY) return ESP_ERR_INVALID_SIZE;
     out.resize(len);
     size_t got = 0;
+    const int64_t deadline = now_ms() + BODY_DEADLINE_MS;
+    int timeouts = 0;
     while (got < len) {
         const int n = httpd_req_recv(req, &out[got], len - got);
-        if (n == HTTPD_SOCK_ERR_TIMEOUT) continue;
+        if (n == HTTPD_SOCK_ERR_TIMEOUT) {
+            // Nothing at all yet: the client announced a body and never began.
+            // That is not slow, it is absent, and it gets no patience.
+            if (got == 0 || ++timeouts > BODY_MAX_TIMEOUTS || now_ms() > deadline) {
+                ESP_LOGW(TAG, "body stalled at %u/%u bytes; giving up",
+                         static_cast<unsigned>(got), static_cast<unsigned>(len));
+                return ESP_ERR_TIMEOUT;
+            }
+            continue;
+        }
         if (n <= 0) return ESP_FAIL;
         got += static_cast<size_t>(n);
+        timeouts = 0;   // progress resets the patience, not the deadline
+        if (now_ms() > deadline) {
+            ESP_LOGW(TAG, "body exceeded %lld ms at %u/%u bytes",
+                     static_cast<long long>(BODY_DEADLINE_MS), static_cast<unsigned>(got),
+                     static_cast<unsigned>(len));
+            return ESP_ERR_TIMEOUT;
+        }
     }
     return ESP_OK;
 }
@@ -484,6 +521,8 @@ void ws_broadcast(const std::string& msg) {
     ws_queue(msg);
 }
 
+bool has_state_consumers() { return ws_clients() > 0; }
+
 uint32_t ws_dropped() {
     const std::lock_guard<std::mutex> lock(g_ws_mu);
     return g_ws_dropped;
@@ -507,10 +546,22 @@ esp_err_t httpd_start(api::Context& ctx) {
     // then blocks the single httpd task for the whole timeout, serving nobody.
     // One second is plenty on a LAN and bounds the damage.
     cfg.send_wait_timeout = 1;
-    cfg.recv_wait_timeout = 5;
+    // Two seconds, for the same reason send_wait_timeout is one: a single
+    // httpd task means one unresponsive peer stalls everybody, and a gap of
+    // even two seconds between TCP segments on a LAN is already pathological.
+    cfg.recv_wait_timeout = 2;
     // Below the modes task (5) and far below the motion control task: nothing
     // on the network path may delay a step (CLAUDE.md hard constraints).
     cfg.task_priority = 3;
+    // HTTPD_DEFAULT_CONFIG asks for 7, and esp_http_server additionally
+    // requires LWIP_MAX_SOCKETS >= max_open_sockets + 3.  With
+    // CONFIG_LWIP_MAX_SOCKETS at 10 that consumes the entire budget, leaving
+    // none for MQTT's TCP socket or the provisioning portal's DNS socket
+    // (Phase 4) - and socket exhaustion presents as intermittent refusals
+    // rather than as an error anyone would notice.  Five concurrent
+    // connections is ample for a wall clock on a LAN: a page is one socket,
+    // its WebSocket a second.
+    cfg.max_open_sockets = 5;
 
     const esp_err_t err = ::httpd_start(&g_server, &cfg);
     if (err != ESP_OK) {
