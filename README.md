@@ -382,6 +382,24 @@ hand from the Calibrate page.  It **survives a reboot** deliberately: pulling
 power mid-repair must not restart a countdown on top of your hands.  `maint
 off` re-arms everything and re-homes all five.
 
+### A broker to test against
+
+`tools/mqtt_broker.py` is a ~350-line stdlib-only MQTT 3.1.1 broker, for the
+bench only. Phase 4 makes MQTT the canonical external API, and testing it needs
+a broker on the LAN — installing one is a system change nobody asked for, and a
+countdown deadline is not something to publish to a public broker.
+
+```bash
+python tools/mqtt_broker.py --log /tmp/broker.jsonl
+```
+
+It handles retained publishes, `+`/`#` wildcards, QoS 0/1 and Last Will and
+Testament — enough for `swan/state`, the retained `swan/countdown`, the LWT on
+`swan/availability` and a `swan/cmd/#` subscription. It is a **test fixture**:
+no TLS, no persistence, no QoS 2, no sessions. Do not point anything real at it.
+With `--log` every publish is appended as one JSON object per line, so a bench
+script can assert on the traffic rather than on a screenshot.
+
 ### Card colours
 
 From the manifests' `part_note`, which is the authority: cols 1-3 (minutes) are
@@ -548,7 +566,7 @@ components/cli/        bring-up console (spec §13)
 main/                  boot sequence
 web/                   the UI (index.html, app.js, flap.js, style.css)
 web/sim/               browser simulator, replays recorded real-logic traces
-tools/                 ringgen.py, webpack.py, the host dev server
+tools/                 ringgen.py, webpack.py, mqtt_broker.py, the host dev server
 test/host/             host unit tests
 ```
 
