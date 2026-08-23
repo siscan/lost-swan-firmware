@@ -91,6 +91,23 @@ for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
         exit 1
     }
     if ($blocked.Count -eq 0) {
+        # The mirror widget's suite is JavaScript, because the bug it pins was
+        # in JavaScript (web/flap.js) and a C++ port of the logic would test a
+        # copy rather than the thing that ships.  It needs no npm - the DOM is
+        # faked in the test file - only a node.  There is not one on this
+        # machine, so say so plainly rather than passing silently; Linux CI
+        # runs it on every push.
+        $node = Get-Command node -ErrorAction SilentlyContinue
+        if ($node) {
+            & $node.Source (Join-Path $PSScriptRoot 'test/host/test_flap.js')
+            if ($LASTEXITCODE -ne 0) {
+                Write-Error "Host test failure: test_flap"
+                exit 1
+            }
+            Write-Host "test_flap ......................... Passed" -ForegroundColor Green
+        } else {
+            Write-Host "test_flap ......................... SKIPPED (no node; CI runs it)" -ForegroundColor Yellow
+        }
         Write-Host "all host tests passed" -ForegroundColor Green
         exit 0
     }

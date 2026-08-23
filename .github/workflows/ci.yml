@@ -5,7 +5,8 @@
 # Jobs:
 #   ring-table  - the committed generated header must match the manifest
 #   host-tests  - native build of the pure-logic suites, incl. the
-#                 simulated-axis suite (Phase 1.5)
+#                 simulated-axis suite (Phase 1.5), plus the mirror widget's
+#                 JS suite (node, no npm - the DOM is faked in the test file)
 #   firmware    - both board maps, in Espressif's official IDF v5.5.5 image
 #   release-gate - a release image must NOT be able to ship with simulated
 #                 axes compiled in.  Proves both halves: SWAN_RELEASE=1 with
@@ -36,6 +37,8 @@ jobs:
         run: cmake --build build_host
       - name: Run
         run: ctest --test-dir build_host --output-on-failure
+      - name: Mirror widget (node, faked DOM, virtual clock)
+        run: node test/host/test_flap.js
       - name: Simulator traces are current
         run: |
           ./build_host/gen_traces data/ring.json /tmp/traces.js
