@@ -1,9 +1,16 @@
-// LOST Swan split-flap - Phase 2 entry point (spec 15.2).
+// LOST Swan split-flap - Phase 3 entry point (spec 15.2, 15.3).
 //
 // Boot order: config -> ring table -> motion (drivers enabled only after VM
-// has settled, then staggered homing) -> time service -> mode manager -> CLI.
+// has settled, then staggered homing) -> time service -> mode manager ->
+// network (WiFi STA + mDNS + web server) -> CLI.
+//
+// The network comes up last and never blocks the boot: with no credentials the
+// display is a standalone clock (spec 10.0) that shows the WiFi glyph on the
+// centre column once the grace period expires.
 
 #include <sys/time.h>
+
+#include <string>
 
 #include "cli/cli.h"
 #include "config/config.h"
@@ -16,8 +23,14 @@
 #include "hal/status_led.h"
 #include "modes/mode_manager.h"
 #include "motion/motion.h"
+#include "net/bindings.h"
+#include "net/httpd.h"
+#include "net/wifi.h"
 #include "ring/ring_store.h"
 #include "timesvc/time_service.h"
+#include "webapi/api.h"
+#include "webapi/event_tap.h"
+#include "webapi/ring_upload.h"
 
 namespace {
 
@@ -25,6 +38,10 @@ constexpr const char* TAG = "app";
 
 swan::FrameScheduler* g_sched = nullptr;
 swan::ModeManager* g_modes = nullptr;
+swan::api::EventTapPort* g_tap = nullptr;
+swan::api::RingStager* g_stager = nullptr;
+swan::api::Context* g_api = nullptr;
+swan::config::AppConfig g_app;
 
 int64_t utc_ms_now() {
     timeval tv;
@@ -33,15 +50,11 @@ int64_t utc_ms_now() {
 }
 
 // Audio arrives in Phase 5; until then a cue is a log line, so the countdown
-// choreography is visible on the console.
+// choreography is visible on the console.  The web UI sees it either way - the
+// event tap forwards every cue onto /ws.
 class LogCueSink final : public swan::CueSink {
 public:
-    void on_cue(swan::Cue c) override {
-        const char* name = c == swan::Cue::Warn4Min    ? "warn_4min"
-                           : c == swan::Cue::Warn1Min  ? "warn_1min"
-                                                       : "system_failure";
-        ESP_LOGI("cue", "%s", name);
-    }
+    void on_cue(swan::Cue c) override { ESP_LOGI("cue", "%s", swan::api::cue_name(c)); }
 };
 
 swan::Status derive_status() {
@@ -76,12 +89,52 @@ void status_task(void*) {
 }
 
 // 20 Hz mode tick: renders, schedules land-on-tick boundaries (margin 700 ms
-// >> 50 ms cadence), fires cues, and runs frame convergence.
+// >> 50 ms cadence), fires cues, and runs frame convergence.  It also owns the
+// two things that must happen in the modes context and nowhere else: applying
+// a staged ring table (ring_store.h contract) and pushing state on /ws.
 void modes_task(void*) {
     TickType_t last = xTaskGetTickCount();
+    swan::Mode last_mode = g_modes->mode();
+    std::string last_payload;
+    int64_t last_push = 0;
+
     for (;;) {
         vTaskDelayUntil(&last, pdMS_TO_TICKS(50));
-        g_modes->tick(utc_ms_now());
+        const int64_t now = utc_ms_now();
+
+        // A ring uploaded by the HTTP task was validated into a staging table;
+        // the swap happens HERE, in the context that renders.
+        if (g_stager->apply_pending()) {
+            const std::string body = g_stager->take_accepted_body();
+            ESP_LOGI(TAG, "ring.json applied (%u bytes)", static_cast<unsigned>(body.size()));
+            swan::ring_store::write_accepted(body);  // persist only what validated
+        }
+
+        const swan::MotionParams mp = swan::motion::params();
+        g_tap->set_flaps(mp.flaps_s_normal);
+        g_sched->set_timing({mp.flaps_s_normal, mp.accel});
+        g_modes->tick(now);
+
+        if (swan::net::ws_clients() == 0) continue;  // nobody is looking
+
+        const swan::Mode m = g_modes->mode();
+        if (m != last_mode) {
+            last_mode = m;
+            swan::net::ws_broadcast(swan::api::mode_event(m));
+        }
+
+        // On change, plus a 1 Hz heartbeat (spec 10.2), rate-limited: the
+        // go/spin/cue events already carry the animation, and a 1.5 KB
+        // document at 20 Hz is bandwidth this radio has better uses for.
+        const std::string payload = swan::api::build_state(*g_api, now);
+        const size_t k = payload.find("\"mode\"");
+        std::string tail = (k == std::string::npos) ? payload : payload.substr(k);
+        const bool changed = (tail != last_payload) && (now - last_push >= 200);
+        if (changed || now - last_push >= 1000) {
+            last_push = now;
+            last_payload = std::move(tail);
+            swan::net::ws_broadcast(payload);
+        }
     }
 }
 
@@ -96,9 +149,8 @@ extern "C" void app_main() {
 
     swan::MotionParams mp;  // spec defaults
     ESP_ERROR_CHECK(swan::config::load(mp));
-    swan::config::AppConfig app;  // spec defaults
-    ESP_ERROR_CHECK(swan::config::load_app(app));
-    app.modes.alarm_flaps_s = mp.flaps_s_alarm;
+    ESP_ERROR_CHECK(swan::config::load_app(g_app));
+    g_app.modes.alarm_flaps_s = mp.flaps_s_alarm;
 
     swan::ring_store::init();  // never fails the boot; worst case compiled table
 
@@ -110,24 +162,46 @@ extern "C" void app_main() {
     swan::motion::enable(true);
     ESP_ERROR_CHECK(swan::motion::home(-1));  // staggered inside motion
 
-    swan::time_service::init(app.ntp.c_str());
+    swan::time_service::init(g_app.ntp.c_str());
 
     // Deliberate leaks: these live for the life of the device.
-    static LogCueSink cues;
-    g_sched = new swan::FrameScheduler(swan::motion_port(),
-                                       {mp.flaps_s_normal, mp.accel});
+    static LogCueSink log_cues;
+    static swan::api::EventTapCues cues(log_cues, swan::net::ws_broadcast);
+    g_tap = new swan::api::EventTapPort(swan::motion_port(), swan::net::ws_broadcast);
+    g_sched = new swan::FrameScheduler(*g_tap, {mp.flaps_s_normal, mp.accel});
     g_modes = new swan::ModeManager(swan::ring_store::get(), *g_sched,
                                     swan::time_service::source(),
                                     swan::config::countdown_store(), cues);
-    g_modes->set_config(app.modes);
-    if (!g_modes->set_tz(app.tz)) {
-        ESP_LOGE(TAG, "time.tz '%s' rejected; running on UTC", app.tz.c_str());
+    g_modes->set_config(g_app.modes);
+    if (!g_modes->set_tz(g_app.tz)) {
+        ESP_LOGE(TAG, "time.tz '%s' rejected; running on UTC", g_app.tz.c_str());
     }
     g_modes->begin(utc_ms_now());
     ESP_LOGI(TAG, "mode: %s", swan::mode_name(g_modes->mode()));
 
+    // The web API surface (spec 10.2).  RingStager writes the live table, so
+    // it takes the same RingSet the renderers hold.
+    static swan::net::IdfMotionAdmin motion_admin;
+    static swan::net::IdfConfigSink cfg_sink(g_app);
+    static swan::net::IdfSysInfo sysinfo;
+    static swan::net::IdfSystemOps ops;
+    g_stager = new swan::api::RingStager(swan::ring_store::mutable_ring());
+    g_api = new swan::api::Context{*g_modes,   swan::ring_store::get(),
+                                   motion_admin, cfg_sink,
+                                   sysinfo,    *g_stager,
+                                   ops,        g_app.tz};
+
     xTaskCreate(status_task, "swan_status", 3072, nullptr, 2, nullptr);
-    xTaskCreate(modes_task, "swan_modes", 6144, nullptr, 5, nullptr);
+    xTaskCreate(modes_task, "swan_modes", 8192, nullptr, 5, nullptr);
+
+    // Network last, and never fatal: the display is complete without it.
+    if (swan::net::init() != ESP_OK) {
+        ESP_LOGE(TAG, "wifi init failed; running standalone");
+    }
+    swan::net::mdns_start("lost", "LOST Swan Timer");
+    if (swan::net::httpd_start(*g_api) != ESP_OK) {
+        ESP_LOGE(TAG, "web server failed to start");
+    }
 
     swan::cli::bind_modes(g_modes, utc_ms_now);
     ESP_ERROR_CHECK(swan::cli::start());

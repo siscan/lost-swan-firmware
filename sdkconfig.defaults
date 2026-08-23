@@ -19,6 +19,12 @@ CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
 CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 
+# --- Web server (spec 10.2).  The /ws socket is the state push; without this
+# esp_http_server has no WebSocket support at all.  LRU purge lets a stale
+# browser tab be evicted rather than wedging the last connection slot.
+CONFIG_HTTPD_WS_SUPPORT=y
+CONFIG_HTTPD_MAX_REQ_HDR_LEN=1024
+
 # --- Watchdogs (spec 12).  Motion control task subscribes explicitly.
 CONFIG_ESP_TASK_WDT_INIT=y
 CONFIG_ESP_TASK_WDT_TIMEOUT_S=5

@@ -7,6 +7,7 @@
 #include "config/config.h"
 #include "esp_check.h"
 #include "esp_console.h"
+#include "net/wifi.h"
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -451,6 +452,32 @@ int cmd_ring(int argc, char** argv) {
     return 0;
 }
 
+// spec 13 `wifi ...`.  Credentials live in NVS; provisioning over a captive
+// portal is Phase 4, so this is how the display joins a network for now.
+int cmd_wifi(int argc, char** argv) {
+    if (argc == 1 || std::strcmp(argv[1], "status") == 0) {
+        const net::WifiStatus w = net::status();
+        std::printf("wifi   : %s\n", net::wifi_state_name(w.state));
+        std::printf("ssid   : %s\n", w.ssid.empty() ? "(none)" : w.ssid.c_str());
+        std::printf("ip     : %s\n", w.ip.empty() ? "(none)" : w.ip.c_str());
+        std::printf("rssi   : %d dBm\n", w.rssi);
+        std::printf("drops  : %lu\n", static_cast<unsigned long>(w.disconnects));
+        return 0;
+    }
+    if (std::strcmp(argv[1], "clear") == 0) {
+        const esp_err_t err = net::set_credentials("", "");
+        std::printf("%s\n", err == ESP_OK ? "cleared" : esp_err_to_name(err));
+        return err == ESP_OK ? 0 : 1;
+    }
+    if (argc < 3) {
+        std::printf("usage: wifi <ssid> <password> | wifi status | wifi clear\n");
+        return 1;
+    }
+    const esp_err_t err = net::set_credentials(argv[1], argv[2]);
+    std::printf("%s\n", err == ESP_OK ? "saved; connecting" : esp_err_to_name(err));
+    return err == ESP_OK ? 0 : 1;
+}
+
 int cmd_reboot(int, char**) {
     std::printf("rebooting\n");
     esp_restart();
@@ -498,6 +525,7 @@ esp_err_t start() {
     reg("revs", "revs <col> <n> - measure hall_to_hall", cmd_revs);
     reg("cal", "cal <col> <+/-usteps> - nudge the calibration offset", cmd_cal);
     reg("save", "persist the current config to NVS", cmd_save);
+    reg("wifi", "wifi <ssid> <pass> | wifi status | wifi clear", cmd_wifi);
     reg("frame", "frame <c0>..<c4> - set all five columns", cmd_frame);
     reg("ring", "ring [token] - list the ring table", cmd_ring);
     reg("mode", "mode clock|message|countdown", cmd_mode);

@@ -1,0 +1,4 @@
+dependencies:
+  # mDNS so the UI is at http://lost.local/ without anyone reading an IP off a
+  # router page (spec 10.1).  Espressif first-party; there is no in-tree mDNS.
+  espressif/mdns: "^1.5.0"
