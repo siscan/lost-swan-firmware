@@ -23,3 +23,18 @@ endif()
 message(STATUS "LOST Swan board: ${SWAN_BOARD}")
 
 project(lost_swan_firmware)
+
+# --- LittleFS payload (spec 10.2; spec 15 phase 3, step e) -------------------
+# tools/webpack.py gzips web/ and drops the generated ring.json alongside it in
+# a staging directory; the image is built from that and written by `idf.py
+# flash`.  Only the .gz copies ship - httpd.cpp serves them with
+# Content-Encoding: gzip - and the packer fails the build if the payload
+# outgrows its budget.  Whole UI + ring.json is ~14 KB against a 2048 KB
+# partition, so the room is for audio (spec 9).
+set(SWAN_WEBFS "${CMAKE_BINARY_DIR}/webfs")
+add_custom_target(swan_webfs ALL
+    COMMAND ${PYTHON} "${CMAKE_CURRENT_LIST_DIR}/tools/webpack.py" --out "${SWAN_WEBFS}"
+    BYPRODUCTS "${SWAN_WEBFS}"
+    COMMENT "Staging the LittleFS payload (gzipped web assets + ring.json)"
+    VERBATIM)
+littlefs_create_partition_image(storage "${SWAN_WEBFS}" FLASH_IN_PROJECT DEPENDS swan_webfs)
