@@ -105,7 +105,7 @@ struct Rig {
     FakeSys sys;
     FakeOps ops;
     api::RingStager stager{ring};
-    api::Context ctx{mm, ring, motion, cfg, sys, stager, ops, "PST8PDT,M3.2.0,M11.1.0"};
+    api::Context ctx{mm, stager, motion, cfg, sys, stager, ops};
 
     Rig() {
         mm.set_config(ModesConfig{});
@@ -471,6 +471,23 @@ void test_upload_validator() {
     bad.push_back({"truncated-mid-object", good.substr(0, good.size() / 2)});
     bad.push_back({"truncated-one-byte-short", good.substr(0, good.size() - 1)});
     bad.push_back({"oversized", std::string(api::RING_UPLOAD_MAX + 1, 'x')});
+    // A byte limit alone does not bound the DOM: each parsed value costs an
+    // order of magnitude more than the two bytes of "0," that produce it, and
+    // on target the allocation failure is abort() with exceptions off - a
+    // remote reboot loop from a few KB.  The parser has a node budget now.
+    {
+        std::string flood = "{\"slots\":[";
+        while (flood.size() < 40 * 1024) flood += "0,";
+        flood += "0]}";
+        bad.push_back({"node-flood", flood});
+    }
+    {
+        // Just under the byte limit, still far over the node budget.
+        std::string flood = "[";
+        while (flood.size() < api::RING_UPLOAD_MAX - 8) flood += "0,";
+        flood += "0]";
+        bad.push_back({"node-flood-under-byte-limit", flood});
+    }
     bad.push_back({"no-slots", R"({"columns":[]})"});
     bad.push_back({"slots-not-array", R"({"slots":42})"});
     bad.push_back({"three-slots",
@@ -527,6 +544,68 @@ void test_upload_validator() {
         CHECK(!r.stager.stage(good.substr(0, n), &err));
         CHECK(!r.stager.pending());
     }
+}
+
+// --------------------------------------------------------------------------
+// A ring swap must not free tables a reader is walking.
+//
+// The phase 3 review's first critical: apply_pending() reassigns the live
+// RingSet, dropping the last shared_ptr to the outgoing tables, while the HTTP
+// task held raw `const RingTable&` references into them across a whole
+// response.  Readers now pin a snapshot, so the old tables outlive them.
+// --------------------------------------------------------------------------
+void test_ring_swap_vs_readers() {
+    Rig r;
+    const std::string good = good_ring_json();
+
+    std::atomic<bool> stop{false};
+    std::atomic<int> bad{0};
+    std::atomic<int> swaps{0};
+    std::atomic<int> reads{0};
+
+    // The modes task: stage and apply, over and over.
+    std::thread modes([&] {
+        while (!stop.load(std::memory_order_relaxed)) {
+            std::string err;
+            if (r.stager.stage(good, &err) && r.stager.apply_pending()) {
+                ++swaps;
+                (void)r.stager.take_accepted_body();
+            }
+        }
+    });
+
+    // Two HTTP tasks doing exactly what the routes do.  Every byte they read
+    // has to come from a table that is still alive; under ASan or a debug
+    // allocator a regression here is a use-after-free, and even without one a
+    // freed-and-reused table shows up as a wrong slot count or a torn id.
+    auto http = [&] {
+        for (int i = 0; i < 400; ++i) {
+            const std::string doc = api::build_ring_doc(r.stager.snapshot());
+            if (doc.find("\"slots\":50") == std::string::npos) ++bad;
+            const std::string st = api::build_state(r.ctx, r.time.utc_ms);
+            if (st.find("\"cols\"") == std::string::npos) ++bad;
+            // A pinned set must stay coherent for as long as it is held, even
+            // though the live one is being replaced under us the whole time.
+            const RingSet pinned = r.stager.snapshot();
+            for (int pass = 0; pass < 20; ++pass) {
+                for (int c = 0; c < N_COLUMNS; ++c) {
+                    if (pinned.col(c).slot_count() != RING_SLOT_COUNT) ++bad;
+                    if (pinned.col(c).slot(RING_HOME_SLOT).id != "blank") ++bad;
+                }
+            }
+            ++reads;
+        }
+    };
+    std::thread h1(http), h2(http);
+    h1.join();
+    h2.join();
+    stop.store(true, std::memory_order_relaxed);
+    modes.join();
+
+    CHECK_EQ(bad.load(), 0);
+    CHECK(swaps.load() > 0);
+    CHECK_EQ(reads.load(), 800);
+    CHECK_EQ(r.mm.max_concurrent(), 1);
 }
 
 // --------------------------------------------------------------------------
@@ -592,5 +671,6 @@ void run_tests() {
     test_state_payload();
     test_cal_ramp();
     test_upload_validator();
+    test_ring_swap_vs_readers();
     test_no_unlocked_mode_access();
 }

@@ -354,6 +354,95 @@ void test_countdown_modes() {
     }
 }
 
+// The phase 3 review's third critical: enter_mode keeps a Running deadline
+// alive across a mode switch, but only the countdown MODE used to advance it.
+// Switching to the clock mid-run therefore skipped the cues and the zero
+// entirely - and then fired all of them at once, with the alarm spin, whenever
+// countdown mode was next entered.  A run started before bed and left on the
+// clock face detonated the next time anyone opened the Modes page.
+void test_countdown_runs_offscreen() {
+    Rig r;
+    r.begin_at(utc_ms(2026, 1, 15, 17, 0, 0));
+    const int64_t t0 = r.time.utc_ms;
+    CHECK(r.mm.cmd_countdown_set_target(t0 / 1000 + 300, t0).ok);
+
+    // Ten seconds in, walk away to the clock.
+    r.run_to(t0 + 10 * 1000);
+    CHECK(r.mm.cmd_mode_set(Mode::Clock, r.time.utc_ms).ok);
+    CHECK(r.mm.cd_phase() == CdPhase::Running);  // the deadline survives
+
+    // The cues fire at the real moments, on the clock face.
+    r.run_to(t0 + 65 * 1000);   // 235 s left
+    CHECK(r.cues.fired(Cue::Warn4Min));
+    CHECK(!r.cues.fired(Cue::Warn1Min));
+    r.run_to(t0 + 245 * 1000);  // 55 s left
+    CHECK(r.cues.fired(Cue::Warn1Min));
+
+    // Zero happens whether or not anyone is looking at it.
+    const int64_t clock_gos = r.port.gos.size();
+    r.run_to(t0 + 310 * 1000);
+    CHECK(r.cues.fired(Cue::SystemFailure));
+    CHECK_EQ(r.cues.recs.size(), 3u);
+    CHECK(r.mm.cd_phase() == CdPhase::Reveal);
+    CHECK(r.mm.mode() == Mode::Clock);   // it did not seize the display
+    CHECK_EQ(r.port.spins.size(), 0u);   // and did not spin columns it does not own
+    CHECK(r.port.gos.size() >= static_cast<size_t>(clock_gos));  // clock kept ticking
+
+    // Entering countdown mode later shows the reveal.  It must NOT replay.
+    const size_t cues_before = r.cues.recs.size();
+    CHECK(r.mm.cmd_mode_set(Mode::Countdown, r.time.utc_ms).ok);
+    r.run_to(r.time.utc_ms + 20 * 1000);
+    CHECK_EQ(r.cues.recs.size(), cues_before);
+    CHECK_EQ(r.port.spins.size(), 0u);
+    CHECK(r.mm.cd_phase() == CdPhase::Reveal);
+}
+
+// A deadline in milliseconds is the obvious integration mistake, and it used
+// to park the display on 000:00 while reporting `running`: rem_ms/1000
+// truncates to int and wraps negative.
+void test_countdown_target_bounds() {
+    Rig r;
+    r.begin_at(utc_ms(2026, 1, 15, 17, 0, 0));
+    const int64_t now_s = r.time.utc_ms / 1000;
+
+    CHECK(!r.mm.cmd_countdown_set_target(0, r.time.utc_ms).ok);
+    CHECK(!r.mm.cmd_countdown_set_target(-1, r.time.utc_ms).ok);
+    CHECK(!r.mm.cmd_countdown_set_target(now_s, r.time.utc_ms).ok);       // already past
+    CHECK(!r.mm.cmd_countdown_set_target(now_s * 1000, r.time.utc_ms).ok);  // ms epoch
+    CHECK(!r.mm.cmd_countdown_set_target(now_s + 86401, r.time.utc_ms).ok);
+    CHECK(r.mm.cmd_countdown_set_target(now_s + 1, r.time.utc_ms).ok);
+    CHECK(r.mm.cmd_countdown_set_target(now_s + 86400, r.time.utc_ms).ok);
+}
+
+// seconds_live_s that is not a whole minute used to make the display count UP
+// at the boundary - a 45-flip borrow on column 4 and a 16-flip wrap on column
+// 5, in the wrong direction, mid-warning.  The core floors defensively even if
+// a stale NVS value gets through, so the shown value is monotonic for ANY
+// setting.
+void test_countdown_shown_is_monotonic() {
+    for (const SecondsMode m : {SecondsMode::Minutes, SecondsMode::Tens, SecondsMode::Seconds}) {
+        for (const int live : {0, 1, 30, 59, 60, 61, 100, 239, 240, 241, 250, 299, 600, 6480}) {
+            int prev = -1;
+            for (int rem = 0; rem <= 6480; ++rem) {
+                const int shown = countdown_shown_s(m, rem, live);
+                if (shown < prev) {
+                    std::printf("FAIL non-monotonic: mode=%d live=%d rem=%d shown=%d prev=%d\n",
+                                static_cast<int>(m), live, rem, shown, prev);
+                    ++g_failures;
+                    break;
+                }
+                if (shown > rem) {
+                    std::printf("FAIL shown ahead of remaining: live=%d rem=%d shown=%d\n",
+                                live, rem, shown);
+                    ++g_failures;
+                    break;
+                }
+                prev = shown;
+            }
+        }
+    }
+}
+
 void test_countdown_cues_and_zero() {
     Rig r;
     r.begin_at(utc_ms(2026, 1, 15, 17, 0, 0));
@@ -605,6 +694,9 @@ void run_tests() {
     test_countdown_quiet_phase();
     test_countdown_freeze_boundary();
     test_countdown_modes();
+    test_countdown_runs_offscreen();
+    test_countdown_target_bounds();
+    test_countdown_shown_is_monotonic();
     test_countdown_cues_and_zero();
     test_countdown_reveal_and_timeout();
     test_countdown_persistence_and_resume();

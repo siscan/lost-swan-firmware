@@ -173,7 +173,7 @@ void test_post_spin_convergence() {
     port.gos.clear();
 
     port.instant = false;  // a spin takes time; columns stay Moving
-    sched.spin_all(25, 6);
+    sched.spin_all(25, 6, 0);
     CHECK_EQ(port.spins.size(), static_cast<size_t>(N_COLUMNS));
     CHECK_EQ(port.spins[0].flaps_s, 25);
 
@@ -239,6 +239,71 @@ void test_non_instant_moves() {
     CHECK(sched.settled());
 }
 
+// The phase 3 review's frame finding: within one modes tick the axis still
+// reports its pre-command state, because the mailbox is drained by the 1 kHz
+// control tick.  A scheduler that re-reads col() in that window reasons from a
+// snapshot its own command has already invalidated - and skips a column whose
+// new target happens to equal the stale reported index, leaving the
+// SUPERSEDED command to execute instead.
+void test_mailbox_lag_within_a_tick() {
+    FakePort port;
+    port.mailbox_lag = true;
+    FrameScheduler sched(port, {15, 82000});
+
+    // Column 0 sits Idle at 0 (freshly re-homed); the desired frame still
+    // wants 44 there, so convergence posts go(0,44).
+    Frame want{{44, 1, 2, 3, 4}};
+    sched.show(want, 0);
+    port.drain_mailbox();
+    CHECK_EQ(port.cols[0].index, 44);
+
+    // Simulate the re-home: the axis lands back on 0 with the frame unchanged.
+    port.cols[0].index = 0;
+    port.cols[0].dest = 0;
+    port.cols[0].state = AxisState::Idle;
+
+    // Now, in ONE tick: convergence re-posts go(0,44), and immediately
+    // afterwards a new frame arrives that wants 0 on that column - exactly
+    // what cmd_preset("blank") does after enter_mode has already ticked.
+    port.gos.clear();
+    sched.tick(100);                       // posts go(0,44) into the mailbox
+    CHECK_EQ(port.gos_for(0), 1);
+    sched.show(Frame{{0, 1, 2, 3, 4}}, 100);
+
+    // The axis STILL reports {Idle, 0} - nothing has drained.  Without the
+    // posted-this-tick memory the scheduler concludes column 0 is already
+    // showing 0 and posts nothing, so the stale go(0,44) wins and the column
+    // walks 44 slots away while the rest of the frame goes blank.
+    port.drain_mailbox();
+    CHECK_EQ(port.cols[0].index, 0);
+}
+
+// A spin must not be overwritten by the convergence pass in the same tick.
+void test_spin_survives_convergence() {
+    FakePort port;
+    port.mailbox_lag = true;
+    FrameScheduler sched(port, {15, 82000});
+
+    sched.show(Frame{{10, 11, 12, 13, 14}}, 0);
+    port.drain_mailbox();
+
+    // Put the columns somewhere else, then spin and tick in one go - the
+    // zero_hold_s = 0 path, where the 000:00 frame, spin_all and convergence
+    // all land in a single modes tick.
+    for (auto& c : port.cols) {
+        c.index = 0;
+        c.state = AxisState::Idle;
+    }
+    port.spins.clear();
+    port.gos.clear();
+    sched.spin_all(25, 6, 50);
+    sched.tick(50);
+    port.drain_mailbox();
+
+    CHECK_EQ(port.spins.size(), static_cast<size_t>(N_COLUMNS));
+    CHECK_EQ(port.gos.size(), 0u);   // nothing clobbered the spin
+}
+
 }  // namespace
 
 void run_tests() {
@@ -248,4 +313,6 @@ void run_tests() {
     test_resume_after_rehome();
     test_post_spin_convergence();
     test_non_instant_moves();
+    test_mailbox_lag_within_a_tick();
+    test_spin_survives_convergence();
 }

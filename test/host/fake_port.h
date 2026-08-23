@@ -1,6 +1,7 @@
 // Fakes shared by the frame and mode suites.
 #pragma once
 
+#include <array>
 #include <vector>
 
 #include "frame/frame.h"
@@ -37,6 +38,19 @@ struct FakePort final : MotionPort {
     bool accept = true;    // go() return value
     bool instant = true;   // true: go settles immediately; false: Moving until finish()
 
+    // Model the real mailbox lag.  On target a command sits in a single-slot
+    // mailbox until the 1 kHz control tick drains it, so an axis keeps
+    // reporting its OLD state for up to a millisecond after a go() - and a
+    // scheduler that re-reads col() inside the same modes tick sees a snapshot
+    // its own command has already invalidated.  With this set, col() keeps
+    // returning the pre-command view until drain_mailbox() is called, which is
+    // what the phase 3 review's frame double-issue finding needs to be
+    // reproducible on the host.
+    bool mailbox_lag = false;
+    std::array<int, N_COLUMNS> mailbox{};   // pending index, or RING_INVALID
+
+    FakePort() { mailbox.fill(RING_INVALID); }
+
     Col col(int i) override {
         const C& c = cols[static_cast<size_t>(i)];
         return Col{c.state, c.index, c.dest};
@@ -45,6 +59,10 @@ struct FakePort final : MotionPort {
     bool go(int i, int index) override {
         gos.push_back({now_ms, i, index});
         if (!accept) return false;
+        if (mailbox_lag) {
+            mailbox[static_cast<size_t>(i)] = index;  // replace-on-write, as on target
+            return true;
+        }
         C& c = cols[static_cast<size_t>(i)];
         if (instant) {
             c.index = index;
@@ -54,6 +72,18 @@ struct FakePort final : MotionPort {
             c.state = AxisState::Moving;
         }
         return true;
+    }
+
+    // The control tick: apply whatever is in each mailbox and clear it.
+    void drain_mailbox() {
+        for (int i = 0; i < N_COLUMNS; ++i) {
+            const size_t k = static_cast<size_t>(i);
+            if (mailbox[k] == RING_INVALID) continue;
+            cols[k].index = mailbox[k];
+            cols[k].dest = mailbox[k];
+            cols[k].state = AxisState::Idle;
+            mailbox[k] = RING_INVALID;
+        }
     }
 
     bool spin(int i, int32_t flaps_s, int seconds) override {
