@@ -1866,3 +1866,20 @@ reason, so nothing gets re-litigated.
     transport findings were stale on arrival.  The findings that mattered were
     the ones about code the fixes had not touched.  Run the review before the
     fix or after it, not across it.
+
+- 2026-08-23 — **Card colours: the manifests' `part_note` is authoritative, and
+  the earlier "white card, red glyph" instruction was the error.**  Reverted:
+  cols 4-5 (the seconds group) are **red card face with a black glyph** for the
+  glyph block, white cards for the clock digits; cols 1-3 (the minutes group)
+  stay black face with a red glyph.  That is `part_note` verbatim — "white
+  clock cards, red glyph cards".
+  - Recorded in both directions on purpose.  The scheme was changed to white
+    card / red glyph earlier the same day on Nico's instruction, on the
+    reasoning that the red stock was only the straddle flaps; he checked and
+    confirmed the manifest was right.  Written down here and in
+    `tools/ringgen.py` so the question is not reopened.
+  - **The straddle flaps are deliberately not rendered.**  They exist to stop
+    colour leak where a dark face would otherwise show through a light one — a
+    print-side fix, not a visual feature — and a straddle flap is physically
+    half of two adjacent cards, so it has no single card colour to paint.  The
+    slot lists stay in the manifests; nothing reads them.

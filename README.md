@@ -382,6 +382,18 @@ hand from the Calibrate page.  It **survives a reboot** deliberately: pulling
 power mid-repair must not restart a countdown on top of your hands.  `maint
 off` re-arms everything and re-homes all five.
 
+### Card colours
+
+From the manifests' `part_note`, which is the authority: cols 1-3 (minutes) are
+black cards with white inverted digits and red glyphs; cols 4-5 (seconds) are
+white clock cards with a **red glyph block printed in black ink**.  Settled
+2026-08-23 after being changed and changed back — see the spec §17 log rather
+than re-deriving it.
+
+The straddle flaps the manifests list per slot are not rendered: they stop
+colour leak between a dark face and a light one, which is a print-side fix, and
+a straddle flap is half of two adjacent cards so it has no single card colour.
+
 ### The mirror tracks the state document, not the event stream
 
 `go`/`spin` events drive the flip *animation*.  They are not the source of

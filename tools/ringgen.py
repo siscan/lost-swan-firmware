@@ -46,28 +46,31 @@ CATEGORY_ENUM = {
     "wifi": "Wifi",
 }
 
-# Colour schemes for the web UI and the simulator.  Cols 1-3 are the minutes
-# group: black card throughout, white inverted digits, red glyphs.  Cols 4-5
-# are the seconds group: WHITE card throughout, black digits, RED glyphs.
+# Colour schemes for the web UI and the simulator, derived from the manifests'
+# part_note, which is AUTHORITATIVE here.  Cols 1-3 are the minutes group:
+# black card throughout, white inverted digits, red glyphs.  Cols 4-5 are the
+# seconds group: white CLOCK cards, and the glyph block is printed on RED stock
+# with black ink - "white clock cards, red glyph cards", verbatim.
 #
-# The seconds group used to carry card.glyph = red, which painted a solid red
-# card with a dark glyph on cols 4-5.  That came from reading the cols1234
-# manifest's part_note - "white clock cards, red glyph cards" - as "every glyph
-# card is red stock".  Nico, looking at the physical cards on 2026-08-23: the
-# columns are white cards with red glyphs, and the red stock is only the
-# STRADDLE flaps.  The manifests enumerate those separately and by slot
-# (straddle_flaps_col4 = [1, 37], col 5's straddle_flaps = [0, 14, 24, 39]),
-# which is the tell that "red glyph cards" was never meant to cover the whole
-# glyph block.  The straddle slots are NOT rendered specially here - a straddle
-# flap is half of two adjacent cards and has no single card colour - but the
-# data is in the manifests if that ever changes.
+# SETTLED 2026-08-23, do not re-litigate.  This was briefly changed to a white
+# card with a red glyph on Nico's instruction and then changed back: he
+# confirmed the manifest was right and the instruction was the error.  Both
+# directions are now on the record so the next reader does not rediscover the
+# question.
+#
+# The STRADDLE flaps the manifests enumerate separately (straddle_flaps_col4 =
+# [1, 37], col 5's straddle_flaps = [0, 14, 24, 39]) are deliberately NOT
+# rendered.  They exist to stop colour leak where a dark face would show
+# through a light one - a print-side fix, not a visual feature - and a straddle
+# flap is half of two adjacent cards, so it has no single card colour to paint
+# anyway.
 #
 # Presentation only.  Firmware behaviour never reads these.
 SCHEMES = {
     "minutes": {"card": {"default": "#181818"},
                 "ink": {"default": "#e8e4da", "glyph": "#b03a2e"}},
-    "seconds": {"card": {"default": "#e8e4da"},
-                "ink": {"default": "#181818", "glyph": "#b03a2e"}},
+    "seconds": {"card": {"default": "#e8e4da", "glyph": "#b03a2e"},
+                "ink": {"default": "#181818"}},
 }
 COLUMN_SCHEMES = ["minutes", "minutes", "minutes", "seconds", "seconds"]
 
