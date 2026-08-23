@@ -71,3 +71,17 @@ endforeach()
 #   build/host/gen_traces data/ring.json web/sim/traces.js
 add_executable(gen_traces gen_traces.cpp ${SWAN_PURE_SRC})
 target_link_libraries(gen_traces PRIVATE swan_test_cfg Threads::Threads)
+
+# Not a test: the host dev server (spec 15 phase 3, step a).  Serves web/ and
+# speaks the real /ws against the real ModeManager over simulated axes, so the
+# UI is clickable with no hardware:
+#   build/host/devserver --port 8080 --root web --ring data/ring.json
+add_executable(devserver
+    ${SWAN_ROOT}/tools/devserver/devserver.cpp
+    ${SWAN_ROOT}/tools/devserver/httpd.cpp
+    ${SWAN_PURE_SRC})
+target_include_directories(devserver PRIVATE ${SWAN_ROOT}/tools/devserver)
+target_link_libraries(devserver PRIVATE swan_test_cfg Threads::Threads)
+if(WIN32)
+    target_link_libraries(devserver PRIVATE ws2_32)
+endif()
