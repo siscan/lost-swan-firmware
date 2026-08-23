@@ -36,6 +36,8 @@ constexpr const char* NS = "swan";
 // countdown.failure_timeout_s  cd_fail_to
 // countdown.reveal[5]          cd_reveal    (blob of 5 x int32)
 // (countdown deadline state)   cd_phase / cd_target / cd_seq
+// column.mode[5]               col_mode     (blob of 5 x uint8)
+// column.maintenance           maint
 // wifi.ssid                    w_ssid
 // wifi.pass                    w_pass
 constexpr const char* K_CAL = "m_cal";
@@ -62,6 +64,8 @@ constexpr const char* K_CD_REVEAL = "cd_reveal";
 constexpr const char* K_CD_PHASE = "cd_phase";
 constexpr const char* K_CD_TARGET = "cd_target";
 constexpr const char* K_CD_SEQ = "cd_seq";
+constexpr const char* K_COL_MODE = "col_mode";
+constexpr const char* K_MAINT = "maint";
 constexpr const char* K_WIFI_SSID = "w_ssid";
 constexpr const char* K_WIFI_PASS = "w_pass";
 
@@ -211,6 +215,45 @@ esp_err_t save_wifi(const WifiConfig& c) {
     if (err != ESP_OK) return err;
     ESP_ERROR_CHECK(nvs_set_str(h, K_WIFI_SSID, c.ssid.c_str()));
     ESP_ERROR_CHECK(nvs_set_str(h, K_WIFI_PASS, c.pass.c_str()));
+    err = nvs_commit(h);
+    nvs_close(h);
+    return err;
+}
+
+esp_err_t load_columns(ColumnConfig& c) {
+    nvs_handle_t h;
+    const esp_err_t err = nvs_open(NS, NVS_READONLY, &h);
+    // A missing namespace is the fresh-NVS case, and it must leave every
+    // column REAL and maintenance off - the ColumnConfig defaults.
+    if (err == ESP_ERR_NVS_NOT_FOUND) return ESP_OK;
+    if (err != ESP_OK) return err;
+
+    uint8_t modes[N_COLUMNS];
+    size_t len = sizeof(modes);
+    if (nvs_get_blob(h, K_COL_MODE, modes, &len) == ESP_OK && len == sizeof(modes)) {
+        for (int i = 0; i < N_COLUMNS; ++i) {
+            // Anything unrecognised reads as Real.  Failing safe means failing
+            // towards the real mechanism, never towards a simulation.
+            c.mode[static_cast<size_t>(i)] = modes[i] <= static_cast<uint8_t>(ColumnMode::Disabled)
+                                                 ? static_cast<ColumnMode>(modes[i])
+                                                 : ColumnMode::Real;
+        }
+    }
+    get_bool(h, K_MAINT, &c.maintenance);
+    nvs_close(h);
+    return ESP_OK;
+}
+
+esp_err_t save_columns(const ColumnConfig& c) {
+    nvs_handle_t h;
+    esp_err_t err = nvs_open(NS, NVS_READWRITE, &h);
+    if (err != ESP_OK) return err;
+    uint8_t modes[N_COLUMNS];
+    for (int i = 0; i < N_COLUMNS; ++i) {
+        modes[i] = static_cast<uint8_t>(c.mode[static_cast<size_t>(i)]);
+    }
+    ESP_ERROR_CHECK(nvs_set_blob(h, K_COL_MODE, modes, sizeof(modes)));
+    ESP_ERROR_CHECK(nvs_set_u8(h, K_MAINT, c.maintenance ? 1 : 0));
     err = nvs_commit(h);
     nvs_close(h);
     return err;

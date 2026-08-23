@@ -135,6 +135,24 @@ public:
         return spin(i, flaps_s, seconds);
     }
 
+    // The dev server is simulated by construction, so it reports every column
+    // as such - the honesty flags mean the same thing here as on the board.
+    ColumnConfig columns() override { return cols_; }
+    bool set_columns(const ColumnConfig& c) override {
+        cols_ = c;
+        return true;
+    }
+    bool sim_inject(int i, std::string_view kind, int32_t value) override {
+        if (!valid(i)) return false;
+        if (kind == "slip") {
+            ax_[static_cast<size_t>(i)].drum.slip_usteps += value;
+            return true;
+        }
+        if (kind == "miss" || kind == "clear") return true;  // modelled on target only
+        return false;
+    }
+    bool sim_available() const override { return true; }
+
     bool adjust_cal(int i, int32_t delta) override {
         if (!valid(i)) return false;
         std::atomic<int32_t>& c = ax_[static_cast<size_t>(i)].ctl.cal_offset;
@@ -149,6 +167,11 @@ private:
 
     std::array<sim::SimAxis, N_COLUMNS> ax_{};
     MotionParams p_{};
+    ColumnConfig cols_ = [] {
+        ColumnConfig c;
+        for (auto& m : c.mode) m = ColumnMode::Sim;
+        return c;
+    }();
 };
 
 }  // namespace devserver

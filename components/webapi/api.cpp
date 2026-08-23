@@ -81,6 +81,17 @@ std::string build_state(Context& ctx, int64_t utc_ms) {
         .kv("live", target > 0 && (target - utc_ms / 1000) <= cfg.seconds_live_s)
         .end_obj();
 
+    // Device-wide honesty flags.  A simulated display must be impossible to
+    // mistake for a real one from any surface (spec 5.9).
+    const ColumnConfig cols = ctx.motion.columns();
+    w.key("motion").obj()
+        .kv("simulated", cols.any(ColumnMode::Sim))
+        .kv("sim_columns", cols.count(ColumnMode::Sim))
+        .kv("disabled_columns", cols.count(ColumnMode::Disabled))
+        .kv("maintenance", cols.maintenance)
+        .kv("sim_available", ctx.motion.sim_available())
+        .end_obj();
+
     w.kv("time_valid", ctx.modes.time_valid());
     w.kv("wifi_glyph", ctx.modes.wifi_glyph_shown());
 
@@ -107,6 +118,11 @@ std::string build_state(Context& ctx, int64_t utc_ms) {
             // edge must not look like an idle one.
             .kv("settled", a.state == AxisState::Idle && a.index >= 0)
             .kv("retry", static_cast<int>(a.rehome_attempt))
+            // Why it faulted, because "sensor or wiring" and "it is jammed"
+            // are different call-outs, and what the column IS, because a
+            // disabled hole is expected and a simulated column is not real.
+            .kv("cause", fault_cause_name(a.fault_cause))
+            .kv("mode", column_mode_name(a.mode))
             .end_obj();
     }
     w.end_arr();
@@ -525,6 +541,55 @@ std::string handle_command(Context& ctx, std::string_view body, int64_t utc_ms) 
         return result_of(ctx.modes.cmd_cal_ramp(col, from, to, step, dwell, utc_ms));
     }
     if (c == "motion.ramp_stop") return result_of(ctx.modes.cmd_cal_ramp_stop(utc_ms));
+    if (c == "motion.column") {
+        int col = 0;
+        const json::Value* mv = member(p, "mode");
+        if (mv == nullptr || mv->type != json::Type::Str) return err_result("need mode");
+        ColumnMode m;
+        if (!column_mode_from_name(mv->as_str(), m)) {
+            return err_result("mode must be real|sim|disabled");
+        }
+        if (m == ColumnMode::Sim && !ctx.motion.sim_available()) {
+            return err_result("this image was built without simulated axes");
+        }
+        ColumnConfig cfg = ctx.motion.columns();
+        const json::Value* av = member(p, "all");
+        if (av != nullptr && av->boolean) {
+            for (auto& x : cfg.mode) x = m;
+        } else {
+            if (!as_int_field(p, "column", col)) return err_result("need column or all");
+            if (col < 0 || col >= N_COLUMNS) return err_result("bad column");
+            cfg.mode[static_cast<size_t>(col)] = m;
+        }
+        if (!ctx.motion.set_columns(cfg)) return err_result("could not apply");
+        // The frame layer must skip a disabled column; renderers stay untouched.
+        ctx.modes.cmd_set_excluded(cfg.excluded_mask(), utc_ms);
+        return ok_result();
+    }
+    if (c == "motion.maintenance") {
+        const bool on = p.type == json::Type::Bool
+                            ? p.boolean
+                            : (p.get("on") != nullptr && p.get("on")->boolean);
+        ColumnConfig cfg = ctx.motion.columns();
+        cfg.maintenance = on;
+        if (!ctx.motion.set_columns(cfg)) return err_result("could not apply");
+        const auto r = ctx.modes.cmd_maintenance(on, utc_ms);
+        if (!r.ok) return err_result(r.err ? r.err : "rejected");
+        // Leaving re-arms: everything re-homes, because the drums have been
+        // moved by hand and nothing knows where they are.
+        if (!on) ctx.motion.home(-1);
+        return ok_result();
+    }
+    if (c == "motion.sim_fault") {
+        int col = 0, value = 0;
+        if (!as_int_field(p, "column", col)) return err_result("need column");
+        const json::Value* kv = member(p, "kind");
+        if (kv == nullptr || kv->type != json::Type::Str) return err_result("need kind");
+        as_int_field(p, "value", value);
+        return ctx.motion.sim_inject(col, kv->as_str(), value)
+                   ? ok_result()
+                   : err_result("injection rejected (is that column simulated?)");
+    }
     if (c == "motion.spin") {
         int col = 0, flaps = 20, secs = 3;
         if (!as_int_field(p, "column", col)) return err_result("need column");

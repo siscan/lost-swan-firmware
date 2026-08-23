@@ -17,6 +17,7 @@
 #include <string_view>
 
 #include "modes/mode_manager.h"
+#include "motion/column_mode.h"
 #include "motion/motion_types.h"
 #include "ring/ring_runtime.h"
 
@@ -38,6 +39,15 @@ public:
     // displayed index becomes unknown until the active mode moves the column
     // back to the current frame.
     virtual bool spin_open_loop(int col, int32_t flaps_s, int seconds) = 0;
+
+    // Per-column mode and maintenance (spec 5.9).  set_columns persists and
+    // re-arms; the API layer only validates and reports.
+    virtual ColumnConfig columns() = 0;
+    virtual bool set_columns(const ColumnConfig& c) = 0;
+    // Simulated-drum fault injection.  Rejected on a column that is not
+    // simulated, and on an image built without the sim at all.
+    virtual bool sim_inject(int col, std::string_view kind, int32_t value) = 0;
+    virtual bool sim_available() const = 0;
 };
 
 // Persistence, deliberately separate from live apply (the Calibrate page has

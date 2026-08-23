@@ -63,6 +63,39 @@ bool IdfMotionAdmin::spin_open_loop(int col, int32_t flaps_s, int seconds) {
     return motion::step_open_loop(col, usteps, flaps_s) == ESP_OK;
 }
 
+ColumnConfig IdfMotionAdmin::columns() { return motion::columns(); }
+
+bool IdfMotionAdmin::set_columns(const ColumnConfig& c) {
+    motion::set_columns(c);
+    // Maintenance reaches the control core through MotionParams, which every
+    // tick snapshots - that is how the core suppresses automatic re-homing and
+    // opens `go` to a faulted column.
+    MotionParams p = motion::params();
+    p.maintenance = c.maintenance;
+    motion::set_params(p);
+    // Persist immediately: a repair half-finished must still be a repair after
+    // a power cut, and a simulated column must not quietly revert to real.
+    return config::save_columns(c) == ESP_OK;
+}
+
+bool IdfMotionAdmin::sim_inject(int col, std::string_view kind, int32_t value) {
+    if (kind == "slip") return motion::sim_inject_slip(col, value) == ESP_OK;
+    if (kind == "miss") {
+        return motion::sim_inject_miss(col, static_cast<uint32_t>(value < 0 ? 0 : value)) ==
+               ESP_OK;
+    }
+    if (kind == "clear") return motion::sim_clear_faults(col) == ESP_OK;
+    return false;
+}
+
+bool IdfMotionAdmin::sim_available() const {
+#if SWAN_SIM_AXES
+    return true;
+#else
+    return false;
+#endif
+}
+
 bool IdfConfigSink::save_motion(const MotionParams& p) {
     return config::save(p) == ESP_OK;
 }

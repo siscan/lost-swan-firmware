@@ -11,6 +11,7 @@
 
 #include "esp_err.h"
 #include "modes/mode_manager.h"
+#include "motion/column_mode.h"
 #include "motion/motion.h"
 
 namespace swan {
@@ -44,6 +45,12 @@ esp_err_t load_app(AppConfig& c);
 esp_err_t save_app(const AppConfig& c);
 esp_err_t load_wifi(WifiConfig& c);
 esp_err_t save_wifi(const WifiConfig& c);
+
+// Per-column mode and maintenance (spec 5.9).  Separate from AppConfig so a
+// repair can be recorded without rewriting display settings, and so a fresh
+// NVS provably lands on the ColumnConfig defaults - all real, no maintenance.
+esp_err_t load_columns(ColumnConfig& c);
+esp_err_t save_columns(const ColumnConfig& c);
 
 // The countdown deadline store (spec 7.3): one write per set, never per tick.
 CountdownStore& countdown_store();

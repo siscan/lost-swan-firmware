@@ -278,7 +278,10 @@ int cmd_cal(int argc, char** argv) {
 }
 
 int cmd_save(int, char**) {
-    const esp_err_t err = config::save(motion::params());
+    esp_err_t err = config::save(motion::params());
+    // Column modes and maintenance persist too: a repair left half-finished
+    // must still be a repair after a power cut.
+    if (err == ESP_OK) err = config::save_columns(motion::columns());
     std::printf("%s\n", err == ESP_OK ? "saved" : esp_err_to_name(err));
     return err == ESP_OK ? 0 : 1;
 }
@@ -487,6 +490,121 @@ int cmd_wifi(int argc, char** argv) {
     return err == ESP_OK ? 0 : 1;
 }
 
+// Push the exclusion mask down to the frame layer whenever a column's mode
+// changes.  Through ModeManager, so it happens under the same lock every
+// command takes, and so the display re-renders around the new hole.
+void apply_columns() {
+    if (g_mm == nullptr || g_utc_ms == nullptr) return;
+    g_mm->cmd_set_excluded(motion::columns().excluded_mask(), g_utc_ms());
+}
+
+// spec 5.9.  `col` sets what a column IS; `sim` is a shorthand for the common
+// build-out case plus the fault-injection bench tools.
+int cmd_col(int argc, char** argv) {
+    ColumnConfig c = motion::columns();
+    if (argc == 1) {
+        for (int i = 0; i < N_COLUMNS; ++i) {
+            AxisInfo a;
+            motion::info(i, a);
+            std::printf("  col %d  %-8s  %-7s%s\n", i, column_mode_name(c.mode[i]),
+                        axis_state_name(a.state),
+                        a.state == AxisState::Fault
+                            ? (std::string("  (") + fault_cause_name(a.fault_cause) + ")").c_str()
+                            : "");
+        }
+        std::printf("  maintenance: %s\n", c.maintenance ? "ON" : "off");
+        return 0;
+    }
+    if (argc < 3) {
+        std::printf("usage: col <0-4|all> real|sim|disabled\n");
+        return 1;
+    }
+    ColumnMode m;
+    if (!column_mode_from_name(argv[2], m)) {
+        std::printf("mode must be real, sim or disabled\n");
+        return 1;
+    }
+    if (std::strcmp(argv[1], "all") == 0) {
+        for (auto& x : c.mode) x = m;
+    } else {
+        const int col = std::atoi(argv[1]);
+        if (col < 0 || col >= N_COLUMNS) {
+            std::printf("column must be 0..%d\n", N_COLUMNS - 1);
+            return 1;
+        }
+        c.mode[col] = m;
+    }
+    motion::set_columns(c);
+    apply_columns();
+    std::printf("ok; `save` to persist\n");
+    return 0;
+}
+
+int cmd_sim(int argc, char** argv) {
+    if (argc >= 2 && std::strcmp(argv[1], "fault") == 0) {
+        if (argc < 4) {
+            std::printf("usage: sim fault <col> slip <usteps> | miss <edges> | clear\n");
+            return 1;
+        }
+        const int col = std::atoi(argv[2]);
+        esp_err_t err = ESP_ERR_INVALID_ARG;
+        if (std::strcmp(argv[3], "slip") == 0 && argc >= 5) {
+            err = motion::sim_inject_slip(col, std::atoi(argv[4]));
+        } else if (std::strcmp(argv[3], "miss") == 0 && argc >= 5) {
+            err = motion::sim_inject_miss(col, static_cast<uint32_t>(std::atol(argv[4])));
+        } else if (std::strcmp(argv[3], "clear") == 0) {
+            err = motion::sim_clear_faults(col);
+        }
+        std::printf("%s\n", err == ESP_OK ? "ok" : esp_err_to_name(err));
+        return err == ESP_OK ? 0 : 1;
+    }
+
+    ColumnConfig c = motion::columns();
+    if (argc == 1) {
+        std::printf("usage: sim all|<col> [off] | sim fault <col> ...\n");
+        return 1;
+    }
+    const bool off = (argc >= 3 && std::strcmp(argv[2], "off") == 0);
+    const ColumnMode m = off ? ColumnMode::Real : ColumnMode::Sim;
+    if (std::strcmp(argv[1], "all") == 0) {
+        for (auto& x : c.mode) x = m;
+    } else {
+        const int col = std::atoi(argv[1]);
+        if (col < 0 || col >= N_COLUMNS) {
+            std::printf("column must be 0..%d\n", N_COLUMNS - 1);
+            return 1;
+        }
+        c.mode[col] = m;
+    }
+    motion::set_columns(c);
+    apply_columns();
+    std::printf("ok; `save` to persist\n");
+    return 0;
+}
+
+int cmd_maint(int argc, char** argv) {
+    if (g_mm == nullptr || g_utc_ms == nullptr) {
+        std::printf("modes not available\n");
+        return 1;
+    }
+    ColumnConfig c = motion::columns();
+    if (argc == 1) {
+        std::printf("maintenance: %s\n", c.maintenance ? "ON" : "off");
+        return 0;
+    }
+    const bool on = std::atoi(argv[1]) != 0 || std::strcmp(argv[1], "on") == 0;
+    c.maintenance = on;
+    motion::set_columns(c);
+    MotionParams p = motion::params();
+    p.maintenance = on;
+    motion::set_params(p);
+    g_mm->cmd_maintenance(on, g_utc_ms());
+    if (!on) motion::home(-1);  // leaving re-arms and re-homes
+    std::printf("maintenance %s%s\n", on ? "ON - nothing moves on its own" : "off",
+                on ? "" : "; re-homing");
+    return 0;
+}
+
 int cmd_reboot(int, char**) {
     std::printf("rebooting\n");
     esp_restart();
@@ -537,6 +655,9 @@ esp_err_t start() {
     reg("cal", "cal <col> <+/-usteps> - nudge the calibration offset", cmd_cal);
     reg("save", "persist the current config to NVS", cmd_save);
     reg("wifi", "wifi <ssid> <pass> | wifi status | wifi clear", cmd_wifi);
+    reg("col", "col [<0-4>|all real|sim|disabled] - per-column mode", cmd_col);
+    reg("sim", "sim all|<col> [off] | sim fault <col> slip|miss|clear", cmd_sim);
+    reg("maint", "maint [0|1] - maintenance mode", cmd_maint);
     reg("frame", "frame <c0>..<c4> - set all five columns", cmd_frame);
     reg("ring", "ring [token] - list the ring table", cmd_ring);
     reg("mode", "mode clock|message|countdown", cmd_mode);

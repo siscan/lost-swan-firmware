@@ -21,6 +21,10 @@ public:
     bool home(int col) override;
     bool adjust_cal(int col, int32_t delta) override;
     bool spin_open_loop(int col, int32_t flaps_s, int seconds) override;
+    ColumnConfig columns() override;
+    bool set_columns(const ColumnConfig& c) override;
+    bool sim_inject(int col, std::string_view kind, int32_t value) override;
+    bool sim_available() const override;
 };
 
 // Persists to NVS.  The app half also keeps the in-RAM AppConfig current, so

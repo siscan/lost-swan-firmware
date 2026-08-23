@@ -53,6 +53,22 @@ struct FakeMotion : api::MotionAdmin {
         axes[static_cast<size_t>(col)].index = RING_INVALID;
         return true;
     }
+    ColumnConfig cols;
+    int sim_injects = 0;
+    ColumnConfig columns() override { return cols; }
+    bool set_columns(const ColumnConfig& c) override {
+        cols = c;
+        return true;
+    }
+    bool sim_inject(int col, std::string_view kind, int32_t) override {
+        if (col < 0 || col >= N_COLUMNS) return false;
+        if (cols.mode[static_cast<size_t>(col)] != ColumnMode::Sim) return false;
+        if (kind != "slip" && kind != "miss" && kind != "clear") return false;
+        ++sim_injects;
+        return true;
+    }
+    bool sim_available() const override { return true; }
+
     bool adjust_cal(int col, int32_t d) override {
         if (col < 0 || col >= N_COLUMNS) return false;
         ++cal_calls;
@@ -716,6 +732,93 @@ void test_no_unlocked_mode_access() {
     CHECK_EQ(r.mm.max_concurrent(), 1);
 }
 
+
+// --------------------------------------------------------------------------
+// Per-column mode, maintenance and fault injection over the ONE dispatcher
+// --------------------------------------------------------------------------
+void test_column_commands() {
+    Rig r;
+
+    // Default: every column real, nothing simulated, no maintenance.  A fresh
+    // device must never claim otherwise.
+    {
+        json::Value v;
+        CHECK(json::parse(r.state(), v, nullptr));
+        const json::Value* m = v.get("motion");
+        CHECK(m != nullptr);
+        CHECK(!m->get("simulated")->boolean);
+        CHECK(!m->get("maintenance")->boolean);
+        CHECK_EQ(static_cast<int>(m->get("sim_columns")->number), 0);
+        // Every column reports what it IS and why it faulted, so "disabled" is
+        // never read as "broken" and "simulated" is never read as real.
+        const json::Value* cols = v.get("cols");
+        CHECK(cols != nullptr && cols->items.size() == N_COLUMNS);
+        CHECK(cols->items[0].get("mode")->as_str() == "real");
+        CHECK(cols->items[0].get("cause")->as_str() == "none");
+    }
+
+    CHECK(is_ok(r.cmd(R"({"cmd":"motion.column","payload":{"column":2,"mode":"sim"}})")));
+    CHECK(r.motion.cols.mode[2] == ColumnMode::Sim);
+    CHECK(!is_ok(r.cmd(R"({"cmd":"motion.column","payload":{"column":2,"mode":"nope"}})")));
+    CHECK(!is_ok(r.cmd(R"({"cmd":"motion.column","payload":{"column":9,"mode":"sim"}})")));
+    CHECK(!is_ok(r.cmd(R"({"cmd":"motion.column","payload":{"mode":"sim"}})")));
+    CHECK(!is_ok(r.cmd(R"({"cmd":"motion.column","payload":{"column":0}})")));
+
+    // "all" is the shape the console uses ("sim all"), through the same path.
+    CHECK(is_ok(r.cmd(R"({"cmd":"motion.column","payload":{"all":true,"mode":"sim"}})")));
+    CHECK_EQ(r.motion.cols.count(ColumnMode::Sim), N_COLUMNS);
+    {
+        json::Value v;
+        CHECK(json::parse(r.state(), v, nullptr));
+        CHECK(v.get("motion")->get("simulated")->boolean);
+        CHECK_EQ(static_cast<int>(v.get("motion")->get("sim_columns")->number), N_COLUMNS);
+    }
+
+    // Disabling a column excludes it from frames through the mode manager -
+    // the API does not reach the scheduler itself.
+    CHECK(is_ok(r.cmd(R"({"cmd":"motion.column","payload":{"column":4,"mode":"disabled"}})")));
+    CHECK_EQ(static_cast<int>(r.mm.excluded()), 0b10000);
+    CHECK(is_ok(r.cmd(R"({"cmd":"motion.column","payload":{"column":4,"mode":"real"}})")));
+    CHECK_EQ(static_cast<int>(r.mm.excluded()), 0);
+
+    // Fault injection only bites on a simulated column, and only for kinds
+    // the drum model actually implements.
+    CHECK(is_ok(r.cmd(R"({"cmd":"motion.sim_fault","payload":{"column":0,"kind":"slip","value":200}})")));
+    CHECK(is_ok(r.cmd(R"({"cmd":"motion.sim_fault","payload":{"column":0,"kind":"miss","value":2}})")));
+    CHECK(!is_ok(r.cmd(R"({"cmd":"motion.sim_fault","payload":{"column":0,"kind":"explode"}})")));
+    CHECK(!is_ok(r.cmd(R"({"cmd":"motion.sim_fault","payload":{"column":0}})")));
+    CHECK(is_ok(r.cmd(R"({"cmd":"motion.column","payload":{"column":0,"mode":"real"}})")));
+    CHECK(!is_ok(r.cmd(R"({"cmd":"motion.sim_fault","payload":{"column":0,"kind":"slip"}})")));
+}
+
+void test_maintenance_command() {
+    Rig r;
+    const int homes_before = r.motion.homes;
+
+    CHECK(is_ok(r.cmd(R"({"cmd":"motion.maintenance","payload":true})")));
+    CHECK(r.mm.maintenance());
+    CHECK(r.motion.cols.maintenance);
+    CHECK_EQ(r.motion.homes, homes_before);  // entering never moves anything
+
+    {
+        json::Value v;
+        CHECK(json::parse(r.state(), v, nullptr));
+        CHECK(v.get("motion")->get("maintenance")->boolean);
+    }
+
+    // Manual commands still work while suspended - that is the point: driving
+    // a suspect column by hand from the Calibrate page is the repair.
+    CHECK(is_ok(r.cmd(R"({"cmd":"motion.cal","payload":{"column":1,"delta":10}})")));
+    CHECK(is_ok(r.cmd(R"({"cmd":"motion.spin","payload":{"column":1,"flaps_s":8,"seconds":2}})")));
+
+    // Leaving re-arms: everything re-homes, because the drums have been moved
+    // by hand and nothing knows where they are any more.
+    CHECK(is_ok(r.cmd(R"({"cmd":"motion.maintenance","payload":false})")));
+    CHECK(!r.mm.maintenance());
+    CHECK(r.motion.homes > homes_before);
+    CHECK_EQ(r.motion.last_home_col, -1);  // all five
+}
+
 }  // namespace
 
 void run_tests() {
@@ -725,5 +828,7 @@ void run_tests() {
     test_cal_ramp();
     test_upload_validator();
     test_ring_swap_vs_readers();
+    test_column_commands();
+    test_maintenance_command();
     test_no_unlocked_mode_access();
 }

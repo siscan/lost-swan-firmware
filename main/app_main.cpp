@@ -178,13 +178,40 @@ extern "C" void app_main() {
 
     swan::ring_store::init();  // never fails the boot; worst case compiled table
 
+    // Per-column mode and maintenance (spec 5.9), before motion starts, so a
+    // simulated or disabled column is never briefly driven for real.  A fresh
+    // NVS yields all-real, not-in-maintenance, by ColumnConfig's defaults.
+    swan::ColumnConfig cols;
+    ESP_ERROR_CHECK(swan::config::load_columns(cols));
+    mp.maintenance = cols.maintenance;
+
     swan::status_led_init();
     ESP_ERROR_CHECK(swan::motion::init(mp));
+    swan::motion::set_columns(cols);
+
+    // Loud on every surface, starting with the one you read at 2 a.m.  A
+    // simulated display must be impossible to mistake for a real one.
+    if (cols.any(swan::ColumnMode::Sim)) {
+        ESP_LOGW(TAG, "*** SIMULATED MOTION on %d column(s) - NOT driving real hardware ***",
+                 cols.count(swan::ColumnMode::Sim));
+    }
+    if (cols.any(swan::ColumnMode::Disabled)) {
+        ESP_LOGW(TAG, "%d column(s) DISABLED: excluded from frames, never homed",
+                 cols.count(swan::ColumnMode::Disabled));
+    }
 
     // Spec 5.5: EN only after the drivers have had VM for >=100 ms.
     vTaskDelay(pdMS_TO_TICKS(100));
-    swan::motion::enable(true);
-    ESP_ERROR_CHECK(swan::motion::home(-1));  // staggered inside motion
+    if (cols.maintenance) {
+        // Maintenance survives a reboot precisely so pulling power mid-repair
+        // does not restart the display on top of your hands: nothing homes,
+        // nothing schedules, and EN stays down until you leave.
+        ESP_LOGW(TAG, "*** MAINTENANCE MODE - no homing, no frames, EN released ***");
+        swan::motion::enable(false);
+    } else {
+        swan::motion::enable(true);
+        ESP_ERROR_CHECK(swan::motion::home(-1));  // staggered inside motion
+    }
 
     swan::time_service::init(g_app.ntp.c_str());
 
@@ -197,6 +224,10 @@ extern "C" void app_main() {
                                     swan::time_service::source(),
                                     swan::config::countdown_store(), cues);
     g_modes->set_config(g_app.modes);
+    // A disabled column is a hole in every frame from the first render, not a
+    // column that moves once and then stops.
+    g_sched->set_excluded(cols.excluded_mask());
+    g_modes->cmd_maintenance(cols.maintenance, utc_ms_now());
     if (!g_modes->set_tz(g_app.tz)) {
         ESP_LOGE(TAG, "time.tz '%s' rejected; running on UTC", g_app.tz.c_str());
     }
