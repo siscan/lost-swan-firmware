@@ -33,6 +33,7 @@ Target: ESP32-C5-DevKitC-1-N8R8 (XIAO ESP32-C5 map behind a board define).
 | `/ws` verified on silicon | **done** — client registers, 1 Hz heartbeat, live state (the dev server cannot test this) |
 | ring upload vs real LittleFS | **done** — broken files rejected in 0.00 s, a valid one persists and drives resolution |
 | chip revision | **v1.2** — production silicon, inside the image's v1.0–v1.99 window |
+| sim / disabled / maintenance on hardware | **done 2026-08-23** — five simulated drums run the real clock; slip recovers, a jam latches without retrying, a disabled column leaves a hole, maintenance survives a reboot. `docs/BRINGUP.md` step 17 |
 
 ## CI — the reliability source of truth
 

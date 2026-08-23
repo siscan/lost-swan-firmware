@@ -1707,3 +1707,28 @@ reason, so nothing gets re-litigated.
     while the motor steps) but **cannot** detect cards fluttering or failing to
     seat — drum position stays perfectly correct while the display looks wrong.
     Speed tuning is therefore **watched**, not just logged.
+
+- 2026-08-23 — **The two capabilities verified on the board, unwired.**  With
+  nothing attached the five columns hunt, fault on `no_hall`, and the
+  multi-column rule **drops EN for all five** — the escalation firing for real,
+  not in a test.  `sim all` then homes all five against modelled drums and runs
+  the whole clock: real ModeManager, real FrameScheduler, real control core,
+  real edge verification, real WiFi/LittleFS/NVS/heap, 132,288 B free.
+  Injected slip parks the column, retries and recovers; injected missed edges
+  classify as `jam`, latch without retrying and say so.  A disabled column is
+  parked on blank, excluded from the frame (the clock renders `08:_0` with the
+  hole), never homed across a reboot, and closes the hole the moment it is
+  re-enabled.  Maintenance releases EN, survives a reboot without homing, and
+  re-arms on exit.  Full transcript in `docs/BRINGUP.md` step 17.
+  - One defect the board found and the host could not: the give-up log printed
+    `REHOME_RETRIES` rather than the attempts that happened, so a jam — which
+    latches with **zero** retries — announced "gave up after 3 re-homes"
+    immediately above the message explaining that it deliberately did not
+    retry.  Same class as the "fault (re-home 3/3)" wording fixed earlier:
+    it sends you looking for a thrashing column that never existed.
+  - Local-tooling note, not a code fault: the XIAO board map cannot build its
+    LittleFS image on this Windows machine, because the joltwallet component
+    creates a fresh venv per build directory and Device Guard blocks the newly
+    written `pip.exe` by hash.  The XIAO **app** builds and links clean
+    locally, and Linux CI builds both boards in full — which is why CI is the
+    reliability source of truth.

@@ -322,7 +322,51 @@ identically.
 - [ ] The readout counts down smoothly between state pushes (it derives from
       the deadline locally) and agrees with the drums.
 
-### 17. Per-column mode and simulated axes (spec §5.9, §5.10)
+### 17. Per-column mode and simulated axes (spec §5.9, §5.10) — **DONE 2026-08-23 (unwired)**
+
+Run on the board, `12dbb0f`+. Results:
+
+```
+col                       -> all five `real`, maintenance off   (fresh NVS, correct)
+(boot, nothing wired)     -> five columns hunt, then:
+  col 4 FAULT: no hall edge in 1.2 revolutions
+  col 4 gave up after 3 re-homes
+  col 4 fault during a multi-column failure -> DROPPING EN FOR ALL FIVE
+col                       -> all five FAULT (no_hall)
+sim all                   -> five "col N is SIMULATED - no motor is being driven"
+en 1; home all            -> all five homed, ~0.7 s apart on the 250 ms stagger
+sim fault 0 slip 200
+spin 0 15 12              -> col 0 FAULT: hall edge off by more than one flap (err=200)
+                             col 0 re-home attempt 1/3
+                             col 0 parked: slip. The other columns keep running.
+                             col 0 homed at pos=63252            <- recovered
+sim fault 1 miss 3
+spin 1 15 15              -> col 1 FAULT: no hall edge for 1.5 revolutions - drum stopped?
+                             col 1 latched FAULT without retrying
+                             col 1 STOPPED - this looks like a JAM, not a sensor fault.
+col                       -> col 1 FAULT (jam), the other four IDLE
+col 3 disabled            -> "col 3 disabled; parking it on blank first"
+maint on                  -> "maintenance ON; EN RELEASED (all five - it is ganged)"
+save; reboot              -> boot log: 4 SIMULATED, 1 DISABLED, MAINTENANCE MODE,
+                             no homing, drivers disabled, all five UNHOMED
+maint off                 -> re-homes four; col 3 stays UNHOMED (disabled is never homed)
+GET /api/state            -> motion{simulated:true, sim_columns:4, disabled_columns:1,
+                                    maintenance:false, sim_available:true}
+                             faces AM · blank · 8 · <hole> · 0   <- 08:00 with the hole
+POST /api/cmd motion.column {column:3, mode:"sim"}   -> ok, hole closes, 08:30
+POST /api/cmd motion.column {column:3, mode:"banana"} -> {"ok":false,
+                             "err":"mode must be real|sim|disabled"}
+```
+
+The whole clock — real ModeManager, real FrameScheduler, real control core,
+real edge verification — runs against modelled drums on real silicon with real
+WiFi, LittleFS, NVS and heap. Free heap all-sim: **132,288 B**.
+
+One log line was wrong and is fixed: a jam latches with **zero** retries but
+the give-up message printed `REHOME_RETRIES`, so it claimed three re-homes
+directly above the message saying it deliberately did not retry.
+
+#### The original checklist
 
 Runnable with **nothing wired**, which is the point: it is how phases 4 and 5
 get exercised on real silicon, real WiFi, real LittleFS, real NVS and a real
@@ -355,7 +399,7 @@ get exercised on real silicon, real WiFi, real LittleFS, real NVS and a real
       and is reported as configuration rather than as a fault.  The clock keeps
       running with a hole.
 
-### 18. Maintenance mode (spec §5.9)
+### 18. Maintenance mode (spec §5.9) — **DONE 2026-08-23**, see step 17
 
 - [ ] `maint on` → the banner says MAINTENANCE, frame scheduling stops, nothing
       moves on its own, and automatic re-homing is off.
