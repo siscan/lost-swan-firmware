@@ -103,3 +103,38 @@ One deliberate behaviour change from the pre-split shell: `enter_fault` no
 longer forces velocity to zero before the automatic re-home. The ramp
 converges onto the homing speed instead — a smooth forward transition rather
 than a step discontinuity, safe because rotation is forward-only.
+
+## The mailbox lag, and why the scheduler remembers what it posted
+
+Added after the Phase 3 adversarial review.
+
+A command posted to an axis is **not** visible in what that axis reports until
+the 1 kHz control tick drains the single-slot mailbox — up to a millisecond
+later, and always after the 20 Hz modes tick that posted it has finished.  So
+within one modes tick, `MotionPort::col()` describes the state *before*
+anything that tick commanded.
+
+`FrameScheduler` used to reason purely from `col()`, and that is wrong twice:
+
+- **`issue()` skipped a column** whose new target happened to equal its stale
+  reported index, leaving a superseded command in the mailbox to execute
+  instead.  `enter_mode()` runs a convergence pass before the caller issues its
+  own frame, so `preset.set blank` right after an automatic re-home sent four
+  columns blank and the fifth 44 slots the other way.
+- **The convergence pass overwrote a spin** it had just started, because those
+  columns still reported `Idle` at their old index.  With `zero_hold_s = 0`
+  that happened every run.
+
+`FrameScheduler::posted_` closes both: per column, what was commanded during
+the current tick (`kNotPosted`, an index, or `RING_INVALID` for a spin).
+`issue()` skips only an exact repeat; the convergence pass skips any column
+already commanded this tick.  It is stamped with the tick's `now_ms` and
+cleared by whichever of `show()` / `spin_all()` / `tick()` first sees a new
+one — so a frame issued *after* the convergence pass in the same tick still
+sees what that pass commanded, which is the whole point.
+
+This is bookkeeping inside one task, not a synchronisation primitive: the
+scheduler runs only on the modes task.  `test/host/fake_port.h` grows a
+`mailbox_lag` mode that models the drain, because the instant-settling fake
+could not express the bug.
+

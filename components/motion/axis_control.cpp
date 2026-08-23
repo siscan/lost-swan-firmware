@@ -163,6 +163,17 @@ void apply_request(TickCtx& c, const Request& r) {
             c.set_target(c.in.pos);
             const AxisState s = a.state.load(RLX);
             if (s == AxisState::Moving) {
+                // Publish where the move was HEADED, exactly as a natural
+                // arrival does.  After StepOpen that is RING_INVALID, which is
+                // the honest answer: stopping an open-loop spin leaves the
+                // drum somewhere unknown.  Without this the axis kept
+                // advertising its pre-spin index, so the scheduler saw
+                // "Idle and already showing it" and never corrected the
+                // column, and the CLI printed "index is now unknown" while
+                // the firmware asserted the opposite.  For an interrupted
+                // `go` it is equally right - the drum is mid-travel, not at
+                // the index it left.
+                a.index.store(a.dest_index.load(RLX), RLX);
                 a.state.store(AxisState::Idle, RLX);
             } else if (s == AxisState::Homing) {
                 // Abort the homing pass honestly: without this, the truncated

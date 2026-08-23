@@ -60,15 +60,36 @@ int64_t FrameScheduler::lead_ms(const Frame& f) {
 
 void FrameScheduler::issue(const Frame& f) {
     for (int i = 0; i < N_COLUMNS; ++i) {
+        const size_t k = static_cast<size_t>(i);
         const MotionPort::Col c = port_.col(i);
-        const int want = f.idx[static_cast<size_t>(i)];
-        const bool moving_there = c.state == AxisState::Moving && c.dest_index == want;
-        const bool showing = c.state == AxisState::Idle && c.index == want;
-        if (!moving_there && !showing) port_.go(i, want);
+        const int want = f.idx[k];
+        // What the axis reports lags what we have already posted: the mailbox
+        // is drained by the 1 kHz control tick, so a command issued earlier in
+        // THIS same modes tick is still invisible here.  posted_ is that
+        // missing knowledge.  Without it a column whose new target happens to
+        // equal its stale reported index was skipped, leaving a superseded
+        // command in the mailbox to execute instead - e.g. a freshly re-homed
+        // column flipping to a clock digit while the other four went blank.
+        if (posted_[k] == want) continue;   // already commanded exactly there
+        // A command posted earlier this tick to a DIFFERENT target is simply
+        // superseded - replace-on-write, newest wins - so fall through.
+        if (posted_[k] == kNotPosted) {
+            const bool moving_there = c.state == AxisState::Moving && c.dest_index == want;
+            const bool showing = c.state == AxisState::Idle && c.index == want;
+            if (moving_there || showing) continue;
+        }
+        if (port_.go(i, want)) posted_[k] = want;
     }
 }
 
+void FrameScheduler::note_tick(int64_t now_ms) {
+    if (now_ms == posted_tick_ms_) return;
+    posted_tick_ms_ = now_ms;
+    posted_.fill(kNotPosted);
+}
+
 void FrameScheduler::show(const Frame& f, int64_t now_ms, int64_t land_at_ms) {
+    note_tick(now_ms);
     if (land_at_ms > now_ms) {
         const int64_t start = land_at_ms - lead_ms(f);
         if (start > now_ms) {
@@ -85,12 +106,21 @@ void FrameScheduler::show(const Frame& f, int64_t now_ms, int64_t land_at_ms) {
     issue(f);
 }
 
-void FrameScheduler::spin_all(int32_t flaps_s, int seconds) {
+void FrameScheduler::spin_all(int32_t flaps_s, int seconds, int64_t now_ms) {
+    note_tick(now_ms);
     have_pending_ = false;  // a spin supersedes a scheduled frame
-    for (int i = 0; i < N_COLUMNS; ++i) port_.spin(i, flaps_s, seconds);
+    for (int i = 0; i < N_COLUMNS; ++i) {
+        // RING_INVALID is what an open-loop move lands on, so recording it
+        // stops the convergence pass later in this same tick from posting a
+        // `go` over the spin it just started.  With zero_hold_s = 0 that was
+        // deterministic: the columns that had not yet moved to 000:00 never
+        // whirled at all.
+        if (port_.spin(i, flaps_s, seconds)) posted_[static_cast<size_t>(i)] = RING_INVALID;
+    }
 }
 
 void FrameScheduler::tick(int64_t now_ms) {
+    note_tick(now_ms);
     if (have_pending_ && now_ms >= start_at_ms_) {
         have_pending_ = false;
         desired_ = pending_;
@@ -105,9 +135,18 @@ void FrameScheduler::tick(int64_t now_ms) {
     // brings it back - and it also lands the post-spin choreography (index
     // unknown after open-loop) and retries anything the mailbox rejected.
     for (int i = 0; i < N_COLUMNS; ++i) {
+        const size_t k = static_cast<size_t>(i);
         const MotionPort::Col c = port_.col(i);
-        const int want = desired_.idx[static_cast<size_t>(i)];
-        if (c.state == AxisState::Idle && c.index != want) port_.go(i, want);
+        const int want = desired_.idx[k];
+        // Anything commanded during this tick - a frame, or a spin - stands.
+        // The axis has not reported it yet, so "Idle at the wrong index" here
+        // is a stale observation, and acting on it would post a `go` over the
+        // command that was just issued.  With zero_hold_s = 0 that reliably
+        // killed the alarm spin on any column still on its old digit.
+        if (posted_[k] != kNotPosted) continue;
+        if (c.state == AxisState::Idle && c.index != want) {
+            if (port_.go(i, want)) posted_[k] = want;
+        }
     }
 }
 

@@ -10,11 +10,13 @@
 #pragma once
 
 #include <array>
+#include <climits>
 #include <cstdint>
 
 #include "hal/pins.h"
 #include "motion/motion_types.h"
 #include "ring/geometry.h"
+#include "ring/ring.h"
 
 namespace swan {
 
@@ -54,8 +56,9 @@ public:
         int32_t accel = 82000;  // motion.accel
     };
 
-    explicit FrameScheduler(MotionPort& port) : port_(port) {}
-    FrameScheduler(MotionPort& port, Timing t) : port_(port), timing_(t) {}
+    explicit FrameScheduler(MotionPort& port) : port_(port) { posted_.fill(kNotPosted); }
+    FrameScheduler(MotionPort& port, Timing t)
+        : port_(port), timing_(t) { posted_.fill(kNotPosted); }
 
     void set_timing(Timing t) { timing_ = t; }
 
@@ -74,7 +77,10 @@ public:
     // The zero-choreography spin: every column open-loop at `flaps_s` for
     // `seconds`.  The desired frame is left untouched, so convergence lands
     // the columns back on it (or on a reveal frame shown right after).
-    void spin_all(int32_t flaps_s, int seconds);
+    // `now_ms` is the tick this belongs to, for the same reason show() takes
+    // one: the spin must be recorded as commanded-this-tick, or the
+    // convergence pass that follows it in the same tick posts a `go` over it.
+    void spin_all(int32_t flaps_s, int seconds, int64_t now_ms);
 
     // Drops a scheduled-but-not-started frame.  Used when the timebase steps
     // (SNTP resync): the pending start instant lived in the old timebase and
@@ -101,6 +107,20 @@ private:
     Frame pending_{};
     bool have_pending_ = false;
     int64_t start_at_ms_ = 0;
+
+    // Per column, what was commanded during THIS tick: kNotPosted for nothing,
+    // an index for a go, RING_INVALID for a spin (which lands nowhere
+    // knowable).  The axis cannot report any of it yet - the mailbox is
+    // drained by the 1 kHz control tick - so without this the scheduler
+    // reasons from a snapshot its own command has already invalidated.
+    static constexpr int kNotPosted = -2;
+    std::array<int, N_COLUMNS> posted_{};
+    // The tick `posted_` belongs to.  show() and tick() both stamp it, and
+    // whichever runs first at a new timestamp clears the record - so a frame
+    // issued after the convergence pass in the SAME tick still sees what that
+    // pass commanded, which is exactly the case the record exists for.
+    int64_t posted_tick_ms_ = INT64_MIN;
+    void note_tick(int64_t now_ms);
 
     void issue(const Frame& f);
 };
