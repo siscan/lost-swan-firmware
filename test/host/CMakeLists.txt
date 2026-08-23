@@ -33,6 +33,8 @@ set(SWAN_PURE_SRC
     ${SWAN_ROOT}/components/modes/mode_manager.cpp
     ${SWAN_ROOT}/components/ring/ring_runtime.cpp
     ${SWAN_ROOT}/components/ring/json_lite.cpp
+    ${SWAN_ROOT}/components/webapi/api.cpp
+    ${SWAN_ROOT}/components/webapi/ring_upload.cpp
     ${SWAN_ROOT}/components/motion/axis_control.cpp)
 
 add_library(swan_test_cfg INTERFACE)
@@ -42,6 +44,7 @@ target_include_directories(swan_test_cfg INTERFACE
     ${SWAN_ROOT}/components/modes/include
     ${SWAN_ROOT}/components/ring/include
     ${SWAN_ROOT}/components/motion/include
+    ${SWAN_ROOT}/components/webapi/include
     ${SWAN_ROOT}/components/swan_hal/include
     ${CMAKE_CURRENT_LIST_DIR})
 
@@ -52,12 +55,14 @@ else()
 endif()
 
 # test name -> optional data-file argument (argv[1], g_argv1 in check.h)
-set(SWAN_TESTS test_ring test_motion_math test_axis_sim test_ring_json test_tz test_frame test_modes)
+set(SWAN_TESTS test_ring test_motion_math test_axis_sim test_ring_json test_tz test_frame test_modes test_api)
 set(test_ring_json_ARGS ${SWAN_ROOT}/data/ring.json)
+
+find_package(Threads REQUIRED)
 
 foreach(t ${SWAN_TESTS})
     add_executable(${t} ${t}.cpp ${SWAN_PURE_SRC})
-    target_link_libraries(${t} PRIVATE swan_test_cfg)
+    target_link_libraries(${t} PRIVATE swan_test_cfg Threads::Threads)
     add_test(NAME ${t} COMMAND ${t} ${${t}_ARGS})
 endforeach()
 
@@ -65,4 +70,4 @@ endforeach()
 # Run manually after mode/frame changes:
 #   build/host/gen_traces data/ring.json web/sim/traces.js
 add_executable(gen_traces gen_traces.cpp ${SWAN_PURE_SRC})
-target_link_libraries(gen_traces PRIVATE swan_test_cfg)
+target_link_libraries(gen_traces PRIVATE swan_test_cfg Threads::Threads)
