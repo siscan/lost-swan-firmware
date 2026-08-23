@@ -34,6 +34,10 @@ public:
     virtual void set_params(const MotionParams& p) = 0;
     virtual bool home(int col) = 0;  // col < 0 = all
     virtual bool adjust_cal(int col, int32_t delta) = 0;
+    // Bench test spin (spec 10.2 Calibrate, spec 13 `spin`).  Open loop: the
+    // displayed index becomes unknown until the active mode moves the column
+    // back to the current frame.
+    virtual bool spin_open_loop(int col, int32_t flaps_s, int seconds) = 0;
 };
 
 // Persistence, deliberately separate from live apply (the Calibrate page has

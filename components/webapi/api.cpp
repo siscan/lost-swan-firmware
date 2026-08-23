@@ -62,6 +62,10 @@ std::string build_state(Context& ctx, int64_t utc_ms) {
 
     Writer w;
     w.obj();
+    // Every /ws message carries the same discriminator, so the display widget
+    // the simulator page already uses ("go"/"spin"/"mode"/"cue") and the full
+    // state document travel the same socket and the same switch.
+    w.kv("e", "state");
     w.kv("t", utc_ms);
     w.kv("mode", mode_name(ctx.modes.mode()));
 
@@ -152,11 +156,16 @@ std::string build_ring_doc(const RingSet& ring) {
     Writer w;
     w.obj();
     w.kv("source", ring.loaded_from_json() ? "ring.json" : "compiled");
+    w.kv("slot_count", ring.col(0).slot_count());
+    // Presentation, straight through: the mirror should look like the wall,
+    // and columns 4-5 carry the inverted drums.
+    w.kv_raw("schemes", ring.schemes_json().empty() ? "{}" : ring.schemes_json());
     w.key("columns").arr();
     for (int c = 0; c < N_COLUMNS; ++c) {
         const RingTable& t = ring.col(c);
         w.obj();
         w.kv("slots", t.slot_count());
+        w.kv("scheme", ring.scheme(c));
         w.kv("descending", t.is_descending());
         // Every slot, so the Calibrate walk can show the expected character
         // beside each stop (spec 4).
@@ -438,6 +447,16 @@ std::string handle_command(Context& ctx, std::string_view body, int64_t utc_ms) 
         return result_of(ctx.modes.cmd_cal_ramp(col, from, to, step, dwell, utc_ms));
     }
     if (c == "motion.ramp_stop") return result_of(ctx.modes.cmd_cal_ramp_stop(utc_ms));
+    if (c == "motion.spin") {
+        int col = 0, flaps = 20, secs = 3;
+        if (!as_int_field(p, "column", col)) return err_result("need column");
+        as_int_field(p, "flaps_s", flaps);
+        as_int_field(p, "seconds", secs);
+        if (flaps < 1 || flaps > 40) return err_result("flaps_s out of range");
+        if (secs < 1 || secs > 60) return err_result("seconds out of range");
+        return ctx.motion.spin_open_loop(col, flaps, secs) ? ok_result()
+                                                           : err_result("bad column");
+    }
 
     // ---- config ----
     if (c == "config.set") return do_config_set(ctx, p, utc_ms);

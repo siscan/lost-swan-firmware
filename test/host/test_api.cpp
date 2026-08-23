@@ -44,6 +44,15 @@ struct FakeMotion : api::MotionAdmin {
         last_home_col = col;
         return true;
     }
+    int spins = 0;
+    int32_t last_spin_flaps = 0;
+    bool spin_open_loop(int col, int32_t flaps_s, int seconds) override {
+        if (col < 0 || col >= N_COLUMNS || seconds <= 0) return false;
+        ++spins;
+        last_spin_flaps = flaps_s;
+        axes[static_cast<size_t>(col)].index = RING_INVALID;
+        return true;
+    }
     bool adjust_cal(int col, int32_t d) override {
         if (col < 0 || col >= N_COLUMNS) return false;
         ++cal_calls;
@@ -190,6 +199,19 @@ void test_command_round_trip() {
     CHECK(is_ok(r.cmd(R"({"cmd":"motion.cal","payload":{"column":1,"save":true}})")));
     CHECK_EQ(r.cfg.motion_saves, 1);
 
+    // Bench test spin, through the same dispatcher as everything else.
+    CHECK(is_ok(r.cmd(
+        R"({"cmd":"motion.spin","payload":{"column":4,"flaps_s":25,"seconds":3}})")));
+    CHECK_EQ(r.motion.spins, 1);
+    CHECK_EQ(r.motion.last_spin_flaps, 25);
+    CHECK(!is_ok(r.cmd(R"({"cmd":"motion.spin","payload":{"flaps_s":25}})")));
+    CHECK(!is_ok(r.cmd(
+        R"({"cmd":"motion.spin","payload":{"column":0,"flaps_s":99,"seconds":3}})")));
+    CHECK(!is_ok(r.cmd(
+        R"({"cmd":"motion.spin","payload":{"column":0,"flaps_s":20,"seconds":0}})")));
+    CHECK_EQ(r.motion.spins, 1);
+    r.motion.axes[4].index = 0;  // pretend it re-homed, so later checks are sane
+
     // Live params apply immediately and are NOT persisted by themselves.
     CHECK(is_ok(r.cmd(
         R"({"cmd":"motion.params","payload":{"flaps_s_normal":22,"accel":90000}})")));
@@ -285,6 +307,13 @@ void test_reveal_by_name() {
     const auto* g4 = (*cols)[4].get("glyphs")->as_array();
     CHECK_EQ(g0->size(), 36u);
     CHECK_EQ(g4->size(), 29u);
+    // Presentation travels with the ring so the mirror matches the wall: the
+    // seconds group (cols 4-5) carries the inverted drums.
+    CHECK(doc.get("schemes")->get("minutes") != nullptr);
+    CHECK(doc.get("schemes")->get("seconds") != nullptr);
+    CHECK((*cols)[0].get("scheme")->as_str() == "minutes");
+    CHECK((*cols)[4].get("scheme")->as_str() == "seconds");
+
     bool col5_has_cycle = false;
     for (const auto& g : *g4) {
         if (g.get("id")->as_str() == "cycle") col5_has_cycle = true;
