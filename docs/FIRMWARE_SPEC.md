@@ -1256,3 +1256,93 @@ reason, so nothing gets re-litigated.
   - `web/bus.js` now carries the /ws transport for both pages; a second copy of
     the reconnect logic is a second place for it to be subtly wrong.
 
+- 2026-08-23 — **Adversarial review of Phase 3** (80 agents; 7 finder lenses,
+  every finding put to three independent refuters, 22 confirmed / 2 refuted),
+  scoped as Nico asked to the upload path, task boundaries and the frame
+  double-issue window.  Collapsed to 15 root causes; all fixed.  The four that
+  mattered most:
+  - **CRITICAL — `/ws` never registered a single client on target.**
+    `esp_http_server` answers the WebSocket handshake itself and deliberately
+    does *not* call the URI handler for it (`httpd_uri.c`: "If the request is
+    websocket handshake, then do not call the uri->handler").  Registration
+    lived in that handler, so `g_ws_fds` stayed empty for ever: no state
+    document, no 1 Hz heartbeat, no `go`/`spin`/`cue`, a blank mirror — while
+    *commands still worked*, because a reply goes back through the session's
+    own handler, which is what would have made this maddening to debug on the
+    bench.  Now registered from `ws_post_handshake_cb`
+    (`CONFIG_HTTPD_WS_POST_HANDSHAKE_CB_SUPPORT`), and a plain `GET /ws` with
+    no Upgrade header is refused instead of being registered as a socket that
+    then receives raw frames.  **The host dev server could never have caught
+    this** — it has its own socket layer.  Verified against the IDF source,
+    not taken on the reviewer's word.
+  - **CRITICAL — the ring swap was a use-after-free.**  `apply_pending()` does
+    `live_ = *staged_`, dropping the last `shared_ptr` to the outgoing tables
+    and freeing 100 `std::string`s, while the httpd task held
+    `const RingTable&` across a whole response — and the shipped UI fires
+    `GET /api/ring` and `/api/wear` the instant an upload returns `ok`.  The
+    modes task is priority 5 against httpd's 3 on one core, so it preempts
+    unconditionally.  Fixed by pinning: `api::RingSource::snapshot()` returns a
+    cheap copy taken under the swap lock, whose `shared_ptr`s keep the old
+    tables alive for as long as the reader holds it.  Every reader outside the
+    modes task — four httpd routes, three CLI commands — now goes through it,
+    and the swap itself goes through `ModeManager::cmd_ring_swap` so it holds
+    the same lock every command takes.  `ring_store.h`'s contract only ever
+    constrained *writers*; it now states the reader rule too.  The dev server's
+    coarse `dev_mu` had been masking it.
+  - **CRITICAL — a Running countdown was never ticked from another mode.**
+    `enter_mode` deliberately keeps a live deadline across a mode switch, but
+    only the countdown *mode* advanced it.  Switch to the clock mid-run and the
+    cues never fired, zero never happened — and then everything fired at once,
+    alarm spin included, whenever countdown mode was next entered.  A run
+    started before bed detonated the next time anyone opened the Modes page.
+    Cues and phase are now unconditional (`tick_countdown_offscreen`); only the
+    *rendering* is mode-gated, and an off-screen zero lands silently in Reveal
+    rather than seizing five columns it does not own.
+  - **CRITICAL — the JSON parser had no node budget.**  Input length was capped
+    at 256 KB and depth at 16, but each `Value` costs ~64 bytes on RV32 against
+    a 2-byte minimum token — ~32×, into one contiguous vector.  With exceptions
+    off and no PSRAM the allocation failure is `abort()`, so a ~5 KB
+    `{"slots":[0,0,0,…]}` — *smaller than the legitimate ring.json*, and
+    reachable by picking the wrong file in Settings — was a remote reboot loop.
+    `MAX_NODES = 8000` now, and `RING_UPLOAD_MAX` down from 64 KB to 24 KB
+    against a 9.4 KB document.
+
+  The rest, briefly: `read_body` retried a recv timeout for ever, so one
+  stalled POST wedged the single httpd task permanently; a zero-length WS frame
+  desynchronised the stream; a queued async send could land on a recycled fd
+  belonging to a plain HTTP connection; `send_wait_timeout` cut to 1 s so a
+  sleeping phone cannot hold the task for five; applying a ring never forced a
+  re-render, so the drums stayed on slots from the old table — indefinitely in
+  message, preset, reveal or countdown-idle; `write_accepted` removed
+  `ring.json` before renaming over it, on a false premise (LittleFS `rename`
+  *does* replace atomically), so a brownout in that window lost the table
+  entirely; `seconds_live_s` that was not a whole minute made the countdown
+  count **up** across the freeze boundary, paying a 45-flip borrow and a
+  16-flip wrap in the wrong direction — rejected at the API and floored
+  defensively in the core; `countdown.set_target` accepted an unbounded epoch,
+  so a millisecond timestamp parked the display on 000:00 while reporting
+  `running` — bounded to 24 h; `Context::tz` was a `std::string` written on the
+  httpd task and read at 20 Hz on the modes task, now owned by ModeManager and
+  read under its lock; and `ReqKind::Stop` left `index` stale after an
+  open-loop move, so the axis advertised a face it was not showing and
+  convergence never corrected it.
+  - **The frame double-issue window**, which Nico asked to have looked at
+    specifically, turned out to be two real bugs rather than the harmless
+    duplicate it was recorded as in the Phase 3 entry.  Within one modes tick
+    the axis still reports its pre-command state, because the mailbox is
+    drained by the 1 kHz control tick.  `issue()` therefore skipped a column
+    whose new target equalled its *stale* index — leaving a superseded command
+    to execute — and the convergence pass overwrote the alarm spin it had just
+    started, deterministically whenever `zero_hold_s = 0`.  `FrameScheduler`
+    now records what it commanded during the current tick; `docs/MOTION_SYNC.md`
+    has the full contract.  `FakePort` settled moves instantly and so could not
+    express the bug at all; it grows a `mailbox_lag` mode, and both cases are
+    pinned by tests that were confirmed to fail without the fix.
+  - Two findings were refuted and are recorded as *not* defects: a rehome
+    posted from the CLI or `/api` cannot be destroyed by the frame layer (task
+    priorities forbid the sequence), and `write_accepted`'s discarded error was
+    real but is now logged loudly rather than silently dropped.
+  - Method note: every fix that could be regression-tested was, and each new
+    test was checked by reverting its fix and confirming it fails.  That caught
+    two defects in my *own* first attempt at the scheduler fix.
+

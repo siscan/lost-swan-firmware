@@ -19,6 +19,7 @@ Target: ESP32-C5-DevKitC-1-N8R8 (XIAO ESP32-C5 map behind a board define).
 |---|---|
 | `set-target esp32c5` + `build` clean | passes — zero warnings, both board maps |
 | host tests green | 9/9 suites (rings, motion math, simulated axis, ring.json, TZ/DST, frame, modes, wear, web API) |
+| Phase 3 adversarial review | 22 findings confirmed, all fixed — see spec §17 |
 | `git diff` empty after `tools/ringgen.py` | clean — header and ring.json both regenerate byte-identically |
 | motion cross-task handoff explicit | done — see `docs/MOTION_SYNC.md`, incl. the seqlock for multi-field reads |
 | CI | GitHub Actions on ubuntu — see below |
@@ -275,12 +276,17 @@ roughly 6 KB gzipped.
 ### Ring upload
 
 The HTTP task validates an uploaded `ring.json` entirely into a *staging*
-table — parse, exactly 50 slots, and every role its column will be asked for.
-The running table is swapped in by the **modes task** at a tick boundary
-(`ring_store.h`'s threading contract), and only then is the file written, via
-a temp file and a rename. A malformed, truncated, oversized or
-role-incomplete upload leaves the display exactly as it was and never reaches
-the filesystem.
+table — parse, node budget, exactly 50 slots, and every role its column will
+be asked for. The running table is swapped in by the **modes task**, through
+`ModeManager::cmd_ring_swap` so it holds the same lock every command takes,
+and only then is the file written by renaming a temp file over the old one. A
+malformed, truncated, oversized or role-incomplete upload leaves the display
+exactly as it was and never reaches the filesystem.
+
+Readers outside the modes task — four HTTP routes, three CLI commands — take a
+**pinned snapshot** rather than a reference: the swap frees the outgoing
+tables, and a `const RingTable&` held across a response would be reading freed
+heap. `ring_store.h` carries the full contract.
 
 ### WiFi
 
