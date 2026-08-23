@@ -9,6 +9,8 @@
 // column is now - the nearest one going forward wins.
 #pragma once
 
+#include <string_view>
+
 #include "frame/frame.h"
 #include "ring/ring_runtime.h"
 #include "timesvc/tz.h"
@@ -16,11 +18,37 @@
 namespace swan {
 
 // Countdown seconds resolution (spec 7.3, countdown.seconds_mode).
-//   Seconds - MMM:SS, live one-second ticks.  Possible because the descending
-//             ring makes a decrement 1 flip and column 5's double block makes
-//             its 0->9 wrap 16 flips rather than 41.
-//   Tens    - MMM:S0, the original 10-second scheme; column 5 parks on 0.
-enum class SecondsMode : unsigned char { Seconds, Tens };
+//
+// Every mode runs MMM:00 for the bulk of the run - the seconds columns are
+// FROZEN on 00 and cost nothing - and only comes alive in the last
+// `seconds_live_s` (default 240, which is also when the 4-minute cue fires):
+//
+//   Minutes - never shows seconds.  MMM:00 for the whole run.
+//   Tens    - MMM:00, then MMM:S0 inside the live window.
+//   Seconds - MMM:00, then MMM:SS inside the live window.  Default, and what
+//             the show does.
+//
+// The mode selects nothing but the display STEP; the renderer draws whatever
+// value it is handed.  A step of 60 puts zeros in both seconds columns by
+// construction, which is why the quiet phase provably cannot move them.
+enum class SecondsMode : unsigned char { Minutes, Tens, Seconds };
+
+const char* seconds_mode_name(SecondsMode m);
+bool seconds_mode_from_name(std::string_view s, SecondsMode& out);
+
+// Seconds per display window at this point in the run (spec 7.3).  60 during
+// the quiet phase; 10 or 1 once `remaining_s <= live_s`, per the mode.
+int countdown_step_s(SecondsMode mode, int remaining_s, int live_s);
+
+// The value actually displayed: `remaining_s` floored to its window.  108:00
+// is the idle face, and a running countdown holds it only for the start
+// instant before rolling to the first window.
+int countdown_shown_s(SecondsMode mode, int remaining_s, int live_s);
+
+// The next distinct display value below `shown` - what the land-on-tick
+// scheduler must pre-render.  Crossing the freeze boundary is just an ordinary
+// step here: 300 -> 240 (quiet), then 240 -> 239 (live).
+int countdown_next_shown_s(SecondsMode mode, int shown_s, int live_s);
 
 // Clock layout (spec 7.1, Q2): col 1 AM/PM (blank in 24 h), cols 2-3 hours,
 // cols 4-5 minutes.  12 h: hours 1-12, tens column blank below 10.  24 h:
@@ -38,9 +66,9 @@ Frame render_wifi(const RingSet& ring, const Frame& from, bool* diag = nullptr);
 // The ????? state: every column to the question glyph (spec 7.3).
 Frame render_qmarks(const RingSet& ring, const Frame& from, bool* diag = nullptr);
 
-// Countdown (spec 7.3).  Seconds mode renders MMM:SS from the exact remaining
-// second; Tens mode renders MMM:S0 and parks column 5 on digit 0.
-Frame render_countdown(const RingSet& ring, int remaining_s, SecondsMode mode,
-                       const Frame& from, bool* diag = nullptr);
+// Countdown (spec 7.3): MMM:SS of the value it is given.  Pass a value from
+// countdown_shown_s() - the resolution lives entirely in that.
+Frame render_countdown(const RingSet& ring, int shown_s, const Frame& from,
+                       bool* diag = nullptr);
 
 }  // namespace swan

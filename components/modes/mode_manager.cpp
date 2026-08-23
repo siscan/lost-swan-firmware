@@ -359,13 +359,14 @@ Frame ModeManager::reveal_frame() const {
 }
 
 void ModeManager::tick_countdown(int64_t utc_ms) {
-    cd_step_s_ = (cfg_.seconds_mode == SecondsMode::Seconds) ? 1 : 10;
+    const SecondsMode mode = cfg_.seconds_mode;
+    const int live_s = cfg_.seconds_live_s;
 
     if (cd_.phase == CdPhase::Idle) {
         // Idle countdown: a static 108:00 until started (spec 10.2a mode.set).
         if (cd_shown_ != COUNTDOWN_S) {
             cd_shown_ = COUNTDOWN_S;
-            issue(render_countdown(ring_, COUNTDOWN_S, cfg_.seconds_mode, last_frame_), utc_ms);
+            issue(render_countdown(ring_, COUNTDOWN_S, last_frame_), utc_ms);
         }
         return;
     }
@@ -390,16 +391,17 @@ void ModeManager::tick_countdown(int64_t utc_ms) {
     }
 
     if (cd_.phase == CdPhase::Running) {
-        const int step = cd_step_s_;
-        const int shown = static_cast<int>((rem_ms / 1000) / step) * step;
+        const int rem_s = static_cast<int>(rem_ms / 1000);
+        const int shown = countdown_shown_s(mode, rem_s, live_s);
+        cd_step_s_ = countdown_step_s(mode, rem_s, live_s);
 
         if (cd_shown_ < 0) {
             // Entry / resume: show the current window immediately.
             cd_shown_ = shown;
-            issue(render_countdown(ring_, shown, cfg_.seconds_mode, last_frame_), utc_ms);
+            issue(render_countdown(ring_, shown, last_frame_), utc_ms);
         } else if (!cfg_.cd_land_on_tick && shown != cd_shown_) {
             cd_shown_ = shown;
-            issue(render_countdown(ring_, shown, cfg_.seconds_mode, last_frame_), utc_ms);
+            issue(render_countdown(ring_, shown, last_frame_), utc_ms);
         }
 
         if (cfg_.cd_land_on_tick && shown > 0) {
@@ -409,14 +411,19 @@ void ModeManager::tick_countdown(int64_t utc_ms) {
             // FrameScheduler::show then starts it immediately and it lands a
             // little late rather than never, catching up on the next tick
             // because forward-only moves just extend (spec 7.3 timing note).
+            //
+            // The next value comes from countdown_next_shown_s, not from
+            // `shown - step`: the window below this one may be a different
+            // size, which is exactly what happens at the freeze boundary
+            // (300 -> 240 while quiet, then 240 -> 239 once seconds are live).
             const int64_t land = target_ms - static_cast<int64_t>(shown) * 1000;
             if (cd_scheduled_land_ != land) {
-                const Frame next =
-                    render_countdown(ring_, shown - step, cfg_.seconds_mode, last_frame_);
+                const int next_shown = countdown_next_shown_s(mode, shown, live_s);
+                const Frame next = render_countdown(ring_, next_shown, last_frame_);
                 if (utc_ms + sched_.lead_ms(next) + SCHEDULE_MARGIN_MS >= land) {
                     issue(next, utc_ms, land);
                     cd_scheduled_land_ = land;
-                    cd_shown_ = shown - step;
+                    cd_shown_ = next_shown;
                 }
             }
         }
@@ -432,7 +439,7 @@ void ModeManager::tick_countdown(int64_t utc_ms) {
     }
     if (cd_.phase == CdPhase::Zero && cd_shown_ != 0) {
         cd_shown_ = 0;
-        issue(render_countdown(ring_, 0, cfg_.seconds_mode, last_frame_), utc_ms);  // 000:00
+        issue(render_countdown(ring_, 0, last_frame_), utc_ms);  // 000:00
     }
 
     const int64_t since_zero = utc_ms - target_ms;

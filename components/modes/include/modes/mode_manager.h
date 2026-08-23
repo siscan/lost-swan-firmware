@@ -61,8 +61,13 @@ struct ModesConfig {
     // flips/day against ~5,900 at 15.  Clamped to 1..60.
     int granularity_min = 15;
     // countdown.seconds_mode (spec 7.3).  Live seconds are affordable now
-    // that a decrement is 1 flip and column 5's wrap is 16.
+    // that a decrement is 1 flip and column 5's wrap is 16 - but only in the
+    // last stretch; the rest of the run holds MMM:00.
     SecondsMode seconds_mode = SecondsMode::Seconds;
+    // countdown.seconds_live_s (spec 7.3).  Seconds are frozen on 00 above
+    // this; below it they tick.  240 is the show's own 4-minute cue, so the
+    // display coming alive and the warning sound are the same moment.
+    int seconds_live_s = 240;
     int wifi_grace_s = 15;             // WIFI_GLYPH_GRACE_S (spec 7.1)
     int msg_dwell_s = 600;             // msg.dwell_s
     bool clock_land_on_tick = false;   // clock.land_on_tick
@@ -206,7 +211,10 @@ private:
     static constexpr int SHOWN_REVEAL = -2;
     CdPersist cd_;
     int cd_shown_ = SHOWN_NONE;
-    int cd_step_s_ = 10;  // seconds per countdown display window
+    // Seconds per display window at the CURRENT point in the run - 60 in the
+    // quiet phase, then 10 or 1.  Recomputed each tick; not a fixed property
+    // of the mode any more (spec 7.3).
+    int cd_step_s_ = 60;
     int64_t cd_scheduled_land_ = 0;
     bool cue_warn4_ = false, cue_warn1_ = false, cue_zero_ = false;
     bool spin_started_ = false;

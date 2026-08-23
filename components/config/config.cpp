@@ -25,7 +25,8 @@ constexpr const char* NS = "swan";
 // clock.h24                    c_h24
 // clock.land_on_tick           c_lot
 // clock.granularity_min        c_gran
-// countdown.seconds_mode       cd_secmode
+// countdown.seconds_mode       cd_secmode   (0 minutes, 1 tens, 2 seconds)
+// countdown.seconds_live_s     cd_live_s
 // time.tz                      t_tz
 // time.ntp                     t_ntp
 // msg.dwell_s                  msg_dwell
@@ -49,6 +50,7 @@ constexpr const char* K_H24 = "c_h24";
 constexpr const char* K_CLK_LOT = "c_lot";
 constexpr const char* K_GRAN = "c_gran";
 constexpr const char* K_SECMODE = "cd_secmode";
+constexpr const char* K_CD_LIVE = "cd_live_s";
 constexpr const char* K_TZ = "t_tz";
 constexpr const char* K_NTP = "t_ntp";
 constexpr const char* K_MSG_DWELL = "msg_dwell";
@@ -165,9 +167,14 @@ esp_err_t load_app(AppConfig& c) {
     };
     get_int(K_GRAN, &c.modes.granularity_min);
     get_int(K_MSG_DWELL, &c.modes.msg_dwell_s);
+    get_int(K_CD_LIVE, &c.modes.seconds_live_s);
     int32_t sec = 0;
     if (nvs_get_i32(h, K_SECMODE, &sec) == ESP_OK) {
-        c.modes.seconds_mode = sec ? SecondsMode::Tens : SecondsMode::Seconds;
+        // 0 minutes / 1 tens / 2 seconds.  Anything else is a key written by
+        // an older build; fall back to the spec default rather than guess.
+        c.modes.seconds_mode = sec == 0   ? SecondsMode::Minutes
+                               : sec == 1 ? SecondsMode::Tens
+                                          : SecondsMode::Seconds;
     }
     get_int(K_CD_HOLD, &c.modes.zero_hold_s);
     get_int(K_CD_SPIN, &c.modes.spin_s);
@@ -220,7 +227,11 @@ esp_err_t save_app(const AppConfig& c) {
     ESP_ERROR_CHECK(nvs_set_i32(h, K_GRAN, c.modes.granularity_min));
     ESP_ERROR_CHECK(nvs_set_i32(h, K_MSG_DWELL, c.modes.msg_dwell_s));
     ESP_ERROR_CHECK(nvs_set_i32(
-        h, K_SECMODE, c.modes.seconds_mode == SecondsMode::Tens ? 1 : 0));
+        h, K_SECMODE,
+        c.modes.seconds_mode == SecondsMode::Minutes ? 0
+        : c.modes.seconds_mode == SecondsMode::Tens  ? 1
+                                                     : 2));
+    ESP_ERROR_CHECK(nvs_set_i32(h, K_CD_LIVE, c.modes.seconds_live_s));
     ESP_ERROR_CHECK(nvs_set_i32(h, K_CD_HOLD, c.modes.zero_hold_s));
     ESP_ERROR_CHECK(nvs_set_i32(h, K_CD_SPIN, c.modes.spin_s));
     ESP_ERROR_CHECK(nvs_set_i32(h, K_CD_FAIL_TO, c.modes.failure_timeout_s));
