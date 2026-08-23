@@ -12,6 +12,7 @@
 #pragma once
 
 #include <array>
+#include <atomic>
 #include <mutex>
 #include <string>
 #include <string_view>
@@ -121,14 +122,30 @@ public:
     Result cmd_display_frame(const Frame& f, int64_t utc_ms);  // no mode change
     Result cmd_clock_format(bool h24, int64_t utc_ms);
 
+    // Calibration walk (spec 5.6, Calibrate page): step `col` forward from
+    // index `from` towards `to` in increments of `step`, dwelling `dwell_s` at
+    // each stop.  Forward-only like every other move.  While a ramp runs it
+    // owns the display - mode rendering is suspended and resumes when the ramp
+    // finishes or is stopped, so the clock cannot fight the walk.
+    Result cmd_cal_ramp(int col, int from, int to, int step, int dwell_s, int64_t utc_ms);
+    Result cmd_cal_ramp_stop(int64_t utc_ms);
+    bool cal_ramp_active() const;
+    int cal_ramp_column() const;
+
     // --- status for CLI / web / tests ---
     Mode mode() const;
     CdPhase cd_phase() const;
     int64_t cd_target() const;
     bool wifi_glyph_shown() const;
+    bool time_valid() const;
 
-    // The numbers-string validator, exposed for tests and the future web UI.
+    // The numbers-string validator, exposed for tests and the web UI.
     static bool numbers_valid(std::string_view s);
+
+    // Test hook.  Every public entry point bumps this inside the lock, so a
+    // second thread getting in concurrently would push it above 1.  That is
+    // how test_api proves the HTTP task never reaches mode state unlocked.
+    int max_concurrent() const { return max_concurrent_.load(std::memory_order_relaxed); }
 
 private:
     const RingSet& ring_;
@@ -140,6 +157,22 @@ private:
     TimeZone tz_;  // default-constructed = UTC0 until set_tz
 
     mutable std::mutex mu_;  // serializes every public entry point
+
+    // Concurrency witness - see max_concurrent().
+    mutable std::atomic<int> in_critical_{0};
+    mutable std::atomic<int> max_concurrent_{0};
+    struct Enter {
+        const ModeManager& m;
+        explicit Enter(const ModeManager& mm) : m(mm) {
+            const int n = m.in_critical_.fetch_add(1, std::memory_order_relaxed) + 1;
+            int prev = m.max_concurrent_.load(std::memory_order_relaxed);
+            while (n > prev &&
+                   !m.max_concurrent_.compare_exchange_weak(prev, n,
+                                                            std::memory_order_relaxed)) {
+            }
+        }
+        ~Enter() { m.in_critical_.fetch_sub(1, std::memory_order_relaxed); }
+    };
 
     Mode mode_ = Mode::Clock;
     Mode prev_mode_ = Mode::Clock;
@@ -180,8 +213,22 @@ private:
     bool pending_resume_ = false;  // countdown resume deferred until time_valid
     int64_t last_tick_ms_ = INT64_MIN;
 
+    // Calibration walk state (control-side only).
+    struct CalRamp {
+        bool active = false;
+        int col = 0;
+        int to = 0;
+        int step = 1;
+        int64_t dwell_ms = 1000;
+        int next_index = 0;
+        int64_t due_ms = 0;
+        bool last_stop = false;
+    } ramp_;
+    void tick_ramp(int64_t utc_ms);
+
     void enter_mode(Mode m, int64_t utc_ms);
     void tick_locked(int64_t utc_ms);
+    void render_current(int64_t utc_ms);
     void tick_clock(int64_t utc_ms);
     void tick_message(int64_t utc_ms);
     void tick_countdown(int64_t utc_ms);

@@ -81,11 +81,13 @@ bool ModeManager::numbers_valid(std::string_view s) {
 
 void ModeManager::set_config(const ModesConfig& c) {
     const std::lock_guard<std::mutex> lock(mu_);
+    const Enter witness(*this);
     cfg_ = c;
 }
 
 ModesConfig ModeManager::config() const {
     const std::lock_guard<std::mutex> lock(mu_);
+    const Enter witness(*this);
     return cfg_;
 }
 
@@ -93,6 +95,7 @@ bool ModeManager::set_tz(std::string_view posix_tz) {
     TimeZone tz;
     if (!TimeZone::parse(posix_tz, tz)) return false;
     const std::lock_guard<std::mutex> lock(mu_);
+    const Enter witness(*this);
     tz_ = tz;
     rendered_key_ = RENDER_NONE;  // re-render with the new zone
     return true;
@@ -100,23 +103,33 @@ bool ModeManager::set_tz(std::string_view posix_tz) {
 
 Mode ModeManager::mode() const {
     const std::lock_guard<std::mutex> lock(mu_);
+    const Enter witness(*this);
     return mode_;
 }
 CdPhase ModeManager::cd_phase() const {
     const std::lock_guard<std::mutex> lock(mu_);
+    const Enter witness(*this);
     return cd_.phase;
 }
 int64_t ModeManager::cd_target() const {
     const std::lock_guard<std::mutex> lock(mu_);
+    const Enter witness(*this);
     return cd_.target_utc;
+}
+bool ModeManager::time_valid() const {
+    const std::lock_guard<std::mutex> lock(mu_);
+    const Enter witness(*this);
+    return time_.valid();
 }
 bool ModeManager::wifi_glyph_shown() const {
     const std::lock_guard<std::mutex> lock(mu_);
+    const Enter witness(*this);
     return wifi_glyph_;
 }
 
 void ModeManager::begin(int64_t utc_ms) {
     const std::lock_guard<std::mutex> lock(mu_);
+    const Enter witness(*this);
 
     CdPersist p;
     if (store_.load(p) && p.phase != CdPhase::Idle && p.target_utc > 0) {
@@ -157,7 +170,43 @@ void ModeManager::enter_mode(Mode m, int64_t utc_ms) {
 
 void ModeManager::tick(int64_t utc_ms) {
     const std::lock_guard<std::mutex> lock(mu_);
+    const Enter witness(*this);
     tick_locked(utc_ms);
+}
+
+void ModeManager::render_current(int64_t utc_ms) {
+    switch (mode_) {
+        case Mode::Clock:     tick_clock(utc_ms); break;
+        case Mode::Message:   tick_message(utc_ms); break;
+        case Mode::Countdown: tick_countdown(utc_ms); break;
+    }
+}
+
+// The calibration walk owns the display while it runs (spec 5.6).
+void ModeManager::tick_ramp(int64_t utc_ms) {
+    if (utc_ms < ramp_.due_ms) return;
+
+    Frame f = last_frame_;
+    f.idx[static_cast<size_t>(ramp_.col)] = ramp_.next_index;
+    issue(f, utc_ms);
+    ramp_.due_ms = utc_ms + ramp_.dwell_ms;
+
+    if (ramp_.last_stop) {
+        ramp_.active = false;
+        rendered_key_ = RENDER_NONE;  // the mode re-renders on the next tick
+        cd_shown_ = SHOWN_NONE;
+        return;
+    }
+    const int remaining = ring_forward_distance(ramp_.next_index, ramp_.to);
+    if (remaining == 0) {
+        ramp_.last_stop = true;
+    } else if (remaining <= ramp_.step) {
+        ramp_.next_index = ramp_.to;   // final partial step lands exactly on `to`
+        ramp_.last_stop = true;
+    } else {
+        ramp_.next_index =
+            (ramp_.next_index + ramp_.step) % ring_.col(ramp_.col).slot_count();
+    }
 }
 
 void ModeManager::tick_locked(int64_t utc_ms) {
@@ -174,10 +223,10 @@ void ModeManager::tick_locked(int64_t utc_ms) {
         return;  // enter_mode already ticked
     }
 
-    switch (mode_) {
-        case Mode::Clock:     tick_clock(utc_ms); break;
-        case Mode::Message:   tick_message(utc_ms); break;
-        case Mode::Countdown: tick_countdown(utc_ms); break;
+    if (ramp_.active) {
+        tick_ramp(utc_ms);
+    } else {
+        render_current(utc_ms);
     }
     sched_.tick(utc_ms);
 }
@@ -431,6 +480,7 @@ void ModeManager::issue(const Frame& f, int64_t utc_ms, int64_t land_at_ms) {
 // ---------------------------------------------------------------------------
 ModeManager::Result ModeManager::cmd_mode_set(Mode m, int64_t utc_ms) {
     const std::lock_guard<std::mutex> lock(mu_);
+    const Enter witness(*this);
     if (m == Mode::Message) {
         // Message mode without a live message would show nothing (or bounce
         // straight back on an expired dwell).
@@ -448,6 +498,7 @@ ModeManager::Result ModeManager::cmd_mode_set(Mode m, int64_t utc_ms) {
 ModeManager::Result ModeManager::cmd_message_set(
     const std::array<std::string, N_COLUMNS>& tokens, int dwell_s, bool hold, int64_t utc_ms) {
     const std::lock_guard<std::mutex> lock(mu_);
+    const Enter witness(*this);
     Frame f;
     for (int i = 0; i < N_COLUMNS; ++i) {
         const int idx = ring_.col(i).index_for_token(tokens[static_cast<size_t>(i)],
@@ -472,6 +523,7 @@ ModeManager::Result ModeManager::cmd_countdown_execute(std::string_view numbers,
 
 ModeManager::Result ModeManager::cmd_countdown_start(int64_t utc_ms) {
     const std::lock_guard<std::mutex> lock(mu_);
+    const Enter witness(*this);
     // "now + 6480" is meaningless before the first sync; a start issued on
     // the 1970 clock would detonate the alarm the moment SNTP steps time.
     if (!time_.valid()) return {false, "time not synced"};
@@ -482,6 +534,7 @@ ModeManager::Result ModeManager::cmd_countdown_start(int64_t utc_ms) {
 
 ModeManager::Result ModeManager::cmd_countdown_cancel(int64_t utc_ms) {
     const std::lock_guard<std::mutex> lock(mu_);
+    const Enter witness(*this);
     cd_.phase = CdPhase::Idle;
     cd_shown_ = SHOWN_NONE;
     persist();
@@ -491,6 +544,7 @@ ModeManager::Result ModeManager::cmd_countdown_cancel(int64_t utc_ms) {
 
 ModeManager::Result ModeManager::cmd_countdown_set_target(int64_t target_utc, int64_t utc_ms) {
     const std::lock_guard<std::mutex> lock(mu_);
+    const Enter witness(*this);
     if (target_utc <= 0) return {false, "bad epoch"};
     if (!time_.valid()) return {false, "time not synced"};
     countdown_arm(target_utc, utc_ms);
@@ -500,6 +554,7 @@ ModeManager::Result ModeManager::cmd_countdown_set_target(int64_t target_utc, in
 
 ModeManager::Result ModeManager::cmd_preset(std::string_view name, int64_t utc_ms) {
     const std::lock_guard<std::mutex> lock(mu_);
+    const Enter witness(*this);
     Frame f;
     if (name == "qmarks") f = render_qmarks(ring_, last_frame_);
     else if (name == "blank") f = render_blank(ring_, last_frame_);
@@ -518,6 +573,7 @@ ModeManager::Result ModeManager::cmd_preset(std::string_view name, int64_t utc_m
 
 ModeManager::Result ModeManager::cmd_display_frame(const Frame& f, int64_t utc_ms) {
     const std::lock_guard<std::mutex> lock(mu_);
+    const Enter witness(*this);
     // Raw frame for props and tests - deliberately does NOT change the mode;
     // the active mode may overwrite it at its next render (spec 10.2a).
     for (int i = 0; i < N_COLUMNS; ++i) {
@@ -534,8 +590,55 @@ ModeManager::Result ModeManager::cmd_display_frame(const Frame& f, int64_t utc_m
     return {true, nullptr};
 }
 
+ModeManager::Result ModeManager::cmd_cal_ramp(int col, int from, int to, int step,
+                                              int dwell_s, int64_t utc_ms) {
+    const std::lock_guard<std::mutex> lock(mu_);
+    const Enter witness(*this);
+    if (col < 0 || col >= N_COLUMNS) return {false, "bad column"};
+    const int n = ring_.col(col).slot_count();
+    if (from < 0 || from >= n || to < 0 || to >= n) return {false, "index out of range"};
+    if (step < 1 || step > n) return {false, "bad step"};
+    if (dwell_s < 0 || dwell_s > 600) return {false, "bad dwell"};
+
+    ramp_.active = true;
+    ramp_.col = col;
+    ramp_.to = to;
+    ramp_.step = step;
+    ramp_.dwell_ms = static_cast<int64_t>(dwell_s) * 1000;
+    ramp_.next_index = from;
+    ramp_.due_ms = utc_ms;      // first stop immediately
+    ramp_.last_stop = (from == to);
+    tick_locked(utc_ms);
+    return {true, nullptr};
+}
+
+ModeManager::Result ModeManager::cmd_cal_ramp_stop(int64_t utc_ms) {
+    const std::lock_guard<std::mutex> lock(mu_);
+    const Enter witness(*this);
+    if (ramp_.active) {
+        ramp_.active = false;
+        rendered_key_ = RENDER_NONE;
+        cd_shown_ = SHOWN_NONE;
+        tick_locked(utc_ms);
+    }
+    return {true, nullptr};
+}
+
+bool ModeManager::cal_ramp_active() const {
+    const std::lock_guard<std::mutex> lock(mu_);
+    const Enter witness(*this);
+    return ramp_.active;
+}
+
+int ModeManager::cal_ramp_column() const {
+    const std::lock_guard<std::mutex> lock(mu_);
+    const Enter witness(*this);
+    return ramp_.active ? ramp_.col : -1;
+}
+
 ModeManager::Result ModeManager::cmd_clock_format(bool h24, int64_t utc_ms) {
     const std::lock_guard<std::mutex> lock(mu_);
+    const Enter witness(*this);
     cfg_.h24 = h24;
     rendered_key_ = RENDER_NONE;  // re-render immediately in the new format
     if (mode_ == Mode::Clock) tick_locked(utc_ms);
