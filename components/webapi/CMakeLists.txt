@@ -2,6 +2,6 @@
 # the ring-upload stager.  No IDF includes, so the host dev server, the host
 # tests and esp_http_server all run the same code; the HTTP transport itself
 # lives in components/net.
-idf_component_register(SRCS "api.cpp" "ring_upload.cpp"
+idf_component_register(SRCS "api.cpp" "ring_upload.cpp" "mqtt_bridge.cpp"
                        INCLUDE_DIRS "include"
                        REQUIRES modes ring motion frame swan_hal)

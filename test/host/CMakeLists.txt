@@ -35,6 +35,7 @@ set(SWAN_PURE_SRC
     ${SWAN_ROOT}/components/ring/ring_runtime.cpp
     ${SWAN_ROOT}/components/ring/json_lite.cpp
     ${SWAN_ROOT}/components/webapi/api.cpp
+    ${SWAN_ROOT}/components/webapi/mqtt_bridge.cpp
     ${SWAN_ROOT}/components/webapi/ring_upload.cpp
     ${SWAN_ROOT}/components/motion/axis_control.cpp
     ${SWAN_ROOT}/components/motion/fault_policy.cpp)
@@ -57,7 +58,7 @@ else()
 endif()
 
 # test name -> optional data-file argument (argv[1], g_argv1 in check.h)
-set(SWAN_TESTS test_ring test_motion_math test_axis_sim test_ring_json test_tz test_frame test_modes test_wear test_fault_policy test_api)
+set(SWAN_TESTS test_ring test_motion_math test_axis_sim test_ring_json test_tz test_frame test_modes test_wear test_fault_policy test_mqtt_bridge test_api)
 set(test_ring_json_ARGS ${SWAN_ROOT}/data/ring.json)
 
 find_package(Threads REQUIRED)
