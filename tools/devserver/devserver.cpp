@@ -411,8 +411,14 @@ int main(int argc, char** argv) {
             // are rate-limited: go/spin/cue/mode already carry the animation,
             // and a 1.5 KB document at the tick rate is bandwidth the target
             // has better uses for.
+            // Display state only, from "mode" up to "sys": heap and uptime
+            // jitter every tick and would keep "changed" permanently true.
             const size_t k = payload.find("\"mode\"");
-            std::string tail = (k == std::string::npos) ? payload : payload.substr(k);
+            const size_t e = payload.find(",\"sys\":");
+            std::string tail = (k == std::string::npos)
+                                   ? payload
+                                   : payload.substr(k, e == std::string::npos
+                                                           ? std::string::npos : e - k);
             const bool changed = (tail != last_payload) && (t - last_state >= 200);
             if (changed || t - last_state >= 1000) {
                 last_state = t;

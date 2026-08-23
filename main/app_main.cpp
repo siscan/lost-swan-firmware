@@ -139,9 +139,20 @@ void modes_task(void*) {
         // On change, plus a 1 Hz heartbeat (spec 10.2), rate-limited: the
         // go/spin/cue events already carry the animation, and a 1.5 KB
         // document at 20 Hz is bandwidth this radio has better uses for.
+        //
+        // The comparison covers the DISPLAY state only - from "mode" up to the
+        // "sys" block.  Free heap and uptime jitter on every tick, so
+        // including them made "has anything changed" permanently true and
+        // pinned the push rate at the 5 Hz cap forever; measured on the board
+        // as 28 pushes in 6.5 s with the display sitting still.  Diagnostics
+        // ride the 1 Hz heartbeat, which is as often as anyone reads them.
         const std::string payload = swan::api::build_state(*g_api, now);
         const size_t k = payload.find("\"mode\"");
-        std::string tail = (k == std::string::npos) ? payload : payload.substr(k);
+        const size_t e = payload.find(",\"sys\":");
+        std::string tail = (k == std::string::npos)
+                               ? payload
+                               : payload.substr(k, e == std::string::npos ? std::string::npos
+                                                                          : e - k);
         const bool changed = (tail != last_payload) && (now - last_push >= 200);
         if (changed || now - last_push >= 1000) {
             last_push = now;
