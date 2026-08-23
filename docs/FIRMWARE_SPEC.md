@@ -684,6 +684,9 @@ countdown.zero_hold_s    default 3
 countdown.spin_s         default 6
 countdown.failure_loop_s default 60
 countdown.failure_timeout_s default 0
+wifi.ssid / wifi.pass    STA credentials, set from the console (`wifi <ssid>
+                         <pass>`) until captive-portal provisioning lands in
+                         Phase 4.  NVS keys w_ssid / w_pass.
 net.auth_pass            [Q7]
 ```
 
@@ -757,6 +760,17 @@ Each phase ends with a flashable build and a bench checklist.
 2. **Frame + modes + simulator** — clock, message, countdown scheduler, reveal
    choreography, time service.
 3. **Web UI** — Terminal, Modes, Calibrate, Settings, Diagnostics, Update.
+   **Delivered**, with WiFi STA and mDNS pulled forward from Phase 4 so the UI
+   is reachable the day the board arrives.  Order executed: (a) a host dev
+   server (`tools/devserver/`) serving the static assets and speaking the real
+   `/ws` against the real ModeManager over simulated axes, so the UI is
+   exercisable with no hardware and the sim page and the real UI are one
+   renderer; (b) `esp_http_server` with `/ws` state push + 1 Hz heartbeat and
+   `/api/` REST, both on the §10.2a dispatcher; (c) the pages; (d) ring upload
+   staged and validated on the HTTP task, applied by the modes task; (e)
+   assets gzipped into LittleFS (13,650 bytes for the whole UI plus
+   `ring.json`).  Captive-portal provisioning, MQTT and OTA remain Phase 4;
+   the Update page is a stub.
 4. **Integration** — MQTT + HA discovery, OTA with rollback, provisioning, mDNS.
 5. **Audio** — player, cue table, countdown cue wiring, placeholders.
 6. **Hardening** — fault policy, watchdogs, boot stagger, soak mode (run N
@@ -1018,3 +1032,52 @@ reason, so nothing gets re-litigated.
   cost is already accepted, so this asymmetry stands as known and intentional.
   Recorded so it is not rediscovered as a defect.
 
+- 2026-08-22 — **Phase 3 delivered** (web UI, WiFi STA, mDNS, `/ws` + `/api`,
+  ring upload, gzipped assets).  Decisions and facts recorded on the way:
+  - **The web API is a pure component** (`components/webapi/`): the state
+    payload, the §10.2a dispatcher and the upload validator have no IDF
+    includes, so the host dev server, the host tests and `esp_http_server` run
+    the *same* code and a UI bug is reproducible on the desktop.
+  - **A host dev server** (`tools/devserver/`) serves `web/` and speaks the
+    real `/ws` against the real ModeManager over five `sim::SimAxis` columns —
+    the Phase 1.5 simulator, so real homing, real edge verification and real
+    forward-only motion.  It found two things immediately: the per-axis mailbox
+    is single-slot and replace-on-write, so boot must home **before** starting
+    the modes or the first frame silently supersedes the home request; and the
+    frame scheduler issues a column's target twice in one tick (the frame, then
+    the convergence pass, before the axis has reported Moving).  The duplicate
+    is harmless — same target, replace-on-write — but `web/flap.js` ignores a
+    repeat rather than restarting the animation.  Recorded rather than
+    redesigned; it is on the list for the Phase 3 review.
+  - **`countdown.reveal` is set by NAME and validated against that column's own
+    ring.**  A numeric entry is now *refused* rather than read as "clear this
+    column": the same index is a different character on column 5, so a number
+    there has no safe reading.  The picker offers only what the column carries
+    (36 glyphs on ring A, 29 on ring B).
+  - **The drums' colour schemes travel with the ring** to the browser, so the
+    mirror matches the wall (columns 4–5 are the inverted drums).  Presentation
+    only; firmware behaviour never reads it.  `ringgen.py` emits it into the
+    compiled fallback too, so a board with no `ring.json` still renders right.
+  - **Ring upload:** the HTTP task validates entirely into a staging table and
+    the **modes task** performs the swap, then `ring_store::write_accepted()`
+    persists via temp-file-and-rename.  A malformed, truncated, oversized or
+    role-incomplete upload leaves the running table untouched and never reaches
+    the filesystem.  `test_api` hammers it with all of those plus every 97-byte
+    prefix of a good document.
+  - **The HTTP task never reaches mode state unlocked**, asserted at runtime:
+    ModeManager bumps a witness counter inside its lock on every public entry
+    point, and a three-thread test (modes task + two HTTP tasks) asserts it
+    never exceeds 1.
+  - **`motion.spin` added** to the command set — the Calibrate page's test
+    spin (§10.2), through the one dispatcher like everything else.
+  - **State push is rate-limited** to 5 Hz plus the 1 Hz heartbeat: the
+    `go`/`spin`/`cue` events already carry the animation, and a 1.5 KB document
+    at the tick rate is bandwidth the radio has better uses for.
+  - **Assets ship gzipped only** (13,650 bytes for the UI plus `ring.json`,
+    against a 2048 KB partition); `tools/webpack.py` fails the build if the
+    payload passes its budget, so the UI cannot quietly eat the room audio
+    needs.
+  - **WiFi credentials come from the console** (`wifi <ssid> <pass>`) this
+    phase.  No credentials is a supported state, not an error: the display is a
+    standalone clock and shows the WiFi glyph after the grace period (§7.1,
+    §10.0).

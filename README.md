@@ -9,14 +9,16 @@ Target: ESP32-C5-DevKitC-1-N8R8 (XIAO ESP32-C5 map behind a board define).
 
 - **Spec v1.0** — all questions answered (spec §16); resolutions in the §17 decision log
 - Hardware: DevKitC-1 on order; **chip revision unverified** (checked on first flash)
-- Code: **Phase 2 complete** (fluid ring, frame scheduler, modes with the
-  deadline countdown, time service, browser simulator).  Nothing has been
-  flashed or measured on hardware — `docs/BRINGUP.md` tracks that separately.
+- Code: **Phase 3 complete** (web UI, WiFi STA, mDNS, `/ws` + `/api`, ring
+  upload, gzipped assets in LittleFS) on top of Phase 2 (fluid ring, frame
+  scheduler, modes with the deadline countdown, time service, browser
+  simulator).  Nothing has been flashed or measured on hardware —
+  `docs/BRINGUP.md` tracks that separately.
 
 | gate | status |
 |---|---|
 | `set-target esp32c5` + `build` clean | passes — zero warnings, both board maps |
-| host tests green | 7/7 suites (rings, motion math, simulated axis, ring.json, TZ/DST, frame, modes) |
+| host tests green | 8/8 suites (rings, motion math, simulated axis, ring.json, TZ/DST, frame, modes, web API) |
 | `git diff` empty after `tools/ringgen.py` | clean — header and ring.json both regenerate byte-identically |
 | motion cross-task handoff explicit | done — see `docs/MOTION_SYNC.md`, incl. the seqlock for multi-field reads |
 | CI | GitHub Actions on ubuntu — see below |
@@ -104,8 +106,8 @@ powershell -ExecutionPolicy Bypass -File ./build.ps1 build
 ## Host unit tests — use `test-host.ps1`
 
 ```powershell
-.\test-host.ps1            # configure, build, run
-.\test-host.ps1 -Clean     # wipe build_host first
+.\test-host.ps1                                   # builds it
+.\test-host.ps1                                   # builds it
 ```
 
 It uses the CMake and Ninja that `install.ps1` already put under
@@ -125,8 +127,10 @@ enforced on this machine** (`HKLM:...\CI\Policy\VerifiedAndReputablePolicyState
   is cached per hash (moving the file changes nothing), but a relink embeds a
   new timestamp, gets a new hash, and usually passes. ctest reports a blocked
   binary as `BAD_COMMAND` / `Not Run` — not as a test failure — and
-  `test-host.ps1` detects exactly that and relinks, up to 4 attempts. A real
-  test failure is never retried.
+  `test-host.ps1` detects exactly that and relinks — **only the binaries that
+  were actually blocked**, keeping the ones that ran. Relinking the whole set
+  each round needs every binary to clear the coin-flip at once, which stopped
+  converging past a handful of tests. A real test failure is never retried.
 - The winget tools are not on the inherited PATH, so the script locates them.
 
 The clean fix would be turning Smart App Control off (Settings → Privacy &
@@ -168,6 +172,91 @@ without AM/PM, the centre column without the wifi glyph, any column missing a
 digit or `?` — is **rejected at load**, leaving the compiled fallback active, so
 a bad upload fails at boot rather than as a blank column mid-show.
 
+## Web UI and the host dev server
+
+The UI is vanilla HTML/CSS/JS in `web/` — no framework, no web fonts, every
+byte ships in LittleFS. Pages: **Terminal** (the Numbers + EXECUTE, live
+mirror, remaining), **Modes**, **Calibrate**, **Diagnostics**, **Settings**
+(TZ, granularity, seconds mode, the reveal picker, ring upload) and
+**Update** (a stub until OTA lands in Phase 4).
+
+Every control sends a §10.2a command; there is no second control path. What
+the page can do, an MQTT publish will be able to do, and the firmware
+validates both identically.
+
+**Click through it with no hardware.** `tools/devserver/` is a host binary
+that serves `web/` and speaks the *real* `/ws` against the *real* ModeManager,
+FrameScheduler and dispatcher, over five simulated axes running the *real*
+control core (the same `sim::SimAxis` the Phase 1.5 suite drives — real
+homing, real edge verification, real forward-only motion):
+
+```powershell
+.\test-host.ps1                                   # builds it
+build_host\devserver.exe --port 8080 --root web --ring data/ring.json
+```
+
+then open **http://localhost:8080/**. It homes all five columns first (about
+six seconds, visible), then the clock runs. `--tz` overrides the timezone.
+
+Routes, identical on the host and on the device:
+
+| route | what |
+|---|---|
+| `GET /` | the UI (gzipped assets preferred) |
+| `GET /api/state` | the full state document |
+| `GET /api/ring` | per-column ring tables, glyph lists and colour schemes |
+| `POST /api/cmd` | one §10.2a command, JSON body |
+| `POST /api/ring/upload` | a candidate `ring.json`, raw body |
+| `/ws` | state on change + 1 Hz heartbeat, plus `go`/`spin`/`mode`/`cue` events |
+
+Every `/ws` message carries an `"e"` discriminator, and `web/flap.js` renders
+both the live stream and a replayed simulator trace — one renderer, so the two
+cannot drift apart.
+
+### Asset budget
+
+`tools/webpack.py` gzips the assets and stages `ring.json` beside them; the
+build turns that into `storage.bin`. Only the `.gz` copies ship, and
+`components/net/httpd.cpp` serves them with `Content-Encoding: gzip`.
+
+| file | raw | gzipped |
+|---|---:|---:|
+| `app.js` | 15,274 | 4,865 |
+| `index.html` | 10,917 | 3,490 |
+| `flap.js` | 5,912 | 2,135 |
+| `style.css` | 5,117 | 1,719 |
+| `ring.json` | 9,361 | 1,441 |
+| **total** | **46,581** | **13,650** |
+
+Against a **2048 KB** partition, so the room is for audio (spec §9). The
+packer fails the build above a 256 KB budget rather than letting the UI
+quietly eat it.
+
+### Ring upload
+
+The HTTP task validates an uploaded `ring.json` entirely into a *staging*
+table — parse, exactly 50 slots, and every role its column will be asked for.
+The running table is swapped in by the **modes task** at a tick boundary
+(`ring_store.h`'s threading contract), and only then is the file written, via
+a temp file and a rename. A malformed, truncated, oversized or
+role-incomplete upload leaves the display exactly as it was and never reaches
+the filesystem.
+
+### WiFi
+
+Credentials come from the console this phase; captive-portal provisioning is
+Phase 4.
+
+```
+wifi <ssid> <password>     # saves to NVS and connects
+wifi status
+wifi clear
+```
+
+With no credentials the display is a standalone clock (spec §10.0): SNTP never
+syncs, and the centre column shows the WiFi glyph after the 15 s grace period.
+That is specified behaviour, not a fault.
+
 ## Browser simulator
 
 Open `web/sim/index.html` (any static server, or file:// in most browsers).
@@ -203,7 +292,8 @@ either board. `pins` on the console prints the resolved map.
 | managed component | reason |
 |---|---|
 | `espressif/led_strip` | WS2812 status LED on the DevKitC-1. The XIAO path is plain GPIO and pulls nothing in. |
-| `joltwallet/littlefs` | the `storage` filesystem for `ring.json` now, web assets and audio later (spec §4/§9/§10.2). The build never invokes its host-side image packer. |
+| `joltwallet/littlefs` | the `storage` filesystem for `ring.json`, the web assets and audio later (spec §4/§9/§10.2). Its image builder is pure Python (`littlefs-python` in a venv), so it works on this machine. |
+| `espressif/mdns` | `http://lost.local/` without anyone reading an IP off a router page (spec §10.1). First-party; there is no in-tree mDNS. |
 
 Nothing else. The host tests deliberately have no test framework — three macros
 in `test/host/check.h` cover what they need.
@@ -234,10 +324,17 @@ owns every lock, the ISR, and the task.
 components/swan_hal/   pin map, GPIO bank writes, status LED
 components/ring/       geometry constants, T(i), ring table (generated), index math
 components/motion/     step ISR, axis FSM, homing, edge verification, calibration
+components/frame/      frame scheduler (land-on-tick, convergence after re-home)
+components/modes/      clock, message, deadline countdown, the §10.2a dispatcher
+components/timesvc/    SNTP + an owned POSIX-TZ engine
+components/webapi/     pure state payload, command dispatch, ring upload staging
+components/net/        WiFi STA, mDNS, esp_http_server (/ws + /api)
 components/config/     NVS schema and defaults
 components/cli/        bring-up console (spec §13)
 main/                  boot sequence
-tools/                 ring table generator
+web/                   the UI (index.html, app.js, flap.js, style.css)
+web/sim/               browser simulator, replays recorded real-logic traces
+tools/                 ringgen.py, webpack.py, the host dev server
 test/host/             host unit tests
 ```
 

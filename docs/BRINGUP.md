@@ -6,24 +6,28 @@ the spec is wrong: fix `docs/FIRMWARE_SPEC.md` and append to its §17 decision l
 
 ## Verification status
 
-Phase 1 builds and its host tests pass. Nothing has run on hardware — the board
-has not arrived, so every bench step below is still open.
+Phases 1-3 build and their host tests pass. Nothing has run on hardware — the
+board has not arrived, so every bench step below is still open.
 
 | gate | status |
 |---|---|
-| `.\build.ps1 set-target esp32c5` + `.\build.ps1` | **passes** — ESP-IDF v5.5.5, 304 KB, 88% of the app partition free, zero warnings |
-| `.\build.ps1 -B build-xiao -DSWAN_BOARD=xiao build` | **passes** — 282 KB. Exercises the alternate pin map and its strapping-pin `static_assert`s |
-| host tests (`.\test-host.ps1`) | **2/2 pass** (`test_ring`, `test_motion_math`) |
-| `git diff` empty after `gen_ring_table.py` | **clean** — regeneration is byte-identical |
-| motion cross-task handoff explicit | **done** — spinlock + request mailbox + relaxed atomics |
+| `.\build.ps1 set-target esp32c5` + `.\build.ps1` | **passes** — ESP-IDF v5.5.5, DevKitC-1 1,251 KB app (52% of the partition free), zero warnings |
+| `.\build.ps1 -DSWAN_BOARD=xiao build` | **passes** — 1,232 KB. Exercises the alternate pin map and its strapping-pin `static_assert`s |
+| LittleFS payload | **13,650 bytes** (UI + `ring.json`, gzipped) of a 2048 KB partition |
+| host tests (`.\test-host.ps1`) | **8/8 pass** — rings, motion math, simulated axis, ring.json, TZ/DST, frame, modes, web API |
+| `git diff` empty after `tools/ringgen.py` | **clean** — regeneration is byte-identical |
+| motion cross-task handoff explicit | **done** — spinlock + request mailbox + relaxed atomics + the `AxisCtl::seq` seqlock (`docs/MOTION_SYNC.md`) |
 | chip revision ≥ v1.0 | **unknown** — board not arrived |
 | every bench step below | **not run** — needs hardware |
 
 What passing host tests do and do not prove: `T(i)` rounding, the 8242/8243
 revolution alternation, forward-distance costs over all 2500 index pairs, edge
-classification thresholds, and that the ramp plus DDA lands on the target
-exactly are all verified in software. Nothing about the Hall wiring, the gear
-ratio, driver behaviour or flap mechanics is verified by them.
+classification thresholds, that the ramp plus DDA lands on the target exactly,
+clock rendering across DST edges, the countdown schedule from a deadline, and
+every web command and the upload validator round-tripped through the JSON
+layer are all verified in software. Nothing about the Hall wiring, the gear
+ratio, driver behaviour, flap mechanics, radio range behind the aluminium
+faceplate, or mDNS on a real LAN is verified by them.
 
 ## Phase 1 bench checklist (spec §14.1)
 
@@ -155,6 +159,70 @@ nudge is reported as a large positive number and costs most of a revolution to
 become visible — that is the one-way ring, not a firmware bug.  Nudge forward.
 
 - Result: cal[0..4] = ______ / ______ / ______ / ______ / ______
+
+## Phase 3 bench checklist — network and web UI
+
+Runs after the Phase 1 motion checks; nothing here touches the motion path.
+
+### 9. Join a network
+
+- [ ] `wifi <ssid> <password>` on the console.  Expect `saved; connecting` then
+      a `wifi: connected, ip …` log line within a few seconds.
+- [ ] `wifi status` — state, SSID, IP, RSSI, and the disconnect counter.
+- [ ] **RSSI with the aluminium faceplate fitted** (spec §2.4 open risk: the
+      DevKitC-1 has a PCB antenna and the faceplate is an RF shield).  Record
+      both numbers; if the fitted value is bad, that is the u.FL/XIAO argument.
+- Result: RSSI open ______ dBm · faceplate fitted ______ dBm
+
+With no credentials the display is a standalone clock: SNTP never syncs and the
+centre column shows the WiFi glyph after 15 s.  That is spec §7.1, not a fault.
+
+### 10. Reach the UI
+
+- [ ] `http://<ip>/` loads.
+- [ ] `http://lost.local/` loads (mDNS; some Android browsers do not resolve
+      `.local` — test from a laptop or an iPhone before calling mDNS broken).
+- [ ] The five columns mirror the real drums, and columns 4–5 render in the
+      inverted colour scheme.
+- [ ] The connection chip reads **connected**; pull the AP and it goes red and
+      reconnects on its own.
+- [ ] Diagnostics shows `h2h` in the 8242–8243 band for every column.  A
+      consistently different value means the gear teeth or the microstep
+      setting differ from spec §3 — the drum wins, the spec gets corrected.
+
+### 11. Control paths agree
+
+Every control is the same command over three transports; they must behave
+identically.
+
+- [ ] Numbers via the UI's EXECUTE, wrong ones rejected with a toast.
+- [ ] The same via the console: `countdown execute "4 8 15 16 23 42"`.
+- [ ] Switch modes from the UI while a countdown runs; the console `stats`
+      agrees with what the page shows.
+
+### 12. Calibrate from the page
+
+- [ ] The ±1 / ±10 nudges move the drum and the offset readout tracks.
+- [ ] The index walk steps the column and the *expected* character is shown
+      beside each stop — this is the table/drum mismatch check from step 8,
+      with the answer printed next to the flap.
+- [ ] The live speed sliders change the sound of a move immediately; SAVE is
+      what survives a reboot.  Confirm both halves separately.
+
+### 13. Ring upload
+
+- [ ] Upload a deliberately broken `ring.json` (delete a slot).  Expect a
+      rejection naming the reason, and **the display must not flinch** — the
+      running table is untouched and no file is written.
+- [ ] Upload the real `data/ring.json`.  Expect `ring.json applied` in the log,
+      the Settings page to report `ring.json` as the source, and the table to
+      survive a reboot.
+
+### 14. Assets
+
+- [ ] The UI loads with the browser cache disabled (gzipped assets served with
+      `Content-Encoding: gzip`).  Whole payload is ~14 KB; if a page is blank,
+      check the LittleFS image was flashed — `idf.py flash` writes it.
 
 ## Notes
 
