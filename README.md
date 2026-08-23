@@ -407,6 +407,15 @@ So a dropped event now costs an animation, never correctness.
 `test/host/test_flap.js` pins it by driving frames with events deliberately
 missing.
 
+One trap worth knowing if you touch this path: `send_wait_timeout` is 1 s, and
+lwIP treats **any** non-zero `SO_SNDTIMEO` as *never block*, so a short TCP send
+buffer fails immediately with `EWOULDBLOCK` on a perfectly healthy client — a
+phone whose radio naps is enough.  A failed send therefore **closes** the socket
+rather than merely unregistering it: leaving it open would give the browser a
+connection it believes in and no state documents, which silently switches the
+reconcile back off.  Raising the timeout does not help; with `dontblock` set it
+changes nothing except how long a slow client can stall the single httpd task.
+
 ### Motion state is always visible
 
 A column whose index is `-1` is **not** showing the blank flap — it is

@@ -1818,3 +1818,51 @@ reason, so nothing gets re-litigated.
   - Method note: the two "misses" seen while validating in a browser were
     background-tab timer throttling (~1 Hz), not staleness — which is why the
     committed test uses a virtual clock rather than wall time.
+
+- 2026-08-23 — **Follow-up on the mirror, from an adversarial review of the fix
+  (124 agents, three refuters per finding).**  It sharpened the arithmetic and
+  found one defect that would have silently switched the fix back off.
+  - **The loss was exactly `floor(6 / n_clients)` messages, message-major.**
+    `ws_broadcast` queued one job per client per message into a six-slot
+    control queue, so the surviving prefix depended on how many browsers were
+    open: one client → all five columns, two → cols 1–3, three → cols 1–2.
+    That is the whole of "the number of correctly-updating columns changes
+    between page loads", and going to the presentation terminal and back is
+    precisely what changes the client count.  Confirmed against the board,
+    which reported `3 clients` while delivering two columns.
+  - **CRITICAL, fixed — a transient send failure permanently deafened a live
+    client.**  `send_wait_timeout = 1` sets a non-zero `SO_SNDTIMEO`, and lwIP
+    reads *any* non-zero send timeout as **never block**
+    (`api_lib.c`: `if (conn->send_timeout != 0) dontblock = 1;`), so a short
+    TCP send buffer returns `ERR_WOULDBLOCK` immediately rather than waiting.
+    `TCP_SND_BUF` is 5760 and a state document is ~1.5 KB, so a phone whose
+    radio naps for a few hundred milliseconds is enough.  The old code did
+    `ws_remove(fd)` and nothing else: the browser's socket stayed **open**, so
+    `bus.js` never saw `onclose`, never reconnected, and the state documents
+    the mirror now reconciles against stopped arriving — **silently disabling
+    the fix above**, while commands kept working because a reply goes back
+    through the session's own handler.  It now closes the socket too, so the
+    browser reconnects after 1500 ms and `ws_opened` re-primes.  Reproduced on
+    hardware with a client holding a 2 KB `SO_RCVBUF` and not reading: the
+    board logs `httpd_sock_err: error in send : 11` (EWOULDBLOCK, on a
+    perfectly alive client) and now closes the socket.
+    - Do **not** raise `send_wait_timeout` back to 5 s to "fix" this: with
+      `dontblock` set the value does not affect the EAGAIN case at all, and it
+      would reintroduce the five-second stall of the single httpd task that the
+      Phase 3 review cut it down to avoid.
+  - **Known, upstream, not fixable here:** `httpd_ws_send_frame_async`
+    (`httpd_ws.c`) issues one `send_fn` for the header and one for the payload
+    and checks only `< 0`, unlike `httpd_send_all`, which loops.  With
+    `dontblock` set lwIP can return `ERR_OK` with a **partial** write, which
+    would put a frame header on the wire announcing more bytes than follow and
+    desynchronise the stream.  Closing on failure is the mitigation, together
+    with keeping individual messages small.  Recorded so it is not
+    rediscovered as our bug.
+  - **`flap.primed` is now cleared on disconnect**, so a reconnect after a long
+    gap snaps to the display instead of animating the catch-up one flap at a
+    time.  A kiosk may have been offline for hours.
+  - Method note, worth keeping: the review was run *while* the fixes were being
+    written, so its verifiers read a moving target and several of its
+    transport findings were stale on arrival.  The findings that mattered were
+    the ones about code the fixes had not touched.  Run the review before the
+    fix or after it, not across it.
