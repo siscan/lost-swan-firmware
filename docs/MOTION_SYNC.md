@@ -22,6 +22,27 @@ synchronisation lives in the shell.
 | `AxisCtl.cal_offset` | **calibration API** (any task) | control tick | `std::atomic`, relaxed |
 | `AxisCtl` plain fields: `home_phase`, `v_max`, `hall_prev`, `seq_seen`, `home_delay`, `rehome_retries` | **control tick** | nobody else | none needed — private |
 | `g_params` | `set_params` / `set_cal` | control tick (snapshot per tick), `params()` | spinlock `g_lock` |
+| `g_isr_ticks` | **step ISR** | control tick | `volatile`, single writer, wrap-safe by construction (see below) |
+| `g_park_pending[]` | `set_columns` (any task) sets, control tick clears | control tick, `republish_masks` | plain `bool`; see below |
+
+**`g_isr_ticks`** is the step ISR's liveness counter, added in Phase 6 because
+the task watchdog covers the 1 kHz control task and *nothing covered the thing
+that actually moves the drums*: if the GPTimer stops, the control task keeps
+looping and feeding the watchdog while the display stands still. It is a plain
+`volatile uint32_t` rather than an atomic on purpose — one writer (the ISR),
+one reader (the control tick), and the reader only ever asks "is this different
+from last time", which a torn read cannot get wrong in a way that matters: a
+stale value costs one extra tick of patience against a 200-tick threshold, and
+wrap-around is a change like any other.
+
+**`g_park_pending[]`** is how a column being disabled parks itself on blank
+before its drive bit goes away. `set_columns` may run on any task and only sets
+the flag; the control tick issues the move, watches for the column to reach the
+home slot, clears the flag and re-publishes the masks. The flag is deliberately
+NOT under the spinlock: it is written once by one task, read by one task, and a
+one-tick-late observation is harmless — whereas posting the park directly from
+`set_columns` raced `republish_masks()` and lost, which is the bug it exists to
+fix (the axis reported itself parked and the drum never moved).
 
 ## The three boundaries
 

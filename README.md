@@ -698,6 +698,72 @@ either board. `pins` on the console prints the resolved map.
 Nothing else. The host tests deliberately have no test framework — three macros
 in `test/host/check.h` cover what they need.
 
+## What the display remembers (spec §12, and the event journal)
+
+Two different things that look alike:
+
+**The log ring** is the last 8 KB of `ESP_LOGx` output, held in RAM and lost at
+power-off. It exists so a board that did something surprising can be read
+without a serial cable:
+
+```bash
+curl http://lost.local/api/log
+```
+
+The first line says how much is there — typically 150–190 lines — and how many
+were evicted since boot, so "the log starts here" is a fact rather than an
+assumption. Spec §12 asked for "~200 lines"; that is 18 KB of internal RAM at a
+realistic line length, PSRAM is deliberately off, and the board has ~76 KB free,
+so this keeps a byte budget instead and reports what fits.
+
+**The event journal** is what the display has actually *done*, in LittleFS,
+across reboots:
+
+```bash
+curl http://lost.local/api/journal          # everything
+curl "http://lost.local/api/journal?n=20"   # the last 20
+```
+
+One JSON object per line: countdowns executed (with the Numbers and who entered
+them), started, cancelled and reaching zero, each with `seq`; faults and
+recoveries with the column and cause; mode changes; maintenance; and one boot
+line per boot carrying the reset reason and the firmware version — which is what
+turns "it rebooted at some point" into "it panicked at 03:14".
+
+```
+{"t":1787592579,"u":24,"e":"zero","seq":5,"by":"ui"}
+{"t":1787592586,"u":0,"e":"boot","d":"panic 0.4.0+devkitc1.sim"}
+```
+
+Capped at 400 entries and 48 KB, compacted to the newest 200 by a
+temp-write-and-rename; a full execute entry is 84 bytes. A journal write can
+**never** block the modes task: producers push a fixed-size record into a queue
+with a zero timeout and a low-priority writer batches them to flash. A stalled
+filesystem must not stop the display being a display, so a full queue drops the
+event and counts it.
+
+## Soak mode — thousands of wraps, overnight
+
+```
+soak start <wraps> [flaps_s]     # 0 wraps = until stopped
+soak stop
+soak                             # the report
+```
+
+```bash
+curl http://lost.local/api/soak
+```
+
+It walks every non-disabled column forward one flip at a time, closed loop —
+that is the path with the edge verification in it — and keeps the figures only a
+long run produces: wraps and flips per column, resyncs and faults *during the
+run* rather than since boot, the measured `hall_to_hall` extremes, the worst
+edge error, and heap sampled throughout with its minimum. A fault during a soak
+is the result, not an interruption: it is counted and the column re-homed.
+
+Started from the console because it is bench tooling like `spin`; readable over
+HTTP because an overnight run has to be legible from a phone in the morning.
+
 ## How motion synchronises across tasks
 
 The full contract - ownership table, atomics and memory orders, critical
@@ -723,18 +789,23 @@ owns every lock, the ISR, and the task.
 ```
 components/swan_hal/   pin map, GPIO bank writes, status LED
 components/ring/       geometry constants, T(i), ring table (generated), index math
-components/motion/     step ISR, axis FSM, homing, edge verification, calibration
+components/motion/     step ISR, axis FSM, homing, edge verification, calibration, soak
 components/frame/      frame scheduler (land-on-tick, convergence after re-home)
 components/modes/      clock, message, deadline countdown, the §10.2a dispatcher
 components/timesvc/    SNTP + an owned POSIX-TZ engine
 components/webapi/     pure state payload, command dispatch, ring upload staging
 components/net/        WiFi STA, mDNS, esp_http_server (/ws + /api)
 components/config/     NVS schema and defaults
+components/journal/    the log ring (spec 12) and the persistent event journal
+components/audio/      WAV parse, cue table, the I2S player
 components/cli/        bring-up console (spec §13)
 main/                  boot sequence
-web/                   the UI (index.html, app.js, flap.js, style.css)
+web/                   the UI (index.html, app.js, flap.js, bus.js, style.css)
+web/terminal.html      the presentation terminal (kiosk-first)
+web/portal.html        the captive-portal setup page
 web/sim/               browser simulator, replays recorded real-logic traces
-tools/                 ringgen.py, webpack.py, mqtt_broker.py, the host dev server
+tools/                 ringgen.py, webpack.py, gen_audio.py, mqtt_broker.py,
+                       ota_upload.py, the host dev server
 test/host/             host unit tests
 ```
 

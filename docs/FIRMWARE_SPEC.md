@@ -2273,3 +2273,111 @@ reason, so nothing gets re-litigated.
   and a heap budget on a device with ~90 KB free), so it goes with the Phase 6
   hardening work rather than into the UI pass.  Recorded here so it does not
   quietly vanish: **it is the one item on the audit's list that is not done.**
+
+- 2026-08-24 — **Phase 6 delivered** (soak, watchdog coverage, power loss, the
+  fault-path matrix, the streaming ring parser, the log ring and the event
+  journal).  What was decided and what was found:
+  - **§12's log ring is a BYTE budget, not "~200 lines".**  200 lines at a
+    realistic 90 characters is 18 KB of internal RAM; PSRAM is deliberately off
+    and the board reports ~76 KB free, so a fifth of the headroom for a
+    diagnostic is the wrong trade.  8 KB holds 150–190 real lines, and
+    `GET /api/log` reports how many fit and how many were evicted, so "the log
+    starts here" is a fact rather than an assumption.
+  - **The event journal is separate from the log and is the point.**  Countdowns
+    executed (with the Numbers and `set_by`), started, cancelled and reaching
+    zero with `seq`; faults and recoveries with column and cause; mode changes;
+    maintenance; and one boot line per boot carrying the reset reason and the
+    version.  JSONL in LittleFS, 400 entries / 48 KB, compacted to the newest
+    200 by temp-write-and-rename, 84 bytes for a full execute entry.  It never
+    blocks the modes task — a POD into a queue with a zero timeout, batched to
+    flash by a priority-1 writer — and a full queue drops the event and counts
+    it, because a stalled filesystem must not stop the display being a display.
+    `execute` and `start` share one code path so a ritual writes ONE line;
+    Phase 7 prints these and "start" immediately after "execute" would be a lie
+    about what happened.
+  - **The ring upload streams; the DOM stops being load-bearing.**  A
+    `json::Value` is ~64 bytes against a 2-byte minimum token, so the 700-node
+    cap against a real ring.json's 535 was the only thing between an upload and
+    an allocation failure — and with exceptions off that is `abort()`.  A
+    chunk-fed tokenizer (`ring/json_stream.h`) whose memory does not depend on
+    the input at all now feeds a handler that builds the table directly.
+    Commands keep the DOM: small, random-access, and the right tool there.
+    Three defects surfaced building it, all of which the DOM path had right:
+    a per-column ring was not collected at all (column 5 has one — it is the
+    entire reason ring B exists); column indices were counted by "the first key
+    inside the object", which put column 5's ring on column 1 the moment the
+    empty column objects the format allows appeared; and a REJECTED document
+    left the set holding a null table, so the next `col()` dereferenced it — a
+    crash on the failure path, which is the path a hostile upload takes.  The
+    heap guard was resized to match: it demanded the DOM's 76 KB worst case and,
+    once the journal took its 8 KB, began refusing the real ring.json on a
+    healthy board.
+  - **Nothing watched the 50 kHz step ISR.**  The task watchdog covers the 1 kHz
+    control task, but if the GPTimer stops that task keeps looping and feeding
+    it while the drums stand still — the one component whose death is invisible
+    from every other angle.  The ISR counts its invocations, the control tick
+    checks the count advanced, and 200 ms of silence is reported loudly and
+    published as `sys.step_isr_alive`.  It deliberately does NOT panic: a false
+    positive that rebooted a wall display would be worse than the fault it looks
+    for.  Also fixed: `esp_task_wdt_add` on the motion task discarded its return
+    while the modes task wrapped the identical call in `ESP_ERROR_CHECK`;
+    `ring_store`'s idle re-subscribe discarded its return, and the idle
+    subscription is the ONLY coverage for "a task above priority 0 is spinning";
+    `write_accepted` (the only filesystem write on a watched task) now feeds the
+    watchdog on the way out; and `CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU0` was
+    load-bearing but on only by IDF default, so it is declared.
+  - **The fault-path matrix found six real defects, all now verified on the
+    board.**  (1) Two columns failing together did NOT drop EN: a retryable
+    fault stores `Unhomed`, not `Fault`, so each counted zero and both got
+    `park_column` — §5.8's central rule could only fire ~22 s later, once both
+    had exhausted their retries.  A column with a re-home in flight counts now.
+    (2) A DISABLED column latched in fault voted, so the first real fault after
+    a repair dropped EN for all five.  (3) SIMULATED columns voted, so injecting
+    two modelled faults de-energized the one real column on a build-out board;
+    real columns vote, and with no real columns the simulated ones do so the
+    rule stays demonstrable where EN means nothing anyway.  (4) The spinning
+    column excluded ITSELF from `any_fast_spin`, so "a fault during a high-speed
+    spin drops EN" could not fire for the single spinning column that faulted.
+    (5) `drop_enable` only wrote the pin — the axes kept stepping into dead
+    drivers, completed their moves and published indices the drums never
+    reached; it posts a Stop to all five now.  (6) EN was on **no surface at
+    all**: escalation could de-energize the display and the only thing that said
+    so was a console line advising `en 1`.  `sys.drivers_enabled` is published
+    and `motion.enable` is a command.
+  - Three more from the same walk: disabling an idle column posted its
+    park-on-blank and then cleared the drive bit microseconds later, so the axis
+    reported itself parked and the drum never moved (the park is deferred to the
+    control tick, which holds the drive bit until it lands); re-enabling a
+    disabled column never homed it, so across a reboot it came back unhomed and
+    silently never closed the hole; and a FAULTED column's unknown index scored
+    a full 49-flip wrap in the frame scheduler's lead time, so one faulted
+    column started every land-on-tick frame ~3.3 s early and the four working
+    columns landed seconds ahead of the countdown.  Plus: the OTA hold now
+    reaches the control core (it was enforced at the dispatcher only, so a
+    staggered home already posted, or a fault retry the core schedules itself,
+    started a 7.5 s homing pass in the middle of a flash write), and
+    `motion.params` keeps `ModesConfig::alarm_flaps_s` in step — it was seeded
+    once at boot, so raising the alarm speed with the Settings slider left the
+    spin at the old value AND left `g_fast_spin` false, disabling (4).
+  - **Power loss: twelve cuts, all clean.**  Ten points through a countdown plus
+    the two transient phases caught live (the zero hold and the alarm spin,
+    which `countdown.set_target` cannot construct because it refuses a past
+    epoch).  Every one came back with the deadline intact to the second, the
+    five column modes intact including a disabled one, and the calibration
+    intact; the two past-zero cuts woke **silently into the reveal**, no cue
+    replayed and nothing spinning, which is the §17 no-replay rule holding under
+    a power cut rather than a reboot.
+  - **Soak, first runs.**  Five simulated columns at 20 flaps/s: ~120 wraps and
+    ~6,000 flips per column in nine minutes, zero major resyncs, zero faults,
+    `hall_to_hall` pinned at **8242–8243** and a worst edge error of **one
+    microstep**.  That is §3's 272000/33 = 8242.42 behaving exactly as §5.3
+    describes — one `resync_minor` per wrap IS the 0.42 residue being absorbed
+    at each edge, not a defect.  Recorded because it is the first end-to-end
+    evidence that the non-integer geometry works, and because the same run
+    against a real column is the measurement that would actually settle it.
+  - **The presentation terminal's clock shows real time** (Nico).
+    `clock.granularity_min` exists to save flap wear and a screen has no flaps,
+    so the CRT reads the actual minute while the drums stay floored to the
+    granularity — visible side by side: drums `AM 10:15`, CRT `AM 10:21`.  The
+    docked flap mirror still follows the real columns, toggle and all: it is a
+    mirror and must not lie about what the wall is doing.

@@ -693,6 +693,69 @@ test can tell which fired without looking at the console.
       channel 153"*.  Re-check this on whatever network the display ends up on —
       a 2.4 GHz-only router exercises the other branch.
 
+### 27. Soak (spec 15 phase 6) — **first runs DONE 2026-08-24, simulated**
+
+```
+soak start 0 20        # until stopped, at 20 flaps/s
+soak                   # the report
+soak stop
+```
+
+- [x] Nine minutes, five simulated columns at 20 flaps/s: **~120 wraps and
+      ~6,000 flips per column**, zero major resyncs, zero faults, and
+      `hall_to_hall` pinned at **8242–8243** with a worst edge error of **one
+      microstep**.  That is spec §3's 272000/33 = 8242.42 showing up exactly as
+      §5.3 says it should: one `resync_minor` per wrap IS the 0.42 residue being
+      absorbed at each edge, not a defect.
+- [ ] **With one real column**, the same run.  This is the measurement that
+      matters: the simulated drum was written from the same assumptions as the
+      classifier, so a clean sim soak proves the plumbing and nothing about the
+      mechanism (see step 20).
+- [ ] Overnight, then read `curl http://lost.local/api/soak` in the morning.
+      Watch `heap_min` against `heap_start`: a steady fall is a leak, a sawtooth
+      is normal traffic.
+
+### 28. Power loss (spec 15 phase 6) — **DONE 2026-08-24**
+
+Twelve cuts, each a hardware reset with no shutdown path — the same thing as
+pulling the plug as far as NVS and LittleFS are concerned.
+
+- [x] Ten points through a countdown: just after EXECUTE, mid quiet phase, one
+      tick before the seconds wake, inside the live-seconds window, at the
+      1-minute cue, five seconds from zero, and after a cancel.  **Every one**
+      came back with the deadline intact to the second, the five column modes
+      intact (including a *disabled* one), and the calibration intact.
+- [x] The two transient phases, caught live because `countdown.set_target`
+      refuses a past epoch: power cut **during the zero hold** and **during the
+      alarm spin**.  Both woke silently into the reveal — no cue replayed,
+      nothing spinning.  That is the §17 rule (the cues and the spin belong to
+      the real zero moment) holding under a power cut rather than a reboot.
+- [x] The journal recorded the whole campaign: every zero, every boot, every
+      cancel, with timestamps and `seq`, across all twelve cuts.
+- [ ] With motors attached: a cut mid-move leaves the drum wherever physics
+      left it, so the FIRST thing after a power-loss test is `home all` — the
+      firmware cannot know where a drum stopped.
+
+### 29. Fault-path matrix (spec 5.8/5.9/7.4) — **DONE 2026-08-24, simulated**
+
+Run `matrix_board.py`, or by hand:
+
+- [x] Two columns faulting **while still retrying** → EN drops for all five.
+      (It did not before: a retryable fault stores `Unhomed`, so neither column
+      counted itself and the rule could only fire ~22 s later.)
+- [x] After an escalation, **no column is still MOVING** — dropping EN posts a
+      Stop rather than only writing the pin.
+- [x] EN is re-assertable from the network (`motion.enable`), not just `en 1` on
+      the console, and `sys.drivers_enabled` says which state it is in.
+- [x] One column **disabled and latched** plus one real fault → EN stays up.  A
+      disabled column is configuration, not a vote.
+- [x] **Re-enabling** a disabled column homes it by itself and reaches a known
+      index.  It never did; across a reboot it came back unhomed and silently
+      never closed the hole.
+- [x] **Disabling** an idle column parks it on blank *before* its drive bit goes
+      away — verified by watching a `qmark` become `blank`.
+- [ ] The same six on a real column, where EN actually de-energizes something.
+
 ## Notes
 
 - `step`, `spin` and `revs` are open-loop: they leave the displayed index

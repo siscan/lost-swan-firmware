@@ -268,10 +268,22 @@ let skewMs = 0;      // device clock minus ours
 let phase = "idle";
 let secondsLive = 240;
 let mode = "clock";        // what the display is actually doing
-let clockFace = "--:--";   // the columns' own reading, for the idle face
 let cueState = {};         // the audio block, for whether a cue could be heard
 let timeValid = false;     // deadline commands are refused until SNTP has synced
 let retryMax = 3;          // the device's REHOME_RETRIES, published on the wire
+let h24 = false;
+
+// The device's own clock, skew-corrected, to the minute.  Deliberately NOT the
+// columns' reading: the drums are floored to clock.granularity_min to save
+// wear, and a screen has nothing to wear out.
+function realClockFace() {
+  const d = new Date(Date.now() + skewMs);
+  const h = d.getHours();
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  if (h24) return String(h).padStart(2, "0") + ":" + mm;
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return (h < 12 ? "AM " : "PM ") + h12 + ":" + mm;
+}
 
 // Every reason a cue can fire and be inaudible.  All four are on the wire.
 function audioSilent() {
@@ -291,7 +303,9 @@ function tickReadout() {
     // On a prop CRT in a corridor, a clock-mode display showing 108:00 reads as
     // a stopped countdown - so say what is actually up there instead.
     if (mode && mode !== "countdown") {
-      el.textContent = mode === "clock" ? clockFace : "— — : — —";
+      el.textContent = mode === "clock"
+          ? (timeValid ? realClockFace() : "— — : — —")
+          : "— — : — —";
       el.className = "big dim";
       return;
     }
@@ -319,13 +333,11 @@ function onState(s) {
   // rather than a countdown that is not running.
   // The physical layout (spec 7.1): col 1 is AM/PM, cols 2-3 the hours, cols
   // 4-5 the minutes, with the band between them rendered as the colon.
-  const f = s.cols.map((c) => (c.face === "blank" ? "" : c.face));
-  // Only when the columns are actually showing a time.  Before SNTP syncs they
-  // carry the WiFi glyph (spec 7.1), and rendering a glyph name into a clock
-  // face reads as a fault - "wifi:" - rather than as "no time yet".
-  const digits = [1, 2, 3, 4].every((i) => f[i] === "" || /^[0-9]$/.test(f[i]));
-  const hhmm = (f[1] + f[2]) + ":" + (f[3] + f[4]);
-  clockFace = digits && hhmm !== ":" ? (f[0] ? f[0] + " " : "") + hhmm : "— — : — —";
+  // The CRT clock shows REAL time (see realClockFace): granularity exists to
+  // save flap wear and a screen has none.  The flap mirror below still follows
+  // the real columns, toggle and all - that one is a mirror and must not lie
+  // about what the wall is doing.
+  h24 = !!(s.cfg && s.cfg.h24);
 
   const sub = {
     idle: "SYSTEM STANDBY",
