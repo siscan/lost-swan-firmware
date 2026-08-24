@@ -298,12 +298,56 @@
 
 <!-- ================= UPDATE ================= -->
 <section id="page-update">
-  <h2>Firmware update</h2>
-  <p class="hint warn">Stub. OTA with rollback arrives in Phase 4 (spec §10.4);
-     until then flash over USB:</p>
-  <pre class="card">.\build.ps1 -p &lt;PORT&gt; flash monitor</pre>
+  <h2>Running image</h2>
+  <div class="grid" id="ota-facts"></div>
+  <div id="ota-pending" class="hint warn" hidden>
+    <b>This image has not confirmed itself yet.</b> It is running on trial: if it
+    does not reach the end of <code>app_main</code>, load its config, tick the
+    modes and motion tasks and start the web server within 120&nbsp;seconds of
+    boot, the bootloader rolls back to the other slot. Confirm once you are
+    satisfied it works &mdash; and note that <em>rebooting while it is pending</em>
+    is itself what triggers a rollback.
+    <div class="row">
+      <button data-cmd='{"cmd":"ota.confirm"}' class="primary">CONFIRM THIS IMAGE</button>
+      <button data-cmd='{"cmd":"ota.rollback"}'>ROLL BACK NOW</button>
+    </div>
+  </div>
+
+  <h2>Upload firmware</h2>
+  <p class="hint">The image is written to the other slot and the display reboots
+     into it. Motion is held for the duration &mdash; all five columns must be
+     idle, or maintenance on &mdash; and the upload is bounded (120&nbsp;s total,
+     a 10&nbsp;s stall limit, a throughput floor), because until it finishes the
+     clock, the cues and this page are all waiting on it.</p>
   <div class="row">
-    <button data-cmd='{"cmd":"system.reboot"}'>REBOOT</button>
+    <input id="ota-file" type="file" accept=".bin,application/octet-stream">
+    <button id="btn-ota-upload" class="primary">UPLOAD AND REBOOT</button>
+  </div>
+  <div class="row">
+    <label><input id="ota-force" type="checkbox"> force past a soft refusal</label>
+  </div>
+  <p class="hint">Two refusals are soft, and both are worth reading before you
+     override them. An image built for the <b>other board</b> passes every check
+     the bootloader makes and then drives STEP on the wrong pins. A <b>release
+     image</b> onto a display with simulated columns comes back with five columns
+     it cannot honour, faults them all and drops EN &mdash; surviving state the
+     new image cannot honour is worse than state that did not survive. A moving
+     drum is refused regardless, and that one cannot be forced.</p>
+  <div class="row">
+    <progress id="ota-progress" max="100" value="0" hidden style="width:320px"></progress>
+    <span id="ota-msg" class="hint"></span>
+  </div>
+
+  <h2>Over USB</h2>
+  <p class="hint">Still the way in when the network is gone, and the only way to
+     change the board map:</p>
+  <pre class="card">.\build.ps1 -p &lt;PORT&gt; flash monitor
+python tools/ota_upload.py lost.local build/lost_swan_firmware.bin</pre>
+
+  <h2>Reboot</h2>
+  <div class="row">
+    <button id="btn-reboot">REBOOT</button>
+    <span class="hint" id="reboot-hint"></span>
   </div>
 </section>
 

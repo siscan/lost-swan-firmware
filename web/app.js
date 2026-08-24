@@ -202,6 +202,8 @@ function renderDiag(s) {
     body.appendChild(tr);
   });
 
+  renderOta(s);
+
   const sys = $("diag-sys");
   sys.textContent = "";
   const facts = [
@@ -474,6 +476,80 @@ function pushConfig(patch) {
 }
 
 // --------------------------------------------------------------------------
+// Update (spec 10.4)
+// --------------------------------------------------------------------------
+// The two OTA facts the firmware publishes on every state document and nothing
+// rendered: which slot is executing, and whether it has confirmed itself.  A
+// display inside the 120 s mark-valid window, about to roll back, looked
+// completely normal from every page.
+function renderOta(s) {
+  const host = $("ota-facts");
+  if (!host) return;
+  const pending = !!s.sys.ota_pending;
+  const facts = [
+    ["firmware", s.sys.version],
+    ["slot", s.sys.ota_partition || "—"],
+    ["state", pending ? "PENDING VERIFICATION" : "confirmed"],
+  ];
+  host.textContent = "";
+  facts.forEach(([k, v]) => {
+    const card = el("div", { class: "card" });
+    card.appendChild(el("h3", null, k));
+    card.appendChild(el("div", null, String(v)));
+    host.appendChild(card);
+  });
+  $("ota-pending").hidden = !pending;
+  $("reboot-hint").textContent = pending
+      ? "this image is still pending — rebooting now rolls it back"
+      : "";
+}
+
+// XMLHttpRequest rather than fetch: fetch reports no upload progress, and a
+// 1.5 MB image over WiFi is long enough that a page with no feedback looks
+// hung — on the one operation during which the display genuinely is holding
+// still and cannot answer anything else.
+function uploadFirmware(file, force) {
+  const msg = $("ota-msg");
+  const bar = $("ota-progress");
+  bar.hidden = false;
+  bar.value = 0;
+  msg.textContent = "uploading " + Math.round(file.size / 1024) + " KB…";
+  $("btn-ota-upload").disabled = true;
+
+  const xhr = new XMLHttpRequest();
+  xhr.open("POST", "/api/ota" + (force ? "?force=1" : ""));
+  xhr.upload.onprogress = (e) => {
+    if (e.lengthComputable) {
+      bar.value = Math.round((e.loaded / e.total) * 100);
+      msg.textContent = bar.value + "%";
+    }
+  };
+  xhr.onload = () => {
+    let r = {};
+    try { r = JSON.parse(xhr.responseText); } catch (_) { /* keep the status line */ }
+    $("btn-ota-upload").disabled = false;
+    if (r.ok) {
+      bar.value = 100;
+      msg.textContent = "written to " + r.partition + " (" + r.bytes +
+                        " bytes) — rebooting; it must confirm itself or it rolls back";
+      toast("update written; rebooting", true);
+      // The board reboots ~1 s after replying, so the socket drops and bus.js
+      // reconnects on its own.  Nothing to poll for here.
+    } else {
+      bar.hidden = true;
+      msg.textContent = "refused (" + (r.verdict || xhr.status) + "): " + (r.err || xhr.statusText);
+      toast("update refused: " + (r.err || xhr.status), false);
+    }
+  };
+  xhr.onerror = () => {
+    $("btn-ota-upload").disabled = false;
+    bar.hidden = true;
+    msg.textContent = "the upload failed before the display answered";
+  };
+  xhr.send(file);
+}
+
+// --------------------------------------------------------------------------
 // Wiring
 // --------------------------------------------------------------------------
 function wire() {
@@ -557,6 +633,24 @@ function wire() {
   $("btn-cols-real").onclick = () => send("motion.column", { all: true, mode: "real" });
   $("btn-cols-sim").onclick = () => send("motion.column", { all: true, mode: "sim" });
   $("set-maint").onchange = (e) => send("motion.maintenance", e.target.checked);
+
+  $("btn-ota-upload").onclick = () => {
+    const f = $("ota-file").files[0];
+    if (!f) { toast("choose a firmware .bin first", false); return; }
+    uploadFirmware(f, $("ota-force").checked);
+  };
+
+  // Not a data-cmd button: rebooting a pending image is how a rollback happens,
+  // and that deserves a question rather than a click.
+  $("btn-reboot").onclick = () => {
+    if (state && state.sys && state.sys.ota_pending &&
+        !window.confirm("This image has not confirmed itself yet. " +
+                        "Rebooting now will roll the display back to the previous " +
+                        "firmware. Reboot anyway?")) {
+      return;
+    }
+    send("system.reboot");
+  };
 
   $("btn-ring-upload").onclick = () => {
     const f = $("ring-file").files[0];
