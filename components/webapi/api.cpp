@@ -79,6 +79,10 @@ std::string build_state(Context& ctx, int64_t utc_ms) {
     // state document travel the same socket and the same switch.
     w.kv("e", "state");
     w.kv("t", utc_ms);
+    // The DEVICE's zone, not the viewer's.  A page can correct the epoch from
+    // `t` alone, but it cannot guess the offset, and the presentation terminal
+    // renders a wall clock.
+    w.kv("tz_offset_s", ctx.modes.tz_offset_s(utc_ms / 1000));
     w.kv("mode", mode_name(ctx.modes.mode()));
 
     // Countdown: a deadline, so the UI derives remaining itself too, but we
@@ -211,6 +215,7 @@ std::string build_state(Context& ctx, int64_t utc_ms) {
         .kv("accel", mp.accel)
         .kv("hall_tol", mp.hall_tol)
         .kv("en_idle_off", mp.en_idle_off)
+        .kv("hall_active_low", mp.hall_active_low)
         .kv("failure_loop_s", cfg.failure_loop_s)
         .kv("ntp", ctx.modes.ntp());
     write_reveal(w, ring, cfg);
@@ -454,6 +459,16 @@ std::string do_motion_params(Context& ctx, const json::Value& p) {
     if (const json::Value* en = member(p, "en_idle_off")) {
         if (en->type != json::Type::Bool) return err_result("en_idle_off must be true or false");
         mp.en_idle_off = en->boolean;
+    }
+    // Same shape as en_idle_off: loaded from NVS, persisted by `motion.save`,
+    // and settable from nowhere.  Spec 2 tags the A3144's polarity `VERIFY`, so
+    // the one value that a bench measurement is most likely to overturn could
+    // only be changed by recompiling.
+    if (const json::Value* hl = member(p, "hall_active_low")) {
+        if (hl->type != json::Type::Bool) {
+            return err_result("hall_active_low must be true or false");
+        }
+        mp.hall_active_low = hl->boolean;
     }
     ctx.motion.set_params(mp);
     // Keep the modes layer's copy in step.  alarm_flaps_s was seeded from

@@ -161,12 +161,29 @@
      quarter of a flap by default (41&nbsp;µsteps). Set it after measuring edge
      repeatability over twenty revolutions (BRINGUP step 6), not before.</p>
   <div class="row">
+    <label><input id="set-halllow" type="checkbox"> Hall is active LOW
+      (<code>motion.hall_active_low</code>)</label>
+    <span class="hint">True for an A3144 pulled up to 3V3 &mdash; the output
+      goes low when the magnet is present. Spec &sect;2 tags this
+      <code>VERIFY</code>: check it with <code>hall</code> on the console and a
+      magnet before trusting a homing pass. Saved with the calibration.</span>
+  </div>
+  <div class="row">
     <label><input id="set-enidle" type="checkbox"> release EN at rest
       (<code>motion.en_idle_off</code>)</label>
     <span class="hint">Off until the bench test says a loaded drum does not creep
       with the drivers released (spec &sect;5.7). EN is ganged, so this is all
       five or none.</span>
   </div>
+  <div class="row">
+    <button id="btn-en">RELEASE THE MOTORS (EN OFF)</button>
+    <span class="hint" id="en-hint">&mdash;</span>
+  </div>
+  <p class="hint">EN is one pin for all five drivers, so this is never one
+     column. Two columns faulting together, or any fault during the alarm spin,
+     releases it automatically (spec &sect;5.8) &mdash; and nothing puts it back
+     by itself, which is what this button is for. Energizing after an escalation
+     re-homes every column, because the drums have been sitting unpowered.</p>
   <div class="row">
     <button id="btn-motion-save" class="primary">SAVE CALIBRATION AND SPEEDS</button>
     <span class="hint">One write, both things &mdash; the same button as on the
@@ -193,6 +210,22 @@
 
   <h2>System</h2>
   <div class="grid" id="diag-sys"></div>
+
+  <h2>Log and journal</h2>
+  <div class="row">
+    <button id="btn-log">SHOW THE LOG</button>
+    <button id="btn-journal">SHOW THE JOURNAL</button>
+    <button id="btn-tail-clear">CLEAR THE VIEW</button>
+    <span class="hint" id="tail-hint">&mdash;</span>
+  </div>
+  <pre class="card" id="tail" style="max-height:22em;overflow:auto;white-space:pre-wrap"></pre>
+  <p class="hint">The <b>log</b> is the last few kilobytes the firmware printed,
+     in RAM, lost at power-off &mdash; a byte budget rather than a line count,
+     and it says how many lines were evicted so &ldquo;the log starts
+     here&rdquo; is a fact. The <b>journal</b> is permanent and much shorter:
+     countdowns with who set them, faults and recoveries, mode changes, and one
+     line per boot with the reset reason. It survives power loss and is the
+     display's actual history.</p>
 </section>
 
 <!-- ================= SETTINGS ================= -->
@@ -321,7 +354,7 @@
 
   <h2>WiFi</h2>
   <div class="row"><span class="hint" id="wifi-status">—</span></div>
-  <div class="row">
+  <div class="row" data-form="wifi">
     <label for="set-ssid">network</label>
     <input id="set-ssid" style="width:220px" maxlength="32" autocomplete="off"
            autocapitalize="none" spellcheck="false">
@@ -346,15 +379,15 @@
 
   <h2>MQTT and Home Assistant</h2>
   <div class="row"><span class="hint" id="mqtt-status">—</span></div>
-  <div class="row">
+  <div class="row" data-form="mqtt">
     <label><input id="set-mqtt-en" type="checkbox"> enabled</label>
   </div>
-  <div class="row">
+  <div class="row" data-form="mqtt">
     <label for="set-mqtt-uri">broker</label>
     <input id="set-mqtt-uri" style="width:300px" maxlength="127" spellcheck="false"
            placeholder="mqtt://192.168.1.10:1883">
   </div>
-  <div class="row">
+  <div class="row" data-form="mqtt">
     <label for="set-mqtt-user">user</label>
     <input id="set-mqtt-user" style="width:160px" maxlength="127" autocomplete="off"
            spellcheck="false">
@@ -367,7 +400,7 @@
      page, by design, because the state document does not carry it. Everything
      else here shows what is actually stored, so clearing the user box does
      clear the user.</p>
-  <div class="row">
+  <div class="row" data-form="mqtt">
     <label for="set-mqtt-base">base topic</label>
     <input id="set-mqtt-base" style="width:140px" maxlength="127" spellcheck="false"
            placeholder="swan/">

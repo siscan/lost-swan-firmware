@@ -23,7 +23,33 @@ let state = null;      // the last /ws state document
 // Settings render, and any control built later - the reveal pickers, the
 // per-column mode selects - was never in that query and so was never
 // protected at all.  Asking the element is both narrower and complete.
-const editing = (node) => document.activeElement === node;
+// A field is left alone while the user owns it.  Two things count as owning it:
+// the caret being in it, and it belonging to a form the user has started
+// editing but not yet saved.  The second is not a refinement - it is the whole
+// bug: WiFi and MQTT are the only multi-field forms with an explicit SAVE, so
+// typing a network name and TABBING TO THE PASSWORD let the next state document
+// (1 Hz) put the OLD SSID back underneath, and SAVE AND JOIN then re-joined the
+// network it was already on with the new password.  Everything else in Settings
+// applies on `change`, i.e. as the field loses focus, so the caret test covers
+// it.
+const dirtyForms = new Set();
+const formOf = (node) => {
+  const box = node && node.closest ? node.closest("[data-form]") : null;
+  return box ? box.dataset.form : null;
+};
+const editing = (node) => {
+  if (!node) return false;
+  if (document.activeElement === node) return true;
+  const f = formOf(node);
+  return f !== null && dirtyForms.has(f);
+};
+const noteDirty = (e) => {
+  const f = formOf(e.target);
+  if (f !== null) dirtyForms.add(f);
+};
+document.addEventListener("input", noteDirty, true);
+document.addEventListener("change", noteDirty, true);
+const formSaved = (name) => dirtyForms.delete(name);
 // The device's own REHOME_RETRIES, not a copy of it.
 const retryMax = () => (state && state.sys && state.sys.rehome_retries) || 3;
 let wear = null;       // GET /api/wear, refetched when an input to it changes
@@ -240,6 +266,11 @@ function renderDiag(s) {
                  ? au.cues_total + " cues"
                  : au.cues_present + "/" + au.cues_total + " cues — ONE IS MISSING") +
               " · vol " + au.volume + (au.mute ? " · MUTED" : "")],
+    // EN, which escalation can drop for all five (spec 5.8) and which had no
+    // surface at all: the display went still and every page said "idle".
+    ["drivers", s.sys.drivers_enabled === false
+                    ? "DE-ENERGIZED — nothing can move until they are re-enabled"
+                    : "energized"],
     ["step timer", s.sys.step_isr_alive === false
                      ? "STOPPED — the columns cannot move"
                      : (s.sys.step_isr_stalls ? "ok (" + s.sys.step_isr_stalls + " stalls since boot)"
@@ -429,8 +460,10 @@ function renderSettings(s) {
       ? ""
       : "REVEAL is five blanks until the reveal glyphs are chosen, below in Settings.";
   if (!editing($("set-enidle"))) $("set-enidle").checked = !!s.cfg.en_idle_off;
+  if (!editing($("set-halllow"))) $("set-halllow").checked = !!s.cfg.hall_active_low;
 
   renderColumnModes(s);
+  renderEnable(s);
   setChk("set-maint", !!(s.motion && s.motion.maintenance));
   $("maint-hint").textContent = s.motion && s.motion.maintenance
       ? "suspended — nothing is scheduled and nothing re-homes"
@@ -540,6 +573,22 @@ function renderNetwork(s) {
 
 // One row per column: what it is, and what it is doing.  Built once and then
 // only updated, so a <select> the pointer is inside is never rebuilt underneath.
+// EN is ganged: one pin, five drivers.  Escalation drops it and nothing else
+// re-asserts it, so the display needs both a statement that it is down and a
+// way to put it back.
+function renderEnable(s) {
+  const on = !(s.sys && s.sys.drivers_enabled === false);
+  const btn = $("btn-en");
+  if (btn) btn.textContent = on ? "RELEASE THE MOTORS (EN OFF)" : "ENERGIZE THE MOTORS (EN ON)";
+  const hint = $("en-hint");
+  if (hint) {
+    hint.textContent = on
+        ? "energized — all five, always: the pin is ganged"
+        : "DE-ENERGIZED — nothing moves. Energizing re-homes all five if a fault dropped them.";
+    hint.className = on ? "hint" : "hint bad";
+  }
+}
+
 function renderColumnModes(s) {
   const host = $("col-modes");
   const N_COLS = s.cols.length;
@@ -782,6 +831,12 @@ function wire() {
     };
   });
   $("set-enidle").onchange = () => send("motion.params", { en_idle_off: $("set-enidle").checked });
+  $("set-halllow").onchange =
+      () => send("motion.params", { hall_active_low: $("set-halllow").checked });
+  $("btn-en").onclick = () => {
+    const on = state && state.sys && state.sys.drivers_enabled === false;
+    send("motion.enable", on);
+  };
   $("btn-motion-save").onclick = () => send("motion.save");
 
   // Settings apply live too; SAVE persists.
@@ -806,6 +861,9 @@ function wire() {
   $("set-zero").onchange = () => pushConfig({ zero_hold_s: +$("set-zero").value });
   $("set-spin").onchange = () => pushConfig({ spin_s: +$("set-spin").value });
   $("set-ftimeout").onchange = () => pushConfig({ failure_timeout_s: +$("set-ftimeout").value });
+  // Wired late: the box was rendered from state and read back by nothing, so
+  // every value typed into it was silently discarded on the next document.
+  $("set-floop").onchange = () => pushConfig({ failure_loop_s: +$("set-floop").value });
   $("set-cdland").onchange = () => pushConfig({ cd_land_on_tick: $("set-cdland").checked });
   $("set-clockland").onchange = () => pushConfig({ clock_land_on_tick: $("set-clockland").checked });
   $("set-dwell").onchange = () => pushConfig({ msg_dwell_s: +$("set-dwell").value });
@@ -847,6 +905,7 @@ function wire() {
     if (!ssid) { toast("enter a network name", false); return; }
     send("wifi.credentials", { ssid, pass: $("set-wpass").value });
     $("set-wpass").value = "";
+    formSaved("wifi");
     toast("saved; joining " + ssid, true);
   };
 
@@ -875,6 +934,7 @@ function wire() {
     if ($("set-mqtt-pass").value !== "") payload.pass = $("set-mqtt-pass").value;
     bus.send("mqtt.config", payload);
     $("set-mqtt-pass").value = "";
+    formSaved("mqtt");
     toast($("set-mqtt-en").checked ? "MQTT settings saved" : "MQTT off; discovery retracted", true);
   };
 
@@ -886,6 +946,28 @@ function wire() {
 
   // Not a data-cmd button: rebooting a pending image is how a rollback happens,
   // and that deserves a question rather than a click.
+  // The log and the journal (spec 12).  Fetched on demand, never streamed:
+  // both are kilobytes and neither changes fast enough to be worth the radio.
+  const showTail = (path, label) => {
+    $("tail-hint").textContent = "loading…";
+    fetch(path)
+        .then((r) => (r.ok ? r.text() : Promise.reject(new Error(r.status))))
+        .then((txt) => {
+          $("tail").textContent = txt || "(empty)";
+          $("tail").scrollTop = $("tail").scrollHeight;
+          const lines = txt ? txt.trimEnd().split("
+").length : 0;
+          $("tail-hint").textContent = label + ": " + lines + " lines, " + txt.length + " bytes";
+        })
+        .catch((e) => { $("tail-hint").textContent = label + " failed: " + e.message; });
+  };
+  $("btn-log").onclick = () => showTail("/api/log", "log");
+  $("btn-journal").onclick = () => showTail("/api/journal", "journal");
+  $("btn-tail-clear").onclick = () => {
+    $("tail").textContent = "";
+    $("tail-hint").textContent = "—";
+  };
+
   $("btn-reboot").onclick = () => {
     if (state && state.sys && state.sys.ota_pending &&
         !window.confirm("This image has not confirmed itself yet. " +

@@ -265,6 +265,7 @@ function mmss(total) {
 // pushes rather than stepping once a second when a packet happens to arrive.
 let target = 0;      // epoch seconds, 0 when not running
 let skewMs = 0;      // device clock minus ours
+let tzOffsetS = 0;   // the DEVICE's UTC offset, not this browser's
 let phase = "idle";
 let secondsLive = 240;
 let mode = "clock";        // what the display is actually doing
@@ -273,13 +274,23 @@ let timeValid = false;     // deadline commands are refused until SNTP has synce
 let retryMax = 3;          // the device's REHOME_RETRIES, published on the wire
 let h24 = false;
 
+// The device's wall clock as a Date whose UTC fields ARE its local fields -
+// the only way to render another machine's zone without shipping a tz database
+// to the browser.  tzOffsetS comes from the state document.
+function deviceNow() {
+  return new Date(Date.now() + skewMs + tzOffsetS * 1000);
+}
+
 // The device's own clock, skew-corrected, to the minute.  Deliberately NOT the
 // columns' reading: the drums are floored to clock.granularity_min to save
 // wear, and a screen has nothing to wear out.
 function realClockFace() {
-  const d = new Date(Date.now() + skewMs);
-  const h = d.getHours();
-  const mm = String(d.getMinutes()).padStart(2, "0");
+  // The DEVICE's zone, off the wire.  getHours() would use the browser's, and
+  // a kiosk Pi is UTC out of the box - so the CRT read eight hours from the
+  // drums beside it, with both of them correct about the instant.
+  const d = deviceNow();
+  const h = d.getUTCHours();
+  const mm = String(d.getUTCMinutes()).padStart(2, "0");
   if (h24) return String(h).padStart(2, "0") + ":" + mm;
   const h12 = h % 12 === 0 ? 12 : h % 12;
   return (h < 12 ? "AM " : "PM ") + h12 + ":" + mm;
@@ -291,8 +302,10 @@ function audioSilent() {
   if (cueState.cues_present !== cueState.cues_total) return true;
   const qs = cueState.quiet_start_min, qe = cueState.quiet_end_min;
   if (qs === qe) return false;                       // quiet hours off
-  const d = new Date(Date.now() + skewMs);
-  const now = d.getHours() * 60 + d.getMinutes();
+  // Quiet hours are the DEVICE's hours - the firmware evaluates them in its own
+  // zone, so a viewer in another one must not draw a different conclusion.
+  const d = deviceNow();
+  const now = d.getUTCHours() * 60 + d.getUTCMinutes();
   return qs < qe ? (now >= qs && now < qe) : (now >= qs || now < qe);
 }
 
@@ -321,6 +334,7 @@ function tickReadout() {
 
 function onState(s) {
   skewMs = s.t - Date.now();
+  if (typeof s.tz_offset_s === "number") tzOffsetS = s.tz_offset_s;
   target = s.cd.target;
   phase = s.cd.phase;
   secondsLive = s.cd.seconds_live_s;
