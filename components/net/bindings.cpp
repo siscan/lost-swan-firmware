@@ -1,3 +1,5 @@
+#include <mutex>
+
 #include "net/bindings.h"
 
 #include "net/mqtt.h"
@@ -132,9 +134,27 @@ api::SysInfo IdfSysInfo::get() {
     return s;
 }
 
+// The config is read ONCE and cached.  build_state calls this on the modes
+// task at up to 20 Hz, and load_mqtt is an nvs_open plus five string reads,
+// each taking the global NVS lock - which the same lock an OTA, a `save` and
+// the countdown's one-write-per-set all need.  Nothing here changes except
+// when mqtt_configure changes it, so asking NVS twenty times a second was pure
+// cost on the one task that must not be late.
+std::mutex g_mqtt_cache_mu;
+config::MqttConfig g_mqtt_cache;
+bool g_mqtt_cache_valid = false;
+
+config::MqttConfig mqtt_cached() {
+    const std::lock_guard<std::mutex> lock(g_mqtt_cache_mu);
+    if (!g_mqtt_cache_valid) {
+        config::load_mqtt(g_mqtt_cache);
+        g_mqtt_cache_valid = true;
+    }
+    return g_mqtt_cache;
+}
+
 api::MqttStatus IdfMqttAdmin::mqtt_status() {
-    config::MqttConfig c;
-    config::load_mqtt(c);
+    const config::MqttConfig c = mqtt_cached();
     api::MqttStatus s;
     s.enabled = c.enabled;
     s.connected = mqtt_connected();
@@ -147,8 +167,7 @@ api::MqttStatus IdfMqttAdmin::mqtt_status() {
 bool IdfMqttAdmin::mqtt_configure(bool enabled, std::string_view uri, std::string_view user,
                                   std::string_view pass, std::string_view base,
                                   std::string_view ha_prefix) {
-    config::MqttConfig c;
-    config::load_mqtt(c);
+    config::MqttConfig c = mqtt_cached();
     c.enabled = enabled;
     c.uri = std::string(uri);
     c.user = std::string(user);
@@ -158,6 +177,11 @@ bool IdfMqttAdmin::mqtt_configure(bool enabled, std::string_view uri, std::strin
     if (!base.empty()) c.base = std::string(base);
     if (!ha_prefix.empty()) c.ha_prefix = std::string(ha_prefix);
     if (config::save_mqtt(c) != ESP_OK) return false;
+    {
+        const std::lock_guard<std::mutex> lock(g_mqtt_cache_mu);
+        g_mqtt_cache = c;
+        g_mqtt_cache_valid = true;
+    }
     // Staged, never applied here: stopping the client waits with portMAX_DELAY
     // on a task that may be parked for seconds, and this runs on the single
     // httpd task.
@@ -227,9 +251,9 @@ bool IdfWifiAdmin::stop_portal() { return provision_stop() == ESP_OK; }
 bool IdfWifiAdmin::portal_running() { return provisioning(); }
 std::string IdfWifiAdmin::portal_ssid() { return provision_ssid(); }
 bool IdfWifiAdmin::have_credentials() {
-    config::WifiConfig c;
-    config::load_wifi(c);
-    return c.configured();
+    // From the live WiFi state rather than from NVS: build_state asks at up to
+    // 20 Hz on the modes task, and this is the same answer.
+    return !status().ssid.empty();
 }
 
 bool IdfSystemOps::reboot() {
