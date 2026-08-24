@@ -222,7 +222,8 @@ The UI is vanilla HTML/CSS/JS in `web/` — no framework, no web fonts, every
 byte ships in LittleFS. Pages: **Terminal** (the Numbers + EXECUTE, live
 mirror, remaining), **Modes**, **Calibrate**, **Diagnostics**, **Settings**
 (TZ, granularity, seconds mode, the reveal picker, ring upload) and
-**Update** (a real OTA upload with rollback, since Phase 4).
+**Update** (the running image and which slot it is in, an OTA upload with a
+progress bar, and CONFIRM / ROLL BACK while an image is still pending).
 
 Every control sends a §10.2a command; there is no second control path. What
 the page can do, an MQTT publish will be able to do, and the firmware
@@ -463,9 +464,20 @@ testing the speaker should not be met with silence that looks like a broken amp.
 
 ### Updating over the air (spec 10.4)
 
+From the Update page, or:
+
+```bash
+python tools/ota_upload.py lost.local build/lost_swan_firmware.bin
+```
+
 ```bash
 curl --data-binary @build/lost_swan_firmware.bin http://lost.local/api/ota
 ```
+
+`ota_upload.py` streams the image with a progress line, prints the verdict on a
+refusal, and then waits for the display to come back and reports which slot it
+booted into and whether it has confirmed itself. Measured: 1,513,376 bytes in
+~13.5 s over WiFi, both directions.
 
 Streamed in 4 KB chunks, motion held for the duration, and the image is
 **identified before a byte is written**. Two refusals nothing else can make,

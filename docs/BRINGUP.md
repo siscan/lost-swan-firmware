@@ -648,6 +648,24 @@ test can tell which fired without looking at the console.
 - [ ] Run a countdown to zero and watch the choreography: cue at 4:00, at 1:00,
       the alarm at zero, `ZERO_HOLD_S` then the spin, then the reveal frame.
 
+### 25b. The Update page (spec §10.2, §10.4) — **DONE 2026-08-24**
+
+- [x] The page reports the running image, which slot it is in, and whether it
+      has confirmed itself — all three live from the state document.
+- [x] Upload a **bogus** file from the page: refused with the verdict and the
+      reason on the page (`refused (bad_image): not an ESP-IDF application
+      image`), the button re-enables, nothing reboots.
+- [x] Upload a real image: **1,513,376 bytes in ~13.5 s**, `ota_0 → ota_1` and
+      back again, each time returning to a display that answers.
+- [x] The pending window is **~12 s from boot** (the watcher confirms as soon as
+      the invariants are met), of which ~8 s is after the board starts answering
+      HTTP.  Long enough to see, short enough that catching it in a browser
+      takes deliberate timing — worth knowing before you go looking for it.
+- [ ] **With a wrong-board image**: the refusal must name it, and `?force=1`
+      must be required.  Then flash back over USB.
+- [ ] Press REBOOT *while an image is pending* and confirm the page asks first —
+      that reboot is what triggers the rollback.
+
 ### 26. Provisioning (spec §10.1)
 
 - [ ] `wifi clear` and reboot → SoftAP `LOST-Swan-xxxx` appears, **open**.
@@ -669,6 +687,11 @@ test can tell which fired without looking at the console.
       router rebooted is worse than the outage.
 - [ ] `wifi.provision` on demand brings the portal up with credentials present —
       that is the recovery path when the SSID has changed.
+- [x] **On a 5 GHz network**, `wifi.provision` used to PANIC the board (the AP
+      channel was hard-coded to 1 and one radio cannot straddle two channels).
+      Fixed 2026-08-24; the log now reads *"portal follows the station onto
+      channel 153"*.  Re-check this on whatever network the display ends up on —
+      a 2.4 GHz-only router exercises the other branch.
 
 ## Notes
 

@@ -2147,3 +2147,101 @@ reason, so nothing gets re-litigated.
     that could be regression-tested was, each new test was checked by reverting
     its fix, and the five criticals plus the OTA bounds were re-verified on the
     board rather than in the suite.
+
+- 2026-08-24 — **Audit of every web UI page against the command set** (Nico:
+  "Settings' NETWORK and AUDIO are the example I found, but I only looked
+  there").  Seven pages against three questions: is every §10.2a command and
+  §11 key reachable from the browser, does every control work end to end on the
+  board, and does any copy describe shipped behaviour as future.  55 candidates,
+  93 verdicts, 1 refuted.  Two findings contradicted the live sweep and were
+  settled by A/B on hardware — the sweep had checked that commands *replied*
+  ok, which is exactly the blind spot:
+  - **The Calibrate page's ±1/±10 nudge never moved the column.**  Same column,
+    same delta: the web path held `IDLE` for four seconds while the CLI's
+    identical command went `MOVING`.  `cmd_cal` ended with
+    `motion::go(col, a.index)` and a comment saying why; the dispatcher called
+    `adjust_cal` and stopped.  On the one page whose purpose is *nudge until the
+    blank card hangs flat*.  The re-seek now lives in `motion::adjust_cal`, so
+    both paths get it and they cannot drift apart again.
+  - **In maintenance, START WALK reported walking and nothing walked.**
+    `tick_locked` returns before the ramp tick, so `motion.ramp` returned ok,
+    `cal.ramp_active` stayed true, and the column sat at one index for five
+    seconds against a one-second dwell — in the mode you enter *in order to*
+    work on a drum (§5.9: "a suspect column is driven by hand from the Calibrate
+    page").
+  - Worse, and found by the same sweep: `message.set`, `preset.set` and
+    `display.frame` call `issue()` **outside** that gate, so they drove the
+    drums while somebody had their hands in the mechanism — or, after a boot in
+    maintenance (EN released), pulsed STEP into de-energised drivers and left
+    the axis believing a position it never reached.
+  - **The maintenance gate is therefore explicit and in one place**, split the
+    way §5.9 splits it: display-driving commands are **refused** with a reason,
+    manual driving (`motion.cal`, `motion.ramp`, `motion.spin`, `motion.rehome`)
+    **works**, and the deadline commands **succeed with a note**, because the
+    deadline is absolute and genuinely arms while nothing is displayed.
+  - **`wifi.provision` panicked the board on any 5 GHz network.**  Hardware,
+    twice, `reset=panic`: `provision_start` hard-coded `cfg.ap.channel = 1` and
+    wrapped the call in `ESP_ERROR_CHECK`, and one radio means the AP must use
+    the station's channel — *"channel number 1 is out of supported 5G channel
+    range of AP"*.  The command whose whole job is to rescue a display that
+    cannot reach the network, reachable from MQTT by anyone who can publish.
+    The AP follows the station now (verified on channel 153).
+  - **A partial `mqtt.config` wiped the broker credentials.**  Verified:
+    `user=swanuser` became `(none)` after a payload that only changed the base
+    topic.  The state document deliberately never exposes the password, so a
+    Settings form cannot round-trip it — the firmware has to hold it.  Absent
+    now means keep; present-and-empty still clears.  `{"enabled":false}` also
+    no longer demands the URI it is switching off.
+  - **Browser-set deadlines were `set_by:"unknown"`.**  `Origin::Ui` existed and
+    was passed nowhere, so §7.3's "whoever set it last wins" had no way for a
+    peer to tell its own decision from somebody else's.
+  - **One failed `GET /api/ring` left the whole panel inert** — `wire()` and
+    `bus.connect()` were both chained off it, so a route served by the single
+    httpd task an OTA occupies for up to 120 s could leave dead nav tabs and no
+    socket, behind a toast that cleared itself after 2.6 s.
+  - Refuted by measurement, and recorded so it is not re-raised: the four speed
+    sliders firing a command per `input` event are **fine** — 291 frames sent
+    back to back over `/ws` produced 291 replies, zero dropped, board
+    responsive.
+
+- 2026-08-24 — **Two class sweeps, from the same audit** (Nico: "fix the class,
+  not just the instances").
+  - **No abort on a path an outsider can reach.**  `provision.cpp` was the same
+    class the Phase 4/5 review cleared out of `nvs_set_str`, so the whole tree
+    was swept for terminating calls reachable from a network input or a stored
+    value.  The one that mattered: **`wifi.credentials` could boot-loop the
+    board permanently** — `esp_wifi_set_config` documents `ESP_ERR_WIFI_PASSWORD`
+    and `ESP_ERR_WIFI_STATE`, and `save_wifi` commits *before* the radio is
+    touched, so the abort rebooted into `net::init`, which called `start_sta`
+    with the same stored credentials and aborted again.  Also live: `start_sta`
+    forced `WIFI_MODE_STA`, which takes the access point down — called *from*
+    the portal, over that access point, undoing the Phase 4/5 lockout fix eight
+    lines from the comment describing it.  Converted: 27 unchecked `nvs_set_*`
+    behind `clock.format`, the countdown settings, `motion.cal` save,
+    `mqtt.config`, `audio.volume` and `motion.column`; `config::init` and
+    `erase_all`; the config loads in `app_main` (which now fall back to the spec
+    defaults every one of those structs already carries); the WiFi retry timer;
+    and two allocation aborts, which are the same thing with exceptions off —
+    `read_body` allocated the whole announced body unguarded on every route but
+    audio, and a `/ws` frame shared the ring upload's 24 KB cap when the largest
+    legitimate command is ~200 bytes (now 2 KB).
+  - **A reply must reflect execution, not receipt.**  `ok` meant "the arguments
+    parsed and a request reached the mailbox" everywhere; `MOTION_SYNC.md` says
+    so by design and the contract is right — the vocabulary was wrong.  Now, on
+    top of the maintenance gate: a **disabled** column refuses `spin` (it used
+    to run the DDA for its full duration against a drum nobody drives),
+    `rehome`, and a calibration walk; a re-home-all with *every* column disabled
+    reports that instead of returning ok having posted nothing; and the three
+    refusals that shared the word "bad column" now say which one it was.  Host
+    tests assert on **recorded axis effect** — `port.gos`, a recorded re-seek —
+    rather than on the return code, and each new test was checked by reverting
+    its fix (`test_modes:788`, `test_api:1076` both fail without it).
+
+- 2026-08-24 — **§12's log ring buffer is deferred to Phase 6, deliberately**
+  (Nico).  §12 promises "log ring buffer (last ~200 lines) readable from the
+  UI"; it exists nowhere — not in the firmware, not on Diagnostics.  Every other
+  gap the audit found is wiring something that already exists; this one is a new
+  subsystem (an `esp_log_set_vprintf` hook, a lock-free ring in DRAM, a route,
+  and a heap budget on a device with ~90 KB free), so it goes with the Phase 6
+  hardening work rather than into the UI pass.  Recorded here so it does not
+  quietly vanish: **it is the one item on the audit's list that is not done.**

@@ -139,6 +139,7 @@ web/sim/                       browser simulator - replays recorded real-logic t
 audio/                         WAV assets (Nico-supplied; placeholders generated)
 tools/ringgen.py               both rings → ring_table.h + data/ring.json
 tools/mqtt_broker.py           stdlib MQTT 3.1.1 broker, bench fixture only
+tools/ota_upload.py            push an image to a running display (spec 10.4)
 tools/gen_audio.py             synthesized placeholder cues (spec 9)
 tools/webpack.py               gzips web/ + ring.json into the LittleFS image
 tools/devserver/               host dev server: real /ws, real ModeManager, sim axes
