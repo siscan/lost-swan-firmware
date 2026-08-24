@@ -2060,3 +2060,90 @@ reason, so nothing gets re-litigated.
     synthesized placeholders and say so.
   - `countdown.failure_loop_s` is now a real config key (`cd_loop_s`); it was
     named in §11 and never implemented.
+
+- 2026-08-23 — **Adversarial review of Phases 4 and 5 together** (as Nico
+  asked: once, at the end, not across the work).  Seven finder lenses over the
+  MQTT transport, the OTA path, provisioning, audio, the dispatcher and the
+  task/lock boundaries, every finding put to three independent refuters.
+  **32 survived verification, 5 of them CRITICAL**; all are fixed and the
+  fixes are on hardware.  What the criticals were:
+  - **Every audio cue was playing 84 bytes.**  `play_file` reads a 128-byte
+    header snippet and streams the rest — but handed that snippet to
+    `wav_parse` as the whole file, so the clamp that stops a lying header
+    reading past the end truncated `data_bytes` to 128 − 44.  Two milliseconds
+    of every cue.  The clamp is right; it has to be against the *file's*
+    length, so `wav_parse` takes `total_len` and the player stats the file.
+    Nothing on the bench could have shown this — no amplifier is wired, so
+    "`audio.play` returned ok" was the whole of the verification.
+  - **The cue sink deadlocked the modes task on the first countdown cue.**
+    ModeManager calls `cues_.on_cue()` from inside its own locked tick; the
+    sink then asked ModeManager for the local time to evaluate quiet hours,
+    taking a non-recursive mutex the same thread already held.  With the
+    watchdog now set to panic that is not a hang but a **reboot loop, on a
+    display running a countdown**, at 4:00 remaining.  It is exactly the rule
+    already written on `Context::dispatch_mu`, broken one file away from where
+    it is documented.  The local minute-of-day is a plain atomic now, refreshed
+    by the modes task before each tick.
+  - **Unbounded network strings reached `ESP_ERROR_CHECK(nvs_set_str)`.**  One
+    POST with a long `mqtt.pass` aborted the board; worse, filling the 24 KB
+    NVS partition makes the *next* boot see `ESP_ERR_NVS_NO_FREE_PAGES` and
+    **erase everything** — calibration, column modes and the deadline with it.
+    A remote panic that also destroys the settings.  Bounded at the API with a
+    message a human can act on (32/63 for an SSID and a WPA passphrase, their
+    protocol limits) and again in `config::`, which returns an error instead of
+    aborting.
+  - **The captive portal had no page.**  Provisioning shipped with a DNS
+    hijack, a probe responder and an access point, and the redirect pointed at
+    the control panel — which fetches `/api/ring` and opens a WebSocket, i.e. a
+    phone on an isolated AP staring at a half-rendered page.  `web/portal.html`
+    is the page, and a *page* request while the portal is up gets it.
+  - **A mistyped password locked the user out.**  `set_credentials` called
+    `esp_wifi_stop()`, which takes the access point down with it — and it is
+    called *from* the portal, over that access point.  The phone lost the
+    network before the reply arrived, and a wrong password left the display
+    unprovisioned with no portal and no way back short of a serial cable.  The
+    AP now stays up until the STA actually joins, which is the only evidence
+    the credentials were right.
+  - **The OTA upload could be held open indefinitely.**  The 120 s deadline was
+    consulted only inside the recv-timeout branch, so a client dribbling a byte
+    every 1.5 s never timed out — with the motion hold taken and MQTT stopped,
+    which froze the clock, the cues and the web server together.  Three bounds
+    now, answering different questions: 120 s total, a 10 s stall bound that
+    progress resets, and a throughput floor (under 30 KB in the first 30 s is
+    not going to finish).  Measured: a trickle is cut at ~30 s, a real 1.5 MB
+    upload still completes in 10.7 s.  A failed upload also left MQTT stopped
+    for ever and released the motion hold with epoch 0 — six exits, three of
+    which forgot something, now one `release()`.
+  - **The OTA confirm watcher started at the end of `app_main`**, the one place
+    it is no use: an image that hangs in `motion::init`, the LittleFS mount or
+    WiFi never reaches it.  It is the first thing `app_main` does now, with
+    `ota_bind()` supplying the Context later.
+  - **An erased NVS no longer forces a rollback.**  Wrong twice over: the erase
+    has already happened, so rolling back cannot undo it, and it makes an
+    unrelated failure look like a bad update.  Same reasoning as "a broken Hall
+    is not a broken image".  It confirms and says so loudly.
+  - The rest, briefly: the two MQTT task stacks were **swapped**, so the task
+    that runs `handle_command` got 4096 and esp-mqtt's frame parser got 8192;
+    `mqtt_go_offline` read `g_client` unsynchronised while the transport task
+    could be destroying it, and burned a fixed 500 ms holding `dispatch_mu` for
+    something `esp_mqtt_client_stop` already guarantees; the HA "Message" text
+    entity had no `value_template`, so HA took the whole ~1.5 KB state document
+    as the value and logged a rejected state on every push; `read_body` applied
+    the ring's 24 KB cap to *every* route, which made an audio cue over 24 KB
+    unuploadable — `system_failure`, the one cue that matters most, is 30,912
+    bytes as a *placeholder beep*, and any real recording will be several times
+    that, so "swappable without a reflash" was false for the files worth
+    swapping (the fix commit says "three of the five placeholders are bigger
+    than 24 KB"; that is wrong — it is one of five, measured after the fact,
+    and the limit is still the defect);
+    esp_littlefs refuses to rename over an **open** fd and the player holds one
+    for the length of a cue; `provision_stop()` only left AP mode from APSTA,
+    so a portal started AP-only — the unprovisioned boot it exists for — left
+    an open access point beaconing for ever; and `build_state` called
+    `load_mqtt` at 20 Hz on the modes task, an `nvs_open` plus five string
+    reads taking the global NVS lock each time.
+  - Method note, kept from last round and followed: the review ran **after**
+    the work, not across it, so no verifier read a moving target.  Every fix
+    that could be regression-tested was, each new test was checked by reverting
+    its fix, and the five criticals plus the OTA bounds were re-verified on the
+    board rather than in the suite.

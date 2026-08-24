@@ -635,9 +635,16 @@ test can tell which fired without looking at the console.
 - [ ] **With the amp wired**: check the gain curve is usable across the whole
       slider (it is perceptual, not linear), that the MAX98357A does not hiss
       between cues, and that `system_failure` at full volume does not clip.
+- [ ] **Time each cue against a watch.**  Not a formality: until the Phase 4/5
+      review every cue played **84 bytes** — about two milliseconds — and
+      `audio play` still returned ok, `audio status` still listed five files,
+      and with no amplifier wired there was nothing to hear.  A cue that is
+      present, valid and silent looks exactly like a working one from the
+      console.  `audio status` now prints the duration; check it matches.
 - [ ] Replace a cue from Settings → Audio and confirm it takes effect with **no
       reflash**. A truncated or non-PCM upload must leave the previous cue
-      playable.
+      playable.  Do it once **while that cue is playing** — LittleFS will not
+      rename over an open fd, so the upload has to stop the player first.
 - [ ] Run a countdown to zero and watch the choreography: cue at 4:00, at 1:00,
       the alarm at zero, `ZERO_HOLD_S` then the spin, then the reveal frame.
 
@@ -647,7 +654,15 @@ test can tell which fired without looking at the console.
 - [ ] A phone joining should pop the sign-in sheet by itself; if it does not,
       `http://192.168.4.1/` must work. Try iOS, Android and Windows — each
       probes a different URL and wants a different answer.
-- [ ] Enter credentials → saved, reboot, joins.
+- [ ] The page that appears must be the **setup page**, not the control panel.
+      The control panel on an isolated AP hangs on `/api/ring` and a WebSocket.
+- [ ] Enter credentials → saved, joins **without a reboot**, and the AP goes
+      down only once the STA has an IP.
+- [ ] **Mistype the password on purpose.**  The AP must stay up, the page must
+      come back with the form after ~45 s, and a second attempt must work.  This
+      is the path that locked the user out until the Phase 4/5 review: saving
+      credentials took the access point down with it, over the very access point
+      the phone was using.
 - [ ] **The case that matters:** with credentials present, take the router down
       for ten minutes. The display must stay a clock, keep retrying, and must
       **NOT** enter AP mode. A wall display dropping off the LAN because a

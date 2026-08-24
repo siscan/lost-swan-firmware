@@ -222,7 +222,7 @@ The UI is vanilla HTML/CSS/JS in `web/` — no framework, no web fonts, every
 byte ships in LittleFS. Pages: **Terminal** (the Numbers + EXECUTE, live
 mirror, remaining), **Modes**, **Calibrate**, **Diagnostics**, **Settings**
 (TZ, granularity, seconds mode, the reveal picker, ring upload) and
-**Update** (a stub until OTA lands in Phase 4).
+**Update** (a real OTA upload with rollback, since Phase 4).
 
 Every control sends a §10.2a command; there is no second control path. What
 the page can do, an MQTT publish will be able to do, and the firmware
@@ -439,9 +439,15 @@ Settings → Audio and it lands in the same place under the same name, with **no
 reflash** — the same validate-then-rename path the ring table uses, so a
 truncated or non-PCM upload leaves the previous cue playable.
 
-16-bit mono PCM, 8–32 kHz (spec 9 says 22050, or 16000). A header that announces
-more data than the file holds is clamped to the file: streaming the announced
-length would play whatever follows it in the filesystem.
+16-bit mono PCM, 8–32 kHz (spec 9 says 22050, or 16000), up to **192 KB** per
+cue — the placeholders run 2–31 KB, and a real recording will want the room. A header that announces more data than the file holds is clamped to the
+file: streaming the announced length would play whatever follows it in the
+filesystem. The clamp is against the *file's* length, not the caller's buffer —
+getting that wrong is what made every cue play 84 bytes until the Phase 4/5
+review found it.
+
+Replacing a cue **while it is playing** works: esp_littlefs will not rename over
+an open fd, so the upload stops the player first.
 
 ```bash
 python tools/gen_audio.py          # regenerate the placeholders
@@ -474,9 +480,18 @@ because every check ESP-IDF performs passes for both:
 Add `?force=1` if you mean it. A moving drum is refused regardless.
 
 Rollback is on. The new image confirms itself against **local invariants an OTA
-could plausibly have broken** — `app_main` completed, NVS loaded *without
-erasing*, ≥200 modes ticks, ≥10 000 motion ticks, httpd up — and never against
-homing, WiFi or SNTP; see spec §10.4 for the three ways "boot + home" bricks.
+could plausibly have broken** — `app_main` completed, config loaded, ≥200 modes
+ticks, ≥10 000 motion ticks, httpd up — and never against homing, WiFi or SNTP;
+see spec §10.4 for the three ways "boot + home" bricks. An **erased NVS** is
+logged very loudly but does **not** roll back: the erase has already happened,
+the old image would boot to the same blank NVS, and discarding a working image
+over it helps nobody.
+
+The upload itself is bounded three ways — 120 s total, a 10 s stall bound that
+progress resets, and a throughput floor (under 30 KB in the first 30 s). Past
+the header the motion hold is taken and MQTT is stopped, so an upload that can
+be held open indefinitely freezes the clock, the cues and the web server
+together.
 `ota status`, `ota confirm` and `ota rollback` are on the console, so nobody is
 stuck watching a 120 s timer.
 
@@ -578,8 +593,8 @@ heap. `ring_store.h` carries the full contract.
 
 ### WiFi
 
-Credentials come from the console this phase; captive-portal provisioning is
-Phase 4.
+Credentials come from the console, or from the captive portal — the same
+`wifi.credentials` command either way.
 
 ```
 wifi <ssid> <password>     # saves to NVS and connects
@@ -590,6 +605,19 @@ wifi clear
 With no credentials the display is a standalone clock (spec §10.0): SNTP never
 syncs, and the centre column shows the WiFi glyph after the 15 s grace period.
 That is specified behaviour, not a fault.
+
+**The captive portal** (spec §10.1) comes up only when there are no
+credentials, or on an explicit `wifi.provision` — **never** because the network
+went away, since a router rebooting must not put a display in a wall into AP
+mode. Join the open `LOST-Swan-xxxx`, and the phone's own sign-in probe brings
+up `web/portal.html`; otherwise browse to `http://192.168.4.1/`. While the
+portal is up a *page* request serves that setup page rather than the control
+panel, which on an isolated AP would sit waiting on `/api/ring` and a
+WebSocket.
+
+The access point **stays up until the STA actually joins**, which is the only
+evidence the credentials were right. A mistyped password gives you the form
+back rather than a display with no portal and no way in.
 
 ## Browser simulator
 
