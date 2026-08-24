@@ -338,9 +338,13 @@ esp_err_t static_handler(httpd_req_t* req) {
 constexpr int64_t BODY_DEADLINE_MS = 10000;
 constexpr int BODY_MAX_TIMEOUTS = 1;
 
-esp_err_t read_body(httpd_req_t* req, std::string& out) {
+// `limit` is per-route.  It used to be the ring table's 24 KB for everything,
+// which silently made an audio cue over 24 KB impossible - and three of the
+// five placeholders that ship are bigger than that, so "replace them without a
+// reflash" was false for the ones worth replacing.
+esp_err_t read_body(httpd_req_t* req, std::string& out, size_t limit = MAX_BODY) {
     const size_t len = req->content_len;
-    if (len > MAX_BODY) return ESP_ERR_INVALID_SIZE;
+    if (len > limit) return ESP_ERR_INVALID_SIZE;
     out.resize(len);
     size_t got = 0;
     const int64_t deadline = now_ms() + BODY_DEADLINE_MS;
@@ -567,18 +571,27 @@ esp_err_t audio_upload_handler(httpd_req_t* req) {
     }
 
     std::string body;
-    const esp_err_t rerr = read_body(req, body);
+    const esp_err_t rerr = read_body(req, body, AUDIO_UPLOAD_MAX);
     if (rerr != ESP_OK) {
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "upload interrupted");
         return ESP_OK;
     }
-    const audio::WavInfo w =
-        audio::wav_parse(reinterpret_cast<const uint8_t*>(body.data()), body.size());
+    // The whole file is in hand, so len == total_len and the clamp still
+    // refuses a header that announces more than it delivers.
+    const audio::WavInfo w = audio::wav_parse(
+        reinterpret_cast<const uint8_t*>(body.data()), body.size(), body.size());
     if (!w.ok) {
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
                             w.err != nullptr ? w.err : "not a usable WAV");
         return ESP_OK;
     }
+
+    // esp_littlefs refuses to rename over a file that is OPEN, and the player
+    // holds the fd for the duration of a cue - which presented as a bare
+    // "rename failed" if you replaced a cue while it was playing.  Stop it
+    // first and give it a moment to close.
+    audio::stop();
+    vTaskDelay(pdMS_TO_TICKS(120));
 
     ::mkdir("/fs/audio", 0777);
     const std::string dest = audio::cue_path(cue);
