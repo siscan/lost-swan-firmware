@@ -42,6 +42,7 @@ struct Status {
     bool playing = false;
     std::string cue;
     bool have[CUE_COUNT] = {};   // which cue files are present and parse
+    uint32_t ms[CUE_COUNT] = {};  // and how long each one actually is
     uint32_t underruns = 0;
 };
 Status status();

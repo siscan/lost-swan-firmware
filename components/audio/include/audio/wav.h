@@ -24,6 +24,16 @@ struct WavInfo {
     uint32_t data_offset = 0;   // where the samples start
     uint32_t data_bytes = 0;
     const char* err = nullptr;
+
+    // Length in milliseconds.  Exposed because "the file is present and parses"
+    // is NOT the same claim as "the cue is the length it should be" - every cue
+    // played 84 bytes for a whole phase while status() cheerfully said present.
+    uint32_t duration_ms() const {
+        const uint32_t frame = static_cast<uint32_t>(channels) * (bits / 8u);
+        if (!ok || frame == 0 || sample_rate == 0) return 0;
+        return static_cast<uint32_t>((static_cast<uint64_t>(data_bytes / frame) * 1000u) /
+                                     sample_rate);
+    }
 };
 
 // Parse the header.  `len` is how many bytes of the file are IN `data`;

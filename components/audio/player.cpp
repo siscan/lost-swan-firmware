@@ -33,6 +33,7 @@ std::mutex g_mu;
 AudioSettings g_settings;
 std::string g_playing;
 bool g_have[CUE_COUNT] = {};
+uint32_t g_ms[CUE_COUNT] = {};
 std::atomic<bool> g_stop_now{false};
 bool g_enabled = false;   // player task only
 std::atomic<uint32_t> g_underruns{0};
@@ -55,6 +56,7 @@ void scan_locked() {
         std::FILE* f = std::fopen(p.c_str(), "rb");
         if (f == nullptr) {
             g_have[i] = false;
+            g_ms[i] = 0;
             continue;
         }
         uint8_t head[128];
@@ -62,7 +64,9 @@ void scan_locked() {
         std::fseek(f, 0, SEEK_END);
         const long total = std::ftell(f);
         std::fclose(f);
-        g_have[i] = wav_parse(head, n, total > 0 ? static_cast<size_t>(total) : n).ok;
+        const WavInfo w = wav_parse(head, n, total > 0 ? static_cast<size_t>(total) : n);
+        g_have[i] = w.ok;
+        g_ms[i] = w.duration_ms();
     }
 }
 
@@ -259,6 +263,7 @@ Status status() {
     s.playing = !g_playing.empty();
     s.cue = g_playing;
     std::memcpy(s.have, g_have, sizeof s.have);
+    std::memcpy(s.ms, g_ms, sizeof s.ms);
     s.underruns = g_underruns.load(std::memory_order_relaxed);
     return s;
 }

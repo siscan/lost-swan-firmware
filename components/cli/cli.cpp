@@ -488,8 +488,18 @@ int cmd_audio(int argc, char** argv) {
                                                          : "on");
         std::printf("playing: %s\n", st.playing ? st.cue.c_str() : "-");
         for (size_t i = 0; i < audio::CUE_COUNT; ++i) {
-            std::printf("  %-16s %s\n", audio::cue_id_name(static_cast<audio::CueId>(i)),
-                        st.have[i] ? "present" : "MISSING");
+            // The duration, not just "present": a cue can parse, report ok and
+            // be two milliseconds long, which is indistinguishable from a
+            // working one until you are standing next to the speaker.
+            if (st.have[i]) {
+                std::printf("  %-16s %lu.%02lu s\n",
+                            audio::cue_id_name(static_cast<audio::CueId>(i)),
+                            static_cast<unsigned long>(st.ms[i] / 1000),
+                            static_cast<unsigned long>((st.ms[i] % 1000) / 10));
+            } else {
+                std::printf("  %-16s MISSING\n",
+                            audio::cue_id_name(static_cast<audio::CueId>(i)));
+            }
         }
         std::printf("underruns: %lu\n", static_cast<unsigned long>(st.underruns));
         return 0;

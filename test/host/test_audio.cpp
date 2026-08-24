@@ -172,6 +172,12 @@ void test_a_header_snippet_is_not_a_truncated_file() {
     CHECK_EQ(whole.data_bytes, 22050);
     // ... and a snippet with no total_len must NOT claim the whole file.
     CHECK_EQ(wav_parse(f.data(), 128).data_bytes, 84u);
+
+    // The duration is what `audio status` prints, and it is the only reading
+    // that distinguishes a working cue from the 84-byte one: both are
+    // "present", both parse, and with no amplifier wired both sound the same.
+    CHECK_EQ(player.duration_ms(), 500u);
+    CHECK(wav_parse(f.data(), 128).duration_ms() < 5u);
 }
 
 void test_a_lying_header_is_clamped() {
