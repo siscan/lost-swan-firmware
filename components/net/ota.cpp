@@ -248,6 +248,14 @@ esp_err_t ota_post(httpd_req_t* req) {
     // de-energizes all five (ganged) and a loaded drum may creep, which is also
     // what lets an aborted upload resume without a re-home.
     g_ctx->modes.cmd_ota_hold(true, 0);
+    // And into the control core, which is where automatic re-homing actually
+    // lives.  The dispatcher refusing motion.rehome does nothing about a
+    // staggered home already posted, or a retry the core schedules by itself.
+    {
+        MotionParams mp = motion::params();
+        mp.ota_hold = true;
+        motion::set_params(mp);
+    }
     // MQTT, the mqtt task and lwIP are all flash-resident and stall on every
     // sector erase; say goodbye properly rather than letting the broker time us
     // out mid-write.
@@ -259,6 +267,11 @@ esp_err_t ota_post(httpd_req_t* req) {
     esp_err_t err = esp_ota_begin(target, OTA_WITH_SEQUENTIAL_WRITES, &handle);
     if (err != ESP_OK) {
         g_ctx->modes.cmd_ota_hold(false, wall_ms());
+        {
+            MotionParams mp = motion::params();
+            mp.ota_hold = false;
+            motion::set_params(mp);
+        }
         mqtt_reconfigure();
         set_error(esp_err_to_name(err));
         return send_json(req, refuse("begin_failed", esp_err_to_name(err)),
@@ -272,6 +285,11 @@ esp_err_t ota_post(httpd_req_t* req) {
     // Assistant until the next reboot.
     auto release = [&]() {
         g_ctx->modes.cmd_ota_hold(false, wall_ms());
+        {
+            MotionParams mp = motion::params();
+            mp.ota_hold = false;
+            motion::set_params(mp);
+        }
         mqtt_reconfigure();   // reconnects if it is configured; a no-op if not
     };
     auto fail = [&](const char* what, const char* status) {

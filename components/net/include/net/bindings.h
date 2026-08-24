@@ -23,6 +23,8 @@ public:
     MotionParams params() override;
     void set_params(const MotionParams& p) override;
     bool home(int col) override;
+    bool set_enabled(bool on) override;
+    bool enabled() override;
     api::MotionAdmin::CalOutcome adjust_cal(int col, int32_t delta) override;
     bool spin_open_loop(int col, int32_t flaps_s, int seconds) override;
     ColumnConfig columns() override;

@@ -30,6 +30,13 @@ struct MotionParams {
     // core needs no separate channel: it suppresses automatic re-homing and
     // opens `go` to a faulted column so a suspect drum can be driven by hand.
     bool maintenance = false;
+    // The OTA hold, visible to the control core for the same reason
+    // maintenance is: it suppresses AUTOMATIC re-homing.  Without it a
+    // staggered home posted just before the upload, or a fault-triggered
+    // retry, started a 7.5 s homing pass in the middle of a flash write - the
+    // one thing "motion is held" (spec 10.4) is supposed to prevent, enforced
+    // only at the dispatcher until now.
+    bool ota_hold = false;
 };
 
 struct AxisInfo {

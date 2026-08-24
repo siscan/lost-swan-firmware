@@ -245,6 +245,7 @@ std::string build_state(Context& ctx, int64_t utc_ms) {
         // hard-coded "3" in four places against a compile-time constant with no
         // wire representation - correct today, silently wrong the day it moves.
         .kv("rehome_retries", REHOME_RETRIES)
+        .kv("drivers_enabled", sys.drivers_enabled)
         .kv("step_isr_alive", sys.step_isr_alive)
         .kv("step_isr_stalls", static_cast<int64_t>(sys.step_isr_stalls))
         .end_obj();
@@ -433,6 +434,16 @@ std::string do_motion_params(Context& ctx, const json::Value& p) {
         mp.en_idle_off = en->boolean;
     }
     ctx.motion.set_params(mp);
+    // Keep the modes layer's copy in step.  alarm_flaps_s was seeded from
+    // MotionParams once at boot and never re-synced, so raising the alarm speed
+    // with the Settings slider left the zero choreography spinning at the old
+    // value - and, worse, left g_fast_spin false on every column, so "a fault
+    // during the alarm spin drops EN" could not fire at all.
+    ModesConfig mc = ctx.modes.config();
+    if (mc.alarm_flaps_s != mp.flaps_s_alarm) {
+        mc.alarm_flaps_s = mp.flaps_s_alarm;
+        ctx.modes.set_config(mc);
+    }
     return ok_result();
 }
 
@@ -682,6 +693,17 @@ std::string dispatch_after_gates(Context& ctx, const RingSet& ring, std::string_
     // flash-resident control task stalls on every sector erase, so a move
     // started now would step with nobody able to decelerate it or notice an
     // overdue Hall edge.  Refused HERE so every transport gets the same answer.
+    if (c == "motion.enable") {
+        // EN is GANGED: five drivers, one GPIO (spec 2.2).  There is no
+        // per-column form of this and there will not be one.
+        const bool on = p.type == json::Type::Bool
+                            ? p.boolean
+                            : (p.get("on") != nullptr && p.get("on")->boolean);
+        if (!ctx.motion.set_enabled(on)) return err_result("could not change EN");
+        return on ? ok_result()
+                  : note_result("EN released for all five drivers - nothing can move until "
+                                "it is re-enabled");
+    }
     if (c == "motion.rehome") {
         int col = -1;
         if (p.type == json::Type::Int) col = static_cast<int>(p.number);

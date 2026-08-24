@@ -45,6 +45,10 @@ struct FakeMotion : api::MotionAdmin {
     // is never homed (spec 5.9), and a re-home-all with every column disabled
     // posts nothing - which used to be reported as success by both the fake and
     // the firmware, so a test written against this fake could not have caught it.
+    // EN is ganged (spec 2.2): all five or none.
+    bool en_ = true;
+    bool set_enabled(bool on) override { en_ = on; return true; }
+    bool enabled() override { return en_; }
     bool home(int col) override {
         ++homes;
         last_home_col = col;

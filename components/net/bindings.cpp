@@ -135,6 +135,7 @@ api::SysInfo IdfSysInfo::get() {
     s.heap_largest = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
     s.uptime_s = static_cast<uint32_t>(esp_timer_get_time() / 1000000);
     s.reset_reason = reset_reason_name(esp_reset_reason());
+    s.drivers_enabled = motion::is_enabled();
     s.step_isr_alive = motion::step_isr_alive();
     s.step_isr_stalls = motion::step_isr_stalls();
     const esp_app_desc_t* d = esp_app_get_description();
@@ -164,6 +165,13 @@ config::MqttConfig mqtt_cached() {
     }
     return g_mqtt_cache;
 }
+
+bool IdfMotionAdmin::set_enabled(bool on) {
+    motion::enable(on);
+    return motion::is_enabled() == on;
+}
+
+bool IdfMotionAdmin::enabled() { return motion::is_enabled(); }
 
 api::MqttStatus IdfMqttAdmin::mqtt_status() {
     const config::MqttConfig c = mqtt_cached();

@@ -17,6 +17,7 @@
 
 #include "esp_heap_caps.h"
 #include "journal/journal.h"
+#include "motion/soak.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "ring/json_write.h"
@@ -443,6 +444,41 @@ esp_err_t journal_handler(httpd_req_t* req) {
     return httpd_resp_send(req, body.data(), static_cast<ssize_t>(body.size()));
 }
 
+// Read-only: the soak is started from the console (it is bench tooling, like
+// `spin`), but an overnight run has to be readable from a phone in the morning
+// without a serial cable.
+esp_err_t soak_handler(httpd_req_t* req) {
+    const motion::SoakReport r = motion::soak_report();
+    json::Writer w;
+    w.obj()
+        .kv("running", r.running)
+        .kv("target_wraps", static_cast<int64_t>(r.target_wraps))
+        .kv("elapsed_s", static_cast<int64_t>(r.elapsed_s))
+        .kv("flaps_s", static_cast<int64_t>(r.flaps_s))
+        .kv("stopped_because", r.stopped_because)
+        .kv("heap_start", static_cast<int64_t>(r.heap_start))
+        .kv("heap_now", static_cast<int64_t>(r.heap_now))
+        .kv("heap_min", static_cast<int64_t>(r.heap_min))
+        .kv("samples", static_cast<int64_t>(r.samples));
+    w.key("cols").arr();
+    for (int i = 0; i < N_COLUMNS; ++i) {
+        const motion::SoakColumn& c = r.col[i];
+        w.obj()
+            .kv("wraps", static_cast<int64_t>(c.wraps))
+            .kv("flips", static_cast<int64_t>(c.flips))
+            .kv("resync_minor", static_cast<int64_t>(c.resync_minor))
+            .kv("resync_major", static_cast<int64_t>(c.resync_major))
+            .kv("faults", static_cast<int64_t>(c.faults))
+            .kv("h2h_min", static_cast<int64_t>(c.h2h_min))
+            .kv("h2h_max", static_cast<int64_t>(c.h2h_max))
+            .kv("err_abs_max", static_cast<int64_t>(c.err_abs_max))
+            .end_obj();
+    }
+    w.end_arr();
+    w.end_obj();
+    return send_json(req, w.take());
+}
+
 esp_err_t wear_handler(httpd_req_t* req) {
     const ModesConfig cfg = g_ctx->modes.config();
     // Pinned: this walks tens of thousands of renders, easily spanning several
@@ -735,7 +771,7 @@ esp_err_t httpd_start(api::Context& ctx) {
 
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
     cfg.uri_match_fn = httpd_uri_match_wildcard;  // one wildcard route for the UI
-    cfg.max_uri_handlers = 14;   // + /api/ota, /api/ota/status, /api/log, /api/journal
+    cfg.max_uri_handlers = 15;   // + ota, ota/status, log, journal, soak
     cfg.stack_size = 8192;   // JSON building plus a 2 KB file chunk
     cfg.lru_purge_enable = true;
     cfg.close_fn = on_socket_close;
@@ -783,6 +819,7 @@ esp_err_t httpd_start(api::Context& ctx) {
         {"/api/wear", HTTP_GET, wear_handler, nullptr, false, false, nullptr},
         {"/api/log", HTTP_GET, log_handler, nullptr, false, false, nullptr},
         {"/api/journal", HTTP_GET, journal_handler, nullptr, false, false, nullptr},
+        {"/api/soak", HTTP_GET, soak_handler, nullptr, false, false, nullptr},
         {"/api/cmd", HTTP_POST, cmd_handler, nullptr, false, false, nullptr},
         {"/api/ring/upload", HTTP_POST, ring_upload_handler, nullptr, false, false, nullptr},
         {"/api/audio/*", HTTP_POST, audio_upload_handler, nullptr, false, false, nullptr},

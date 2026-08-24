@@ -20,6 +20,7 @@
 #include "hal/pins.h"
 #include "modes/mode_manager.h"
 #include "motion/motion.h"
+#include "motion/soak.h"
 #include "ring/ring.h"
 #include "ring/ring_store.h"
 
@@ -423,6 +424,48 @@ int cmd_tz(int argc, char** argv) {
     app.tz = argv[1];
     config::save_app(app);
     std::printf("ok\n");
+    return 0;
+}
+
+int cmd_soak(int argc, char** argv) {
+    if (argc >= 2 && std::strcmp(argv[1], "stop") == 0) {
+        motion::soak_stop("stopped from the console");
+        std::printf("stopping\n");
+        return 0;
+    }
+    if (argc >= 2 && std::strcmp(argv[1], "start") == 0) {
+        long wraps = 0, flaps = 0;
+        if (argc >= 3) parse_long(argv[2], wraps);
+        if (argc >= 4) parse_long(argv[3], flaps);
+        if (!motion::soak_start(static_cast<uint32_t>(wraps), static_cast<int32_t>(flaps))) {
+            std::printf("could not start (already running, or every column is disabled)\n");
+            return 1;
+        }
+        std::printf("soak started: %ld wraps%s\n", wraps,
+                    wraps == 0 ? " (until stopped)" : "");
+        return 0;
+    }
+
+    const motion::SoakReport r = motion::soak_report();
+    std::printf("soak     : %s%s%s\n", r.running ? "RUNNING" : "idle",
+                r.stopped_because[0] ? " - " : "", r.stopped_because);
+    std::printf("elapsed  : %lu s   target %lu wraps   %ld flaps/s\n",
+                static_cast<unsigned long>(r.elapsed_s),
+                static_cast<unsigned long>(r.target_wraps), static_cast<long>(r.flaps_s));
+    std::printf("heap     : start %lu  now %lu  min %lu   (%ld over the run)\n",
+                static_cast<unsigned long>(r.heap_start), static_cast<unsigned long>(r.heap_now),
+                static_cast<unsigned long>(r.heap_min),
+                static_cast<long>(r.heap_now) - static_cast<long>(r.heap_start));
+    std::printf("col  wraps   flips  minor  major faults   h2h min/max  |err|max\n");
+    for (int i = 0; i < N_COLUMNS; ++i) {
+        const motion::SoakColumn& c = r.col[i];
+        std::printf("%3d %6lu %7lu %6lu %6lu %6lu   %5ld/%-5ld %8ld\n", i,
+                    static_cast<unsigned long>(c.wraps), static_cast<unsigned long>(c.flips),
+                    static_cast<unsigned long>(c.resync_minor),
+                    static_cast<unsigned long>(c.resync_major),
+                    static_cast<unsigned long>(c.faults), static_cast<long>(c.h2h_min),
+                    static_cast<long>(c.h2h_max), static_cast<long>(c.err_abs_max));
+    }
     return 0;
 }
 
@@ -872,6 +915,8 @@ esp_err_t start() {
     reg("preset", "preset qmarks|blank|reveal|wifi", cmd_preset);
     reg("h24", "h24 0|1 - clock format (persisted)", cmd_h24);
     reg("tz", "tz <posix-tz> - timezone (persisted)", cmd_tz);
+    reg("soak", "soak start <wraps> [flaps_s] | soak stop | soak - overnight wrap test",
+        cmd_soak);
     reg("stats", "per-column counters and state", cmd_stats);
     reg("reboot", "restart the device", cmd_reboot);
 

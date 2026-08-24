@@ -121,6 +121,10 @@ public:
         }
     }
 
+    // EN is ganged (spec 2.2): all five or none.
+    bool en_ = true;
+    bool set_enabled(bool on) override { en_ = on; return true; }
+    bool enabled() override { return en_; }
     bool home(int i) override {
         if (i < 0) {
             home_all();

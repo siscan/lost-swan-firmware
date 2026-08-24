@@ -52,7 +52,15 @@ int64_t FrameScheduler::lead_ms(const Frame& f) {
     int64_t worst = 0;
     for (int i = 0; i < N_COLUMNS; ++i) {
         if (is_excluded(i)) continue;  // a hole costs no time
-        const int flips = flips_from(port_.col(i), f.idx[static_cast<size_t>(i)]);
+        const MotionPort::Col c = port_.col(i);
+        // A FAULTED column costs no time either, and it used to cost the most.
+        // Its index is unknown, which flips_from scores as a full 49-flip wrap
+        // (~3.3 s at 15 flaps/s), so one faulted column started EVERY
+        // land-on-tick frame 3.3 s early and the four working columns landed
+        // seconds ahead of the countdown they are supposed to be synchronised
+        // with.  A column that is not moving cannot be the slowest one.
+        if (c.state == AxisState::Fault || c.state == AxisState::Unhomed) continue;
+        const int flips = flips_from(c, f.idx[static_cast<size_t>(i)]);
         const int64_t d = move_duration_ms(flips, timing_.flaps_s, timing_.accel);
         if (d > worst) worst = d;
     }

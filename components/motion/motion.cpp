@@ -122,6 +122,13 @@ bool valid_col(int c) { return c >= 0 && c < N_COLUMNS; }
 // --- per-column mode ------------------------------------------------------
 ColumnConfig g_cols;  // guarded by g_lock for the masks; read freely otherwise
 
+// Columns waiting to be parked on blank before their drive bit is cleared.
+// See set_columns: posting the park there raced republish_masks and lost.
+DRAM_ATTR bool g_park_pending[N_COLUMNS] = {};
+
+// Defined below; the deferred park and the escalation both need it.
+void post(int col, const Request& r);
+
 void republish_masks() {
     uint32_t drive = 0;
 #if SWAN_SIM_AXES
@@ -138,7 +145,10 @@ void republish_masks() {
 #endif
                 break;
             case ColumnMode::Disabled:
-                break;  // neither driven nor simulated: it does not move
+                // ... unless it is still parking itself on blank.  The drive
+                // bit has to outlive the mode change or the park is a lie.
+                if (g_park_pending[i]) drive |= g_step_bit[i];
+                break;  // otherwise neither driven nor simulated
         }
     }
     portENTER_CRITICAL(&g_lock);
@@ -150,12 +160,39 @@ void republish_masks() {
 }
 
 // --- fault escalation (spec 5.4) ------------------------------------------
+//
+// "Columns in trouble right now", which is not the same as "columns latched in
+// Fault", and the difference broke the rule this exists for.  Three corrections,
+// all found by walking the maintenance x disabled x simulated matrix:
+//
+//  1. A RETRYABLE fault stores Unhomed, not Fault, before the shell escalates -
+//     so two columns failing together each saw a count of ZERO and both got
+//     ParkColumn.  Spec 5.8's "two or more columns faulted -> drop_enable ...
+//     two columns failing together is not two coincidences" could only fire
+//     after both had exhausted their retries, ~22 s later.  A column with a
+//     re-home in flight counts.
+//  2. A DISABLED column latched in Fault counted, so the first real fault after
+//     a repair dropped EN for all five.  Spec 5.9 says a disabled column is
+//     "reported as expected rather than as a fault"; it does not vote.
+//  3. SIMULATED columns counted, so injecting two modelled faults on a bench
+//     board de-energized the one real column.  The premise for drop_enable is
+//     structural - power, the loom, the frame - and a modelled drum is evidence
+//     of none of it.  Real columns vote; on a board with NO real columns the
+//     simulated ones do, so the rule stays demonstrable where EN means nothing
+//     anyway (BRINGUP step 17 exercises exactly that).
 int faulted_count() {
-    int n = 0;
+    int real_in_trouble = 0, sim_in_trouble = 0, real_columns = 0;
     for (int i = 0; i < N_COLUMNS; ++i) {
-        if (g_ctl[i].state.load(RLX) == AxisState::Fault) ++n;
+        const ColumnMode m = g_cols.mode[static_cast<size_t>(i)];
+        if (m == ColumnMode::Disabled) continue;
+        if (m == ColumnMode::Real) ++real_columns;
+        const bool latched = g_ctl[i].state.load(RLX) == AxisState::Fault;
+        const bool recovering = g_ctl[i].rehome_attempt.load(RLX) > 0;
+        if (!latched && !recovering) continue;
+        if (m == ColumnMode::Real) ++real_in_trouble;
+        else ++sim_in_trouble;
     }
-    return n;
+    return real_columns > 0 ? real_in_trouble : sim_in_trouble;
 }
 
 // Was a column mid open-loop move at alarm speed?  The zero choreography is
@@ -163,15 +200,22 @@ int faulted_count() {
 // most likely to do damage and least likely to be noticed.
 DRAM_ATTR bool g_fast_spin[N_COLUMNS] = {};
 
-bool any_fast_spin() {
+// `col` is the column that has just faulted.  It is treated as still spinning
+// even though its state has already moved to Fault or Unhomed - it excluded
+// ITSELF from this test otherwise, so "a fault during a high-speed spin drops
+// EN" could not fire for the single spinning column that faulted, which is the
+// case spec 5.8 describes.
+bool any_fast_spin(int col) {
     for (int i = 0; i < N_COLUMNS; ++i) {
-        if (g_fast_spin[i] && g_ctl[i].state.load(RLX) == AxisState::Moving) return true;
+        if (!g_fast_spin[i]) continue;
+        if (i == col) return true;
+        if (g_ctl[i].state.load(RLX) == AxisState::Moving) return true;
     }
     return false;
 }
 
 void apply_escalation(int col, FaultCause cause) {
-    const Escalation e = escalate_fault(cause, faulted_count(), any_fast_spin());
+    const Escalation e = escalate_fault(cause, faulted_count(), any_fast_spin(col));
     switch (e) {
         case Escalation::ParkColumn:
             ESP_LOGE(TAG, "col %d parked: %s. The other columns keep running.", col,
@@ -193,8 +237,18 @@ void apply_escalation(int col, FaultCause cause) {
             ESP_LOGE(TAG,
                      "col %d fault during %s -> DROPPING EN FOR ALL FIVE COLUMNS. "
                      "Check the mechanism before re-enabling (`en 1`).",
-                     col, any_fast_spin() ? "a high-speed spin" : "a multi-column failure");
+                     col, any_fast_spin(col) ? "a high-speed spin" : "a multi-column failure");
             enable(false);
+            // ... and STOP them.  Releasing EN only wrote the pin: the axes
+            // carried on stepping in software into dead drivers, completed
+            // their moves, and published indices the drums never reached - so
+            // after an escalation the display confidently reported a face it
+            // was not showing.  "Stop everything" has to mean everything.
+            for (int i = 0; i < N_COLUMNS; ++i) {
+                Request r;
+                r.kind = ReqKind::Stop;
+                post(i, r);
+            }
             break;
     }
 }
@@ -250,12 +304,50 @@ void log_events(int col, const TickEvents& ev, const IsrSnap& in, const AxisCtl&
     }
 }
 
+// Finishes a deferred park (see set_columns) and drops the drive bit once the
+// column is actually sitting on blank.  Bounded, because a column that cannot
+// reach blank must not keep its driver energized for ever.
+void tick_park_pending() {
+    static uint16_t waited[N_COLUMNS] = {};
+    bool changed = false;
+    for (int i = 0; i < N_COLUMNS; ++i) {
+        if (!g_park_pending[i]) {
+            waited[i] = 0;
+            continue;
+        }
+        const AxisPublished a = axis_read_published(g_ctl[i]);
+        if (a.state == AxisState::Idle && a.index == RING_HOME_SLOT) {
+            g_park_pending[i] = false;
+            waited[i] = 0;
+            changed = true;
+            ESP_LOGI(TAG, "col %d parked on blank; it is now out of every frame", i);
+        } else if (a.state == AxisState::Idle) {
+            Request r;
+            r.kind = ReqKind::Go;
+            r.index = RING_HOME_SLOT;
+            post(i, r);
+        }
+        // 10 s is four times the worst legitimate park (a 49-flip wrap at the
+        // homing speed); past that something is wrong and holding the driver
+        // on helps nobody.
+        if (++waited[i] > 10000) {
+            g_park_pending[i] = false;
+            waited[i] = 0;
+            changed = true;
+            ESP_LOGW(TAG, "col %d did not reach blank; disabling it where it stands", i);
+        }
+    }
+    if (changed) republish_masks();
+}
+
 void control_tick() {
     // One consistent snapshot of the tunables for the whole tick.
     MotionParams p;
     portENTER_CRITICAL(&g_lock);
     p = g_params;
     portEXIT_CRITICAL(&g_lock);
+
+    tick_park_pending();
 
     for (int i = 0; i < N_COLUMNS; ++i) {
         AxisCtl& a = g_ctl[i];
@@ -452,17 +544,41 @@ void set_columns(const ColumnConfig& c) {
             // disabled column is a HOLE in the frame, and a hole showing a
             // stale digit is worse than a hole showing blank: someone reads
             // the wrong time off it with no indication anything is wrong.
+            //
+            // The park is DEFERRED, not posted here: clearing this column's
+            // drive bit a few microseconds later (republish_masks, below) beat
+            // the 1 kHz tick to the mailbox, so the move ran with STEP already
+            // masked off - the axis advanced pos_abs, reported Idle at the home
+            // slot, and the drum never moved.  The control tick performs the
+            // park while the column is still driven and clears the bit after.
             const AxisPublished a = axis_read_published(g_ctl[i]);
             if (a.state == AxisState::Idle && a.index >= 0 && a.hall_valid &&
                 a.index != RING_HOME_SLOT) {
-                Request r;
-                r.kind = ReqKind::Go;
-                r.index = RING_HOME_SLOT;
-                post(i, r);
+                g_park_pending[i] = true;
                 ESP_LOGI(TAG, "col %d disabled; parking it on blank first", i);
+            } else if (a.state == AxisState::Moving || a.state == AxisState::Homing) {
+                // Mid-move: stop it where it is rather than let it finish with
+                // STEP masked off and publish a position it never reached.
+                Request r;
+                r.kind = ReqKind::Stop;
+                post(i, r);
+                ESP_LOGI(TAG, "col %d disabled mid-move; stopped where it is", i);
             } else {
                 ESP_LOGI(TAG, "col %d disabled", i);
             }
+        }
+        if (was == ColumnMode::Disabled && now != ColumnMode::Disabled) {
+            // Leaving disabled has to HOME.  A disabled column is never homed -
+            // not at boot, not on a re-home-all - so after a reboot it comes
+            // back Unhomed with no hall reference, motion::go refuses it on
+            // every render, and the frame scheduler's convergence pass only
+            // acts on Idle columns.  It never closed the hole; it just stopped
+            // being reported as a hole.
+            Request r;
+            r.kind = ReqKind::Home;
+            r.delay_ticks = 1;
+            post(i, r);
+            ESP_LOGI(TAG, "col %d re-enabled; homing it", i);
         }
 #if SWAN_SIM_AXES
         if (now == ColumnMode::Sim) {

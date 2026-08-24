@@ -38,6 +38,11 @@ public:
     // Live apply, no persistence - the UI sliders use this.
     virtual void set_params(const MotionParams& p) = 0;
     virtual bool home(int col) = 0;  // col < 0 = all
+    // EN is ganged: this is all five drivers or none (spec 2.2/5.8).  Exposed
+    // because dropping it is a recovery state a person has to be able to leave
+    // without a serial cable.
+    virtual bool set_enabled(bool on) = 0;
+    virtual bool enabled() = 0;
 
     // A calibration nudge is a MOVE, not a number: adjust_cal re-seeks the
     // index the column is showing so the card actually shifts (spec 5.6, "nudge
@@ -99,6 +104,11 @@ struct SysInfo {
     uint32_t ws_dropped = 0;
     // The 50 kHz step timer's own liveness.  The task watchdog cannot see
     // this: if the ISR stops, the control task keeps feeding it.
+    // EN, ganged across all five drivers (spec 2.2).  It was not on any
+    // surface: escalation could de-energize the display and the only thing
+    // that said so was a console line advising `en 1`, which a browser cannot
+    // reach.  A person looking at a stopped display could not find out why.
+    bool drivers_enabled = true;
     bool step_isr_alive = true;
     uint32_t step_isr_stalls = 0;
 };

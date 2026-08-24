@@ -37,7 +37,7 @@ void enter_fault(TickCtx& c, const char* why, FaultCause cause) {
     // for 7.5 s against printed gear teeth.  Maintenance suppresses automatic
     // re-homing outright - nothing moves on its own while someone has their
     // hands in the mechanism.
-    if (fault_retry_allowed(cause) && !c.p.maintenance &&
+    if (fault_retry_allowed(cause) && !c.p.maintenance && !c.p.ota_hold &&
         a.rehome_retries < REHOME_RETRIES) {
         ++a.rehome_retries;
         a.rehome_attempt.store(a.rehome_retries, RLX);
