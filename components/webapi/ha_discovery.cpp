@@ -38,7 +38,11 @@ constexpr std::array<Entity, 19> ENTITIES = {{
     {"select", "mode", "Mode", "mode.set", "{{ value_json.mode }}",
      R"("ops":["clock","message","countdown"])", false},
 
-    {"text", "message", "Message", "message.set", nullptr,
+    // A value_template is NOT optional on a text entity: without one HA takes
+    // the whole ~1.5 KB state document as the value, finds it longer than
+    // `max`, and logs a rejected state on EVERY push.
+    {"text", "message", "Message", "message.set",
+     "{{ value_json.msg | default('', true) }}",
      R"("cmd_tpl":"{{ {'tokens': value.split(' ')} | to_json }}","max":40)", false},
 
     {"button", "execute", "Execute the Numbers", "countdown.execute", nullptr,

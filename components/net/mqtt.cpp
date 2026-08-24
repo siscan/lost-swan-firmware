@@ -32,7 +32,12 @@ constexpr const char* TAG = "mqtt";
 // set explicitly below, because forgetting it is silent and the symptom would
 // be an occasional late tick nobody could attribute.
 constexpr int MQTT_TASK_PRIO = 4;
-constexpr int MQTT_TASK_STACK = 8192;   // handle_command builds a JSON DOM
+// TWO tasks, two stacks, and they were the wrong way round.  esp-mqtt's own
+// task only parses frames and needs little; swan_mqtt is the one that runs
+// api::handle_command, which builds a RingSet snapshot and a JSON DOM.  The
+// 8192 sized for that went to esp-mqtt and swan_mqtt got 4096.
+constexpr int ESP_MQTT_TASK_STACK = 4096;
+constexpr int SWAN_MQTT_TASK_STACK = 8192;
 
 // Inbound: commands from the broker.  Small on purpose - a prop that floods us
 // is not owed a backlog, and every dropped command is counted and logged.
@@ -211,7 +216,7 @@ void client_start() {
     c.network.timeout_ms = 3000;
     c.network.reconnect_timeout_ms = 5000;
     c.task.priority = MQTT_TASK_PRIO;
-    c.task.stack_size = MQTT_TASK_STACK;
+    c.task.stack_size = ESP_MQTT_TASK_STACK;
 
     g_client = esp_mqtt_client_init(&c);
     if (g_client == nullptr) {
@@ -285,8 +290,6 @@ void publish_discovery(bool announce) {
         // not only when the display does.  An empty retained payload is a
         // deletion, which is the only way to remove a device rather than leave
         // a permanently-unavailable ghost.
-        OutMsg m{std::string{}, payload, true, 1};
-        m.topic = topic;
         if (g_client == nullptr) return;
         // The discovery prefix is NOT under our base, so this bypasses
         // topic_for and publishes the absolute topic.
@@ -417,7 +420,8 @@ esp_err_t mqtt_init(api::Context& ctx) {
 
     g_in = xQueueCreate(IN_QUEUE_DEPTH, sizeof(InMsg));
     if (g_in == nullptr) return ESP_ERR_NO_MEM;
-    if (xTaskCreate(&transport_task, "swan_mqtt", 4096, nullptr, MQTT_TASK_PRIO, &g_task) !=
+    if (xTaskCreate(&transport_task, "swan_mqtt", SWAN_MQTT_TASK_STACK, nullptr,
+                    MQTT_TASK_PRIO, &g_task) !=
         pdPASS) {
         return ESP_ERR_NO_MEM;
     }
@@ -455,16 +459,27 @@ void mqtt_publish(const std::string& topic_leaf, const std::string& payload, boo
 }
 
 void mqtt_go_offline() {
-    if (g_client == nullptr || !g_connected.load(std::memory_order_relaxed)) return;
-    const std::string topic = topic_for(api::TOPIC_AVAILABILITY);
-    esp_mqtt_client_publish(g_client, topic.c_str(), api::PAYLOAD_OFFLINE,
-                            static_cast<int>(std::strlen(api::PAYLOAD_OFFLINE)), 1, 1);
-    // Bounded wait: QoS 1 has no synchronous ack, and a broker that has gone
-    // away must not delay a reboot.
-    for (int i = 0; i < 20 && g_connected.load(std::memory_order_relaxed); ++i) {
-        vTaskDelay(pdMS_TO_TICKS(25));
+    // Called from the HTTP task (reboot, OTA) while the transport task may be
+    // destroying the client, so g_client is read once under the same mutex the
+    // transport task holds when it clears it.  Reading it unlocked was a
+    // use-after-free waiting for a reconfigure to race a reboot.
+    esp_mqtt_client_handle_t client = nullptr;
+    std::string topic;
+    {
+        const std::lock_guard<std::mutex> lock(g_mu);
+        if (!g_connected.load(std::memory_order_relaxed)) return;
+        client = g_client;
+        topic = g_base + api::TOPIC_AVAILABILITY;
     }
-    esp_mqtt_client_stop(g_client);
+    if (client == nullptr) return;
+
+    esp_mqtt_client_publish(client, topic.c_str(), api::PAYLOAD_OFFLINE,
+                            static_cast<int>(std::strlen(api::PAYLOAD_OFFLINE)), 1, 1);
+    // esp_mqtt_client_stop drains the outbox before returning, so the publish
+    // above is already on the wire by the time it completes.  The old fixed
+    // 500 ms wait bought nothing and spent it on every reboot, holding
+    // dispatch_mu the whole time.
+    esp_mqtt_client_stop(client);
     g_connected.store(false, std::memory_order_relaxed);
 }
 
