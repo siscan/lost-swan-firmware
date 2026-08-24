@@ -1,0 +1,21 @@
+{
+  "_note": "The chat-mode script (web/chat.js). Replace this file to replace the lines; nothing else needs changing. version must be 1. cps is characters per second (1-200). Each entry in lines: who = them | you | sys, text = one line (control characters are stripped, 240 chars max), pause_ms = the wait before the next line (0-10000). At most 64 lines are read. A malformed document is ignored and the built-in script in chat.js is used instead.",
+  "version": 1,
+  "cps": 17,
+  "lines": [
+    { "who": "them", "text": "is someone there", "pause_ms": 1600 },
+    { "who": "you",  "text": "who is this",      "pause_ms": 1100 },
+    { "who": "them", "text": "i am not supposed to be on this", "pause_ms": 1900 },
+    { "who": "you",  "text": "walt",             "pause_ms": 2600 },
+    { "who": "them", "text": "they watch the keys", "pause_ms": 1700 },
+    { "who": "you",  "text": "where are you",    "pause_ms": 1400 },
+    { "who": "them", "text": "i can hear the machine from here", "pause_ms": 2100 },
+    { "who": "you",  "text": "tell me where",    "pause_ms": 3000 },
+    { "who": "them", "text": "are you alone",    "pause_ms": 1700 },
+    { "who": "you",  "text": "yes",              "pause_ms": 1200 },
+    { "who": "them", "text": "dont push it",     "pause_ms": 2400 },
+    { "who": "you",  "text": "push what",        "pause_ms": 3200 },
+    { "who": "them", "text": "someone is coming", "pause_ms": 2000 },
+    { "who": "sys",  "text": "connection terminated", "pause_ms": 0 }
+  ]
+}
