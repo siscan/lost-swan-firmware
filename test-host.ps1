@@ -91,6 +91,22 @@ for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
         exit 1
     }
     if ($blocked.Count -eq 0) {
+        # A syntax scan of the web assets that needs no node at all.  A raw
+        # newline inside a string literal has reached the board twice now, and
+        # the symptom is a BLANK PAGE rather than an error: the whole file fails
+        # to parse, every page stops rendering, and the state document keeps
+        # arriving so the board itself looks perfectly healthy.  CI's
+        # `node --check` catches it - after a flash.  This catches it here.
+        $py = Get-Command python -ErrorAction SilentlyContinue
+        if (-not $py) { $py = Get-Command python3 -ErrorAction SilentlyContinue }
+        if ($py) { & $py.Source (Join-Path $PSScriptRoot 'tools/jscheck.py') }
+        else { Write-Host 'jscheck ........................... SKIPPED (no python)' -ForegroundColor Yellow }
+        if ($py -and $LASTEXITCODE -ne 0) {
+            Write-Error "web asset syntax scan failed"
+            exit 1
+        }
+        if ($py) { Write-Host "jscheck ........................... Passed" -ForegroundColor Green }
+
         # The mirror widget's suite is JavaScript, because the bug it pins was
         # in JavaScript (web/flap.js) and a C++ port of the logic would test a
         # copy rather than the thing that ships.  It needs no npm - the DOM is

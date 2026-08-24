@@ -955,8 +955,7 @@ function wire() {
         .then((txt) => {
           $("tail").textContent = txt || "(empty)";
           $("tail").scrollTop = $("tail").scrollHeight;
-          const lines = txt ? txt.trimEnd().split("
-").length : 0;
+          const lines = txt ? txt.trimEnd().split("\n").length : 0;
           $("tail-hint").textContent = label + ": " + lines + " lines, " + txt.length + " bytes";
         })
         .catch((e) => { $("tail-hint").textContent = label + " failed: " + e.message; });
