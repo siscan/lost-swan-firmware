@@ -12,6 +12,7 @@
 
 #include <string>
 
+#include "button/button.h"
 #include "cli/cli.h"
 #include "config/config.h"
 #include "esp_app_desc.h"
@@ -195,6 +196,23 @@ void modes_task(void*) {
         g_tap->set_flaps(mp.flaps_s_normal);
         g_sched->set_timing({mp.flaps_s_normal, mp.accel});
         g_modes->tick(now);
+
+        // The reveal landing (spec 7.3).  Taken OUTSIDE ModeManager's lock -
+        // the announcement publishes and writes flash-backed history, and
+        // nothing called from inside that lock may do either.  Deliberately
+        // above the has_state_consumers() gate: the journal line is the
+        // device's permanent record and the Pearl printout reads it, so it is
+        // written whether or not anybody happens to be connected right now.
+        if (g_modes->take_reveal_landed()) {
+            const uint32_t seq = g_modes->cd_seq();
+            const int64_t utc_s = g_modes->time_valid() ? now / 1000 : 0;
+            ESP_LOGI(TAG, "reveal frame confirmed on all columns (seq %u)",
+                     static_cast<unsigned>(seq));
+            swan::journal::note_reveal(utc_s, seq);
+            const std::string ev = swan::api::reveal_event(seq, utc_s);
+            swan::net::ws_broadcast(ev);
+            swan::net::mqtt_publish(swan::api::TOPIC_EVENT, ev, false, 0);
+        }
 
         // "Nobody is looking" is about to stop meaning "no browser": a wall
         // clock feeding a terminal prop over MQTT (Phase 4) has no browser
@@ -456,6 +474,12 @@ extern "C" void app_main() {
     if (swan::net::mqtt_init(*g_api) != ESP_OK) {
         ESP_LOGE(TAG, "mqtt transport failed to start");
     }
+
+    // The physical button (spec 2, Q6).  After the Context exists, because it
+    // drives the same dispatcher every network path does - and after the modes
+    // task is running, so a press on a display that is still homing is
+    // answered by the dispatcher's own gates rather than by a half-built world.
+    swan::button::init(*g_api);
 
     swan::cli::bind_modes(g_modes, utc_ms_now);
     swan::cli::bind_ring(g_stager);

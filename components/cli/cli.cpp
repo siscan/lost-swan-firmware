@@ -15,6 +15,7 @@
 #include "webapi/mqtt_bridge.h"
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
+#include "esp_timer.h"
 #include "freertos/task.h"
 #include "hal/gpio_bank.h"
 #include "hal/pins.h"
@@ -108,6 +109,42 @@ int cmd_hall(int, char**) {
         std::printf("  col %d  GPIO%-2d raw=%d  magnet=%s\n", i, PIN_HALL[i], pin_high ? 1 : 0,
                     a.hall_level ? "YES" : "no");
     }
+    return 0;
+}
+
+// Bench tooling, exactly like `hall`: the button is on the BOOT pin and there is
+// no other way to tell "not wired" from "wired and not pressed" - both read
+// high.  Watching for a few seconds is how you check a panel button and its loom
+// before deciding the firmware is at fault.
+int cmd_button(int argc, char** argv) {
+    const int secs = argc > 1 ? std::atoi(argv[1]) : 0;
+    const auto level = [] { return (gpio_bank_read() & pin_mask(PIN_BUTTON)) == 0; };
+    std::printf("BUTTON=GPIO%d (BOOT, active low, strapping - spec 2.5)\n", PIN_BUTTON);
+    std::printf("  now: %s\n", level() ? "PRESSED" : "released");
+    if (secs <= 0) {
+        std::printf("  `button <seconds>` watches for edges\n");
+        return 0;
+    }
+    std::printf("  watching %d s - press it\n", secs);
+    bool last = level();
+    int edges = 0;
+    const int64_t until = esp_timer_get_time() + static_cast<int64_t>(secs) * 1000000;
+    int64_t since = esp_timer_get_time();
+    while (esp_timer_get_time() < until) {
+        vTaskDelay(pdMS_TO_TICKS(10));
+        const bool now = level();
+        if (now == last) continue;
+        const int64_t t = esp_timer_get_time();
+        std::printf("  %8.3f s  -> %s (previous state held %.3f s)\n",
+                    static_cast<double>(t) / 1e6, now ? "PRESSED" : "released",
+                    static_cast<double>(t - since) / 1e6);
+        since = t;
+        last = now;
+        ++edges;
+    }
+    std::printf("  %d edge%s. A clean switch gives two per press; many more is bounce the\n"
+                "  40 ms debounce should still absorb, or loom pickup, which it will not.\n",
+                edges, edges == 1 ? "" : "s");
     return 0;
 }
 
@@ -889,6 +926,7 @@ esp_err_t start() {
     esp_console_register_help_command();
     reg("pins", "show the resolved pin map and drive constants", cmd_pins);
     reg("hall", "live Hall levels, raw and debounced", cmd_hall);
+    reg("button", "button [seconds] - live BOOT/button level, and edges", cmd_button);
     reg("en", "en 0|1 - driver enable (ganged)", cmd_en);
     reg("step", "step <col> <usteps> - open loop", cmd_step);
     reg("home", "home <col>|all", cmd_home);
