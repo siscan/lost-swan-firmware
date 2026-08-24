@@ -34,6 +34,7 @@ AudioSettings g_settings;
 std::string g_playing;
 bool g_have[CUE_COUNT] = {};
 std::atomic<bool> g_stop_now{false};
+bool g_enabled = false;   // player task only
 std::atomic<uint32_t> g_underruns{0};
 
 struct Cmd {
@@ -58,8 +59,10 @@ void scan_locked() {
         }
         uint8_t head[128];
         const size_t n = std::fread(head, 1, sizeof head, f);
+        std::fseek(f, 0, SEEK_END);
+        const long total = std::ftell(f);
         std::fclose(f);
-        g_have[i] = wav_parse(head, n).ok;
+        g_have[i] = wav_parse(head, n, total > 0 ? static_cast<size_t>(total) : n).ok;
     }
 }
 
@@ -71,9 +74,15 @@ bool play_file(CueId c, const CuePolicy& pol, int16_t gain_q8) {
         ESP_LOGW(TAG, "no file for %s (%s)", cue_id_name(c), path.c_str());
         return false;
     }
+    // The whole file's length, because wav_parse clamps data_bytes to it - and
+    // clamping to the size of this 128-byte snippet is what made every cue
+    // play 84 bytes.
+    std::fseek(f, 0, SEEK_END);
+    const long file_len = std::ftell(f);
+    std::fseek(f, 0, SEEK_SET);
     uint8_t head[128];
     const size_t hn = std::fread(head, 1, sizeof head, f);
-    const WavInfo w = wav_parse(head, hn);
+    const WavInfo w = wav_parse(head, hn, file_len > 0 ? static_cast<size_t>(file_len) : hn);
     if (!w.ok) {
         ESP_LOGW(TAG, "%s: %s", cue_id_name(c), w.err != nullptr ? w.err : "bad wav");
         std::fclose(f);
@@ -82,10 +91,18 @@ bool play_file(CueId c, const CuePolicy& pol, int16_t gain_q8) {
 
     // The rate is per file, so a 16 kHz cue and a 22.05 kHz one both play at
     // the right pitch instead of whichever was configured first.
+    // The channel is left DISABLED between cues (see the end of player_task),
+    // so disabling it again logs an ESP_LOGE from the driver on every single
+    // cue - noise that would train anyone reading the console to ignore an
+    // audio error.  Track it instead of asking the driver.
     i2s_std_clk_config_t clk = I2S_STD_CLK_DEFAULT_CONFIG(w.sample_rate);
-    i2s_channel_disable(g_tx);
+    if (g_enabled) {
+        i2s_channel_disable(g_tx);
+        g_enabled = false;
+    }
     i2s_channel_reconfig_std_clock(g_tx, &clk);
     i2s_channel_enable(g_tx);
+    g_enabled = true;
 
     std::vector<int16_t> buf(FRAMES);
     const int64_t loop_deadline_us =
@@ -149,7 +166,10 @@ void player_task(void*) {
         }
         // Silence the amp between cues: a MAX98357A left enabled with no data
         // hisses, and this display spends 99% of its life saying nothing.
-        i2s_channel_disable(g_tx);
+        if (g_enabled) {
+            i2s_channel_disable(g_tx);
+            g_enabled = false;
+        }
     }
 }
 

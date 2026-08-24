@@ -17,7 +17,8 @@ bool tag(const uint8_t* p, const char* t) { return std::memcmp(p, t, 4) == 0; }
 
 }  // namespace
 
-WavInfo wav_parse(const uint8_t* data, std::size_t len) {
+WavInfo wav_parse(const uint8_t* data, std::size_t len, std::size_t total_len) {
+    if (total_len < len) total_len = len;
     WavInfo w;
     if (data == nullptr || len < 44) {
         w.err = "too short to be a WAV";
@@ -62,7 +63,9 @@ WavInfo wav_parse(const uint8_t* data, std::size_t len) {
             // Trust the file's length over the header's: a truncated upload
             // announces the full size, and streaming past the end would play
             // whatever follows in the filesystem.
-            const std::size_t avail = len > body ? len - body : 0;
+            // Against the FILE's length, not against however much of it the
+            // caller happens to be holding.
+            const std::size_t avail = total_len > body ? total_len - body : 0;
             w.data_bytes = static_cast<uint32_t>(size < avail ? size : avail);
             break;
         }

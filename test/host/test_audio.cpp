@@ -144,12 +144,42 @@ void test_rejects_what_it_should() {
 // THE dangerous case: a header that announces more data than the file holds.
 // Streaming the announced length would play whatever follows in the
 // filesystem out of the speaker.
+// THE bug that shipped: the player hands over a 128-byte snippet and streams
+// the rest, so clamping data_bytes to what the caller is HOLDING truncated
+// every cue to 84 bytes - about two milliseconds.  The clamp is right; it just
+// has to be against the file's length, not the buffer's.
+void test_a_header_snippet_is_not_a_truncated_file() {
+    WavOpts o;
+    o.samples = 11025;                       // half a second at 22050
+    const std::vector<uint8_t> f = make_wav(o);
+    CHECK(f.size() > 22000);
+
+    // The player's call: 128 bytes in hand, the real length passed separately.
+    const WavInfo player = wav_parse(f.data(), 128, f.size());
+    CHECK(player.ok);
+    CHECK_EQ(player.data_bytes, 22050);      // the WHOLE cue, not 84 bytes
+
+    // The upload path's call: the whole file in hand, and the clamp still
+    // protects against a header that lies.
+    const WavInfo upload = wav_parse(f.data(), f.size(), f.size());
+    CHECK(upload.ok);
+    CHECK_EQ(upload.data_bytes, 22050);
+
+    // Omitting total_len means "I hold it all", which is the old behaviour and
+    // must stay safe.
+    const WavInfo whole = wav_parse(f.data(), f.size());
+    CHECK(whole.ok);
+    CHECK_EQ(whole.data_bytes, 22050);
+    // ... and a snippet with no total_len must NOT claim the whole file.
+    CHECK_EQ(wav_parse(f.data(), 128).data_bytes, 84u);
+}
+
 void test_a_lying_header_is_clamped() {
     WavOpts o;
     o.samples = 100;
     o.lie_data_size = 100000;
     const std::vector<uint8_t> f = make_wav(o);
-    const WavInfo w = wav_parse(f.data(), f.size());
+    const WavInfo w = wav_parse(f.data(), f.size(), f.size());
     CHECK(w.ok);
     CHECK(w.data_offset + w.data_bytes <= f.size());
     CHECK_EQ(w.data_bytes, 200);
@@ -231,6 +261,7 @@ void run_tests() {
     test_a_good_file();
     test_chunks_are_walked();
     test_rejects_what_it_should();
+    test_a_header_snippet_is_not_a_truncated_file();
     test_a_lying_header_is_clamped();
     test_cue_table();
     test_gain();
