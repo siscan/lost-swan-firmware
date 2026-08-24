@@ -36,17 +36,65 @@ Columns are physically grouped 3 + 2 with a band between (no colon column).
 | Audio | MAX98357A I2S mono amp + 40 mm 4 Ω 3 W speaker | 3 GPIOs (BCLK, LRCLK, DIN). Gain pin left at default 9 dB. `VERIFY` SD/shutdown pin handling on the module. No hardware volume → software gain. |
 | Power | 12 V 6 A PSU → drivers; 12→5 V buck → logic, halls, amp | All five spinning ≈ 4–5 A on 12 V. |
 | Status | Onboard LED on GPIO27 on either C5 board | XIAO: single yellow LED, active low → blink patterns. DevKitC-1: WS2812 RGB → colour-coded status. |
-| Button | One user button `[Q6]` — **NOT IMPLEMENTED, see below** | Wired in parallel with the onboard BOOT button (GPIO28, active low) on either C5 board. Costs no GPIO. Must not be held low at reset except to enter the bootloader. |
+| Button | One user button `[Q6]` — **built 2026-08-24, §2.5** | Wired in parallel with the onboard BOOT button (GPIO28, active low) on either C5 board. Costs no GPIO. GPIO28 is the BOOT **strapping** pin: held low at reset it selects the serial bootloader, which no firmware can override — §2.5 says what the firmware does about it instead. |
 
-> **The button is specified and does not exist.**  `PIN_BUTTON` is defined in
-> `hal/pins.h` and printed by the console's `pins` command, and that is the
-> whole of it: there is no GPIO input configuration and no handler anywhere in
-> `components/` or `main/`.  Q6 (§16) records it as answered and §10.2a lists
-> "the physical button" among the control paths, so three places imply a feature
-> nothing implements — found by a cold read of the documentation on 2026-08-24,
-> not by anyone using it.  Deciding whether to build it or drop it is Nico's;
-> until then this note is here so the next person does not spend an evening
-> wondering why their button does nothing.
+### 2.5 The button, and the strapping pin it shares
+
+**Built 2026-08-24**, on Nico's instruction, closing the gap a cold read of the
+documentation had found the same day: Q6 (§16) recorded it as answered and
+§10.2a listed "the physical button" among the control paths, while `PIN_BUTTON`
+existed only as a constant the console printed.
+
+| gesture | effect |
+|---|---|
+| **press** (released before 2 s) | `countdown.execute` with the Numbers — start or mid-run reset, the same dispatcher path as the web UI's EXECUTE |
+| **hold ≥ 2 s** | `motion.rehome` for all columns; fires **once**, while still held, and the release that follows produces nothing |
+
+It goes through `api::handle_command` like every other control path, with
+**`Origin::Button`** — an origin that has been reportable since Phase 4 and
+until now was passed by nothing. So a countdown started from the button reads
+`set_by: "button"` on `swan/countdown`, in the state document and in the
+journal. A button cannot type, so it presents the canonical Numbers; the
+validation stays in the firmware where it has always been, and the journal is
+honest about *who* rather than pretending the Numbers were entered by hand.
+
+**Maintenance ignores it entirely** — not "the dispatcher refuses it", ignores
+it. Maintenance means somebody has their hands in the mechanism and the button
+is on the case they are holding; a refusal logged for every knock is noise, and
+arming a deadline is still the wrong thing to do to a person mid-repair. The
+dispatcher's own maintenance gate remains as the backstop.
+
+Debounce is 40 ms and the hold threshold is measured from the *debounced*
+press, so a dirty contact cannot shorten a deliberate hold. The recogniser is
+pure (`components/button/gesture.h`) and host-tested; the shell polls at 20 Hz
+on a priority-2 task, well below the modes tick.
+
+#### The strapping-pin constraint, and what the firmware does about it
+
+**GPIO28 is the BOOT strapping pin.** The button is wired in parallel with the
+onboard BOOT button, which is the whole reason it costs no GPIO — and the ROM
+samples that pin at reset: **held LOW at reset selects the serial bootloader**.
+
+No firmware can change that. The ROM has decided before a single instruction of
+ours runs, so "stop the button entering the bootloader" is not something this
+spec can promise and nothing here pretends to. What the firmware *can* do is
+refuse to compound it, and it does exactly one thing:
+
+> **A button that is already down when the firmware starts is ignored until it
+> is released.** No press, no hold, nothing — not even after two seconds.
+
+That covers the case that actually bites: somebody holds the button, the board
+resets for an unrelated reason (a power blip, an OTA), the strap timing means
+it boots normally anyway — and without this rule the display would then start a
+countdown or re-home all five columns for no reason the person could see. It
+also makes a **stuck switch** silent rather than a display that re-homes every
+two seconds for ever. A held button at startup is logged once, at WARN, naming
+the pin — that line is the only evidence a stuck switch will ever produce.
+
+The consequence to live with, stated plainly: **holding the button while the
+display is powered on or reset may leave the board in the bootloader** —
+powered, silent, off the network, and looking dead. The cure is to release the
+button and power-cycle. `docs/OWNER.md` says so in the owner's words.
 
 ### 2.0 Board decision — DevKitC-1-N8R8 (**arrived, verified 2026-08-23**)
 
@@ -758,13 +806,75 @@ configurable.
 - Cues (Q4, defaults): at remaining = 240 s play `warn_4min`; at 60 s
   `warn_1min`; at 0 s `system_failure`. Exact sounds and whether they loop are
   Nico's.
-- At zero (Q4, defaults): show 000:00; after `ZERO_HOLD_S = 3` all five columns
-  spin continuously at alarm speed for `ALARM_SPIN_S = 6`, then land on the
-  **reveal frame** (five glyphs, `countdown.reveal[5]`, config — TBD by Nico,
-  currently unset). Audio loops for at most `FAILURE_LOOP_S = 60`. The display
+- At zero (Q4, defaults): show 000:00; after `countdown.zero_hold_s` (default
+  **3**) all five columns spin continuously at alarm speed for
+  `countdown.spin_s` (default **6**), then land on the **reveal frame** (five
+  glyphs, `countdown.reveal[5]`, config — TBD by Nico, currently unset). Audio
+  loops for at most `countdown.failure_loop_s` (default **60**). The display
   stays on the reveal until the mode is changed or the Numbers are entered
   again (which restarts at 108:00). No auto-return to clock unless
-  `failure_timeout_s > 0`.
+  `countdown.failure_timeout_s > 0`.
+
+  **These are the wire names, and that matters.** Earlier drafts wrote them as
+  `ZERO_HOLD_S`, `ALARM_SPIN_S` and `FAILURE_LOOP_S`, which are not symbols and
+  never were — there is no such identifier anywhere in the firmware. A peer
+  coding against those names finds nothing and silently falls back to a guess.
+  Corrected 2026-08-24.
+
+  **`cfg.zero_hold_s` and `cfg.spin_s` are a LIVE CONTRACT with the terminal
+  prop.** It reads both off the retained `swan/state` document and schedules
+  its own SYSTEM FAILURE beat against them; it does **not** carry a duplicate
+  of 3 and 6, and there is no "the prop hard-codes 9 s" anywhere to correct.
+  So renaming either key, moving it out of `cfg`, or changing its type is a
+  change in another repository, not a local tidy-up. Pinned by
+  `test_api.cpp`'s `test_state_document_contract`, which also asserts both keys
+  sit inside the MQTT change window — outside it, a change would reach the prop
+  only on the 30-second heartbeat.
+
+- **The reveal is ANNOUNCED, not estimated** (2026-08-24). Issuing the reveal
+  frame is not showing it: the columns leave the alarm spin open-loop with the
+  index unknown, and the frame scheduler scores an unknown index as a full
+  49-flip wrap — ~3.3 s at the default 15 flaps/s, and as little as one flip
+  when the reveal is near where the spin stopped. Only the firmware can see the
+  last column arrive. When it does, `swan/event` and `/ws` both carry
+
+  ```json
+  {"e":"reveal","seq":7,"t":1787541500}
+  ```
+
+  and one `reveal` line goes into the journal. `seq` is the countdown's, so a
+  peer can tell which run landed; `t` is 0 if the clock has never synced.
+  **Two shapes now share `swan/event` and a consumer tells them apart by which
+  key is present**: a command *result* carries `cmd` (and `res`), an
+  *announcement* carries `e`. The announcement is spelled the same way as the
+  `/ws` vocabulary (`go`, `spin`, `cue`, `mode`) so one switch serves both
+  transports. It fires regardless of what started the countdown, because it is
+  a statement about the display rather than a reply to anybody. A display that
+  wakes into the reveal after a power cut announces it too, once the columns
+  get there — the cues stay silent, but the fact is still true.
+
+- **The SYSTEM FAILURE flood.** The literal is `SYSTEM FAILURE` — fourteen
+  characters, six then a single space then seven, **no trailing space** — and
+  it is a cross-repo constant: this firmware's presentation terminal, the
+  separate terminal prop, and Phase 7's protocol mode all print it. The
+  cadence, defined here on 2026-08-24 so a third implementation does not invent
+  a third one:
+
+  | property | value |
+  |---|---|
+  | separator between repeats | **none** — they butt together |
+  | line breaks emitted | **none** — the text wraps at the display's width |
+  | rate | **one repeat every 100 ms** = 10 repeats/s = **140 characters/s** |
+  | starts | when the countdown reaches zero (phase `zero`) |
+  | stops | when the phase leaves `zero`/`spin`/`reveal` |
+  | on restart | the screen is **not** cleared and the cadence does not reset |
+
+  The rate is chosen so the beat lands: a 40×24 screen holds 960 characters and
+  fills in **6.9 s**, against the 9 s the display takes to reach the reveal at
+  the default `zero_hold_s` + `spin_s`. The screen is full and scrolling by the
+  time the flaps stop. The separator is the terminal prop's own choice, adopted
+  here; the rate and the line behaviour are defined here because they were
+  never relayed.
 - **"?????" state.** The ring carries a `?` glyph (slot 33 in the current
   manifest; look it up by role `question`, never by index). The show's
   full-display `?????` state is a named preset: `preset.set {name: "qmarks"}`
@@ -888,7 +998,7 @@ API; anything the UI can do, a prop can do with a publish.
 | `message.set` | `{tokens:[5], dwell_s?, hold?}` | show five glyphs |
 | `countdown.execute` | `{numbers:"4 8 15 16 23 42"}` | the ritual: validates, then starts or resets to 108:00; wrong numbers → `rejected` |
 | `countdown.start` / `reset` / `cancel` | — | bypasses the Numbers (HA, automations) |
-| `countdown.set_target` | `{epoch}` | explicit deadline from the terminal prop; state is published retained on `swan/countdown` |
+| `countdown.set_target` | `{epoch}` | an explicit deadline; state is published retained on `swan/countdown`. **The terminal prop does not use it** (decided 2026-08-24): its only show publish is `countdown.execute`, so the ritual's validation stays in one place. The command remains, for the web UI, for maintenance and for any other peer that wants to set a deadline directly |
 | `preset.set` | `{name}` | `qmarks` (?????), `blank`, `reveal`, `wifi` |
 | `display.frame` | `{indices:[5]}` or `{tokens:[5]}` | raw frame, for props and tests; does not change mode |
 | `audio.volume` / `audio.mute` / `audio.play` | `{value}` / `{on}` / `{cue}` | |
@@ -947,10 +1057,44 @@ locally and send `countdown.start`. Both are supported.
 
 ### 10.3 MQTT + Home Assistant discovery
 Base topic `swan/` (confirmed). Retained `swan/state` JSON; retained
-`swan/countdown` deadline state (§7.3); LWT on `swan/availability`; results on
-`swan/event`. Commands are the §10.2a set under `swan/cmd/…`. The terminal
-prop is a plain MQTT peer: it subscribes to `swan/countdown` and `swan/state`
-and publishes to `swan/cmd/…`.
+`swan/countdown` deadline state (§7.3); LWT on `swan/availability`; results and
+announcements on `swan/event`. Commands are the §10.2a set under `swan/cmd/…`.
+The terminal prop is a plain MQTT peer: it subscribes to `swan/countdown`,
+`swan/state` and `swan/event`, and publishes to `swan/cmd/…`.
+
+The complete topic table, with who writes each one:
+
+| topic | written by | retained | QoS | contents |
+|---|---|---|---|---|
+| `swan/state` | display | yes | 1 | the whole state document, on change ≥1 s apart, 30 s floor |
+| `swan/countdown` | display | yes | 1 | `{state, target, set_by, seq}` — four keys, nothing else |
+| `swan/availability` | display | yes | 1 | `online` / `offline`, LWT |
+| `swan/event` | display | **no** | 0 | command results `{cmd, res}` and announcements `{e, …}` |
+| `swan/cmd/<command>` | **peers** | never (refused on replay) | any | the §10.2a set |
+| `swan/prop/terminal` | **the terminal prop** | yes | 1 | `{"online":true,"fw":"…"}`; last will `{"online":false}` |
+| `homeassistant/…/config` | display | yes | 1 | 19 discovery documents, absolute (not under the base) |
+
+**`swan/prop/terminal` is READ-ONLY here** (added 2026-08-24). The prop states
+its own liveness and this display only subscribes; nothing in the firmware can
+write that topic, because a peer's presence is the peer's to state and a
+display that could contradict a prop standing right beside it would be worse
+than one that stays quiet. It surfaces as a top-level `prop` object in the
+state document — `{seen, online, fw}` — and on Diagnostics and Settings.
+`seen` is the distinction a single boolean would lose: **"never heard from a
+prop" is not the same fact as "the prop told us it went away"**, and only the
+second one is a problem.
+
+This is the one topic where **a retained message is obeyed**, and the reason is
+worth stating because it sits next to a rule that says the opposite. Retained
+`swan/cmd/…` is logged and dropped (below) — but a *presence* document is
+retained **by design**: that is how a display which boots later learns the prop
+is already there. The refusal is therefore scoped to command topics rather than
+applied blind, which is how it was written first and would have eaten the
+prop's birth message.
+
+`fw` arrives from another machine and is re-emitted to a browser, so it is
+bounded at 31 characters and non-printable bytes become `?`. A document without
+a boolean `online` is not a presence claim and is ignored whole.
 
 **Authorisation: none in the firmware, by decision** (2026-08-23, extending
 Q7).  Every §10.2a command is reachable over MQTT, including `system.reboot`,
@@ -1094,7 +1238,49 @@ asked for: 200 lines at a realistic length is 18 KB of internal RAM, PSRAM is
 deliberately off and the board has ~76 KB free (§17, 2026-08-24). The response
 says how many lines fit and how many were evicted. A persistent **event
 journal** sits beside it at `GET /api/journal` — significant events only,
-across reboots. Full
+across reboots.
+
+**`GET /api/journal` is a frozen two-consumer contract** (2026-08-24): this
+display's own Diagnostics page and the separate terminal prop, which renders
+these lines as the Pearl station's printout. It is therefore documented
+verbatim, and pinned by a golden host test (`test_journal.cpp`,
+`test_golden_wire_format`) so an accidental change fails CI rather than
+silently breaking a printout nobody is watching.
+
+- **`GET /api/journal?n=<limit>`**, `Content-Type: application/x-ndjson`.
+  `n` absent or 0 means the DEFAULT (200 entries), never "all": this is served
+  to a browser, so an unbounded read is an allocation an outsider picks the
+  size of. The cap is 400.
+- **NDJSON: one JSON object per line, newest LAST**, each line terminated by
+  `\n`. A truncated final line (a power cut mid-append) is dropped by a
+  reader, not treated as corruption of the file.
+- **Three keys are always present, in this order**: `t` (int, UTC epoch
+  **seconds**; **`0` means the clock had never synced** and the reader should
+  fall back to `u`), `u` (int, uptime in seconds), `e` (string, the kind).
+- **Four keys are conditional**, in this order after them: `col` (int, present
+  iff the event is about one column — **column `0` IS emitted**, so absence and
+  zero are different), `seq` (int, present iff non-zero — the countdown's
+  sequence), `by` (string, present iff known — `ui` | `mqtt` | `cli` | `button`
+  | `ha`; `unknown` is never written, the key is simply absent), `d` (string,
+  free-text detail, at most 39 characters).
+- **The kinds**, and nothing outside this list:
+  `boot` `execute` `start` `reset` `cancel` `zero` `fault` `recover` `mode`
+  `maint` `column` `reveal`. Adding a kind is additive and allowed; renaming a
+  field is not.
+- Worked examples, byte for byte:
+
+  ```
+  {"t":1787541319,"u":412,"e":"execute","seq":7,"by":"mqtt","d":"4 8 15 16 23 42"}
+  {"t":0,"u":1,"e":"boot","d":"poweron 0.4.0+devkitc1"}
+  {"t":1787541400,"u":493,"e":"fault","col":0,"d":"jam"}
+  {"t":1787541500,"u":593,"e":"reveal","seq":7}
+  {"t":1787541319,"u":412,"e":"zero"}
+  ```
+
+  Two facts a renderer needs that the format does not spell out: `reset`
+  currently never appears (`countdown.reset` is an alias of `countdown.start`
+  and journals as `start`), and `countdown.set_target` writes no line at all —
+  a deadline set directly is not a ritual and does not claim to be one. Full
 log on the USB console. Task watchdog on the motion control task and the **modes**
 task (not the main task, which self-deletes, and not httpd, which blocks on recv
 by design); the 50 kHz step ISR has its own liveness counter, because the
@@ -1200,7 +1386,7 @@ worth it. ESPHome is not planned (custom Terminal UI is the reason).
 | Q3 | Ring | Same characters on all drums; cols 4–5 use a different colour scheme; **order and placement still fluid** → ring is a runtime data file (§4). Manifest arrives via the ref zip. |
 | Q4 | Countdown | All defaults: HA direct start yes, cancel yes, cues at 4:00/1:00/0:00, zero choreography as §7.3 |
 | Q5 | Column fault | Park on blank, others continue |
-| Q6 | Button | Yes — GPIO28, press = Execute, hold = rehome. **The answer stands; the code was never written** (§2, 2026-08-24). |
+| Q6 | Button | Yes — GPIO28, press = Execute, hold ≥2 s = rehome all. **Built 2026-08-24** after the same day's cold read found the answer had never been implemented; §2.5 has the behaviour and the strapping-pin constraint. |
 | Q7 | Web UI | No password on LAN; OTA via upload page |
 | Q8 | Audio | Quiet hours off; default volume 70 |
 | Q9 | Repo | GitHub from day one, MIT |

@@ -14,6 +14,7 @@
 #include "ring/json_lite.h"
 #include "audio/wav.h"
 #include "webapi/api.h"
+#include "webapi/mqtt_bridge.h"
 #include "webapi/ring_upload.h"
 
 using namespace swan;
@@ -483,6 +484,123 @@ void test_reveal_by_name() {
 // --------------------------------------------------------------------------
 // The state payload
 // --------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// THE STATE DOCUMENT'S CROSS-REPO CONTRACT (2026-08-24).
+//
+// The terminal prop reads `cfg.zero_hold_s` and `cfg.spin_s` off retained
+// swan/state to time its own SYSTEM_FAILURE beat against the display's - it does
+// NOT carry a duplicate of the 3 s / 6 s constants, which is the whole point.
+// So those two keys, their paths and their types are a contract with another
+// repository, and moving or renaming them breaks a prop nobody is watching.
+//
+// The countdown block is pinned for the same reason: swan/countdown carries
+// `state` and `target`, and the prop derives everything else from `cd`.
+//
+// If this test failed: FIRMWARE_SPEC 7.3 and 10.3 document what these mean.
+// Adding a key is fine. Renaming, moving or retyping one is a cross-repo change.
+// ---------------------------------------------------------------------------
+void test_state_document_contract() {
+    Rig r;
+    const std::string doc = r.state();
+    json::Value v;
+    CHECK(json::parse(doc, v, nullptr, 4000));
+
+    struct Req {
+        const char* path;      // "a.b"
+        json::Type type;
+    };
+    const Req required[] = {
+        // The choreography timings the prop schedules against.
+        {"cfg.zero_hold_s", json::Type::Int},
+        {"cfg.spin_s", json::Type::Int},
+        // ... and the rest of the countdown behaviour it renders.
+        {"cfg.failure_timeout_s", json::Type::Int},
+        {"cfg.failure_loop_s", json::Type::Int},
+        {"cd.phase", json::Type::Str},
+        {"cd.target", json::Type::Int},
+        {"cd.remaining_s", json::Type::Int},
+        {"cd.set_by", json::Type::Str},
+        {"cd.seq", json::Type::Int},
+        {"cd.seconds_live_s", json::Type::Int},
+        // The device's own zone, which a kiosk in another one needs.
+        {"tz_offset_s", json::Type::Int},
+        // The peer's presence, read-only.
+        {"prop.seen", json::Type::Bool},
+        {"prop.online", json::Type::Bool},
+        {"prop.fw", json::Type::Str},
+    };
+    for (const Req& q : required) {
+        const std::string p(q.path);
+        const size_t dot = p.find('.');
+        const json::Value* got = nullptr;
+        if (dot == std::string::npos) {
+            got = v.get(p.c_str());
+        } else {
+            const json::Value* parent = v.get(p.substr(0, dot).c_str());
+            if (parent != nullptr) got = parent->get(p.substr(dot + 1).c_str());
+        }
+        if (got == nullptr) std::printf("  MISSING: %s\n", q.path);
+        CHECK(got != nullptr);
+        if (got != nullptr && got->type != q.type) {
+            std::printf("  WRONG TYPE: %s\n", q.path);
+        }
+        if (got != nullptr) CHECK(got->type == q.type);
+    }
+
+    // cd.phase's vocabulary is part of it - the prop switches on these strings.
+    const json::Value* phase = v.get("cd")->get("phase");
+    const std::string ph(phase->as_str());
+    CHECK(ph == "idle" || ph == "running" || ph == "zero" || ph == "spin" || ph == "reveal");
+
+    // And the two timing keys must sit INSIDE the MQTT change window, or a
+    // change to either would only reach the prop on the 30 s heartbeat.
+    const std::string slice(api::display_slice(doc));
+    if (slice.find("zero_hold_s") == std::string::npos) {
+        std::printf("  cfg.zero_hold_s is outside the MQTT change window\n");
+    }
+    CHECK(slice.find("zero_hold_s") != std::string::npos);
+    CHECK(slice.find("spin_s") != std::string::npos);
+    CHECK(slice.find("\"prop\"") != std::string::npos);
+}
+
+// The peer's presence document arrives from another machine, so it is parsed
+// strictly and bounded: it reaches a browser verbatim.
+void test_prop_presence_parsing() {
+    api::PropPresence p;
+    CHECK(api::parse_prop_presence(R"({"online":true,"fw":"1.2.3"})", p));
+    CHECK(p.seen);
+    CHECK(p.online);
+    CHECK(std::string(p.fw) == "1.2.3");
+
+    CHECK(api::parse_prop_presence(R"({"online":false})", p));
+    CHECK(p.seen);
+    CHECK(!p.online);
+    CHECK(std::string(p.fw).empty());
+
+    // fw is decoration; a bad one is ignored, not fatal, because the liveness
+    // flag is the part that matters.
+    CHECK(api::parse_prop_presence(R"({"online":true,"fw":42})", p));
+    CHECK(p.online);
+
+    // Anything without a boolean "online" is not a presence claim at all.
+    for (const char* bad : {R"({})", R"({"online":"yes"})", R"([true])",
+                            R"({"fw":"1.2.3"})", "true", "", "not json"}) {
+        api::PropPresence before = p;
+        CHECK(!api::parse_prop_presence(bad, p));
+        CHECK(p.online == before.online);   // untouched
+    }
+
+    // Bounded, and sanitised: this string is re-emitted into a JSON document.
+    std::string longfw = R"({"online":true,"fw":")";
+    longfw.append(200, 'x');
+    longfw += R"("})";
+    CHECK(api::parse_prop_presence(longfw, p));
+    CHECK(std::string(p.fw).size() <= api::PROP_FW_MAX);
+
+    CHECK(api::parse_prop_presence("{\"online\":true,\"fw\":\"a\\tb\"}", p));
+    CHECK(std::string(p.fw) == "a?b");      // control characters replaced
+}
+
 void test_state_payload() {
     Rig r;
     r.sys.s.wifi_state = "connected";
@@ -1222,6 +1340,8 @@ void run_tests() {
     test_command_round_trip();
     test_reveal_by_name();
     test_state_payload();
+    test_state_document_contract();
+    test_prop_presence_parsing();
     test_cal_ramp();
     test_upload_validator();
     test_ring_swap_vs_readers();
