@@ -55,6 +55,15 @@ testing. Set the others to `sim` or `disabled` first:
 col 1 disabled ; col 2 disabled ; col 3 disabled ; col 4 disabled
 ```
 
+**Wiring is not documented anywhere, and this file cannot invent it.** A cold
+read looked for and did not find: the Hall JST pinout (which pin is 5 V, which
+is the open-collector output), the coil pairing for the NEMA 17s actually
+bought, the TMC2209 Vref procedure for the specific driver modules (`BOM.md`
+says "per-vendor formula to ~1.1–1.2 A RMS" and names no vendor), and whether
+anything must not be hot-plugged. **Nico: these belong here before the first
+motor goes on**, and they are the only bring-up facts nobody in this repo can
+derive.
+
 ## Verification status
 
 Phases 1–6 build and their host tests pass, and everything through Phase 6 has

@@ -172,6 +172,9 @@ The rules, from 2026-08-21:
 
 - Pure logic (ring, modes, schedules, position math) has no IDF includes so
   it compiles on the host. Hardware access goes through `hal/`.
+  A NEW pure file must be added in two places: its component's
+  `idf_component_register(SRCS ...)` **and** `SWAN_PURE_SRC` in
+  `test/host/CMakeLists.txt`, or the host suites silently do not compile it.
 - Every spec section that becomes code gets a unit test first where one is
   possible (ring math, `T(i)`, clock render, countdown schedule).
 - Log with `ESP_LOGx` under per-component tags; never `printf` from tasks.

@@ -32,7 +32,7 @@ Target: ESP32-C5-DevKitC-1-N8R8 (XIAO ESP32-C5 map behind a board define).
 | gate | status |
 |---|---|
 | `set-target esp32c5` + `build` clean | passes — zero warnings, both board maps |
-| host tests green | 16/16 C++ suites plus the mirror widget's JS suite (CI) |
+| host tests green | 18/18 C++ suites plus the mirror widget's JS suite and a parse gate over every `web/*.js` (CI) |
 | release image cannot carry the simulator | `-DSWAN_RELEASE=1` with `SWAN_SIM_AXES=ON` is a configure-time `FATAL_ERROR`; CI builds both halves |
 | Phase 3 adversarial review | 22 findings confirmed, all fixed — see spec §17 |
 | `git diff` empty after `tools/ringgen.py` | clean — header and ring.json both regenerate byte-identically |
@@ -56,7 +56,7 @@ none of the Windows dev machine's constraints exist:
 | job | what |
 |---|---|
 | `ring-table` | `python3 tools/ringgen.py --check` — the committed header AND `data/ring.json` must match the two manifests |
-| `host-tests` | native CMake build + ctest of all seven pure-logic suites, then a freshness diff of the committed simulator traces against a live `gen_traces` run |
+| `host-tests` | native CMake build + ctest of all eighteen pure-logic suites, then a freshness diff of the committed simulator traces against a live `gen_traces` run |
 | `firmware` | both board maps (`devkitc1`, `xiao`) built inside Espressif's official `espressif/idf:v5.5.5` Docker image |
 
 **Linux CI is the source of truth for reliability.** The Smart-App-Control
@@ -393,23 +393,33 @@ build turns that into `storage.bin`. Only the `.gz` copies ship, and
 | file | raw | gzipped |
 |---|---:|---:|
 | `glyphs.svg` | 57,602 | 20,747 |
-| `ring.json` | 9,361 | 9,361 |
-| `app.js` | 23,650 | 7,816 |
-| `index.html` | 13,852 | 4,590 |
-| `terminal.js` | 12,024 | 4,481 |
-| `flap.js` | 11,572 | 4,151 |
-| `terminal.css` | 9,044 | 3,085 |
+| file | raw | in the image |
+|---|---:|---:|
+| `glyphs.svg` | 57,602 | 20,747 |
+| `app.js` | 40,287 | 13,154 |
+| `index.html` | 22,993 | 7,474 |
+| `terminal.js` | 16,411 | 6,235 |
+| `flap.js` | 14,651 | 5,269 |
+| `terminal.css` | 9,268 | 3,185 |
 | `style.css` | 8,347 | 2,916 |
-| `bus.js` | 2,946 | 1,184 |
-| `terminal.html` | 2,274 | 953 |
-| **total** | **150,672** | **59,284** |
+| `portal.html` | 5,005 | 2,322 |
+| `bus.js` | 3,385 | 1,386 |
+| `terminal.html` | 2,571 | 1,120 |
+| `ring.json` (uncompressed) | 9,361 | 9,361 |
+| the five audio cues (uncompressed) | 79,594 | 79,594 |
+| **total** | **269,475** | **152,763** |
 
-Against a **2048 KB** partition, so the room is for audio (spec §9). The
-packer fails the build above a 256 KB budget rather than letting the UI
-quietly eat it. The glyph sheet is 37% of the payload and worth it; digits,
-AM/PM and blank are still text placeholders, and exporting those too would add
-roughly 6 KB gzipped. `ring.json` is the one file that ships **uncompressed** —
-the firmware opens it directly and knows nothing about gzip.
+Against a **2048 KB** partition, so there is room to spare — the packer fails
+the build above a **256 KB** budget rather than letting the UI quietly eat what
+audio needs. Regenerate this table with `python tools/webpack.py --out build/webfs`
+rather than trusting it; it has drifted before.
+
+The glyph sheet is the single biggest item and worth it; digits, AM/PM and blank
+are still text placeholders, and exporting those too would add roughly 6 KB.
+Two kinds of file ship **uncompressed**: `ring.json` and the WAVs, because the
+firmware opens both directly and knows nothing about gzip — compressing
+`ring.json` once meant the fluid runtime ring silently never loaded at all
+(§17, 2026-08-23).
 
 ### Per-column mode: real, sim, disabled
 

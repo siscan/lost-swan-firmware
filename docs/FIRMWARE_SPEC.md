@@ -1213,6 +1213,16 @@ tied at each driver.
 Append here when a `[Q]` is answered or a default is overturned, with the
 reason, so nothing gets re-litigated.
 
+**How to read this spec.** The numbered sections are normative — they say what
+the firmware does *now*. This log is history: why it came to be that way. When
+a decision changes behaviour, the numbered section is edited **in place** and
+the log records the change; a numbered section that contradicts a log entry is
+a bug in the spec, not a subtlety, and two of them survived until a cold read
+on 2026-08-24 found them (§10.4 still said the watchdog did not panic; §12 still
+promised 200 log lines and a watchdog on a task that self-deletes). The log is
+now half this document's length, so nobody should have to scan it to trust a
+numbered section — if you find one that disagrees, fix the section.
+
 - 2026-08-21 — Spec v0.1 drafted from BUILD/README v6, BOM, and the ring
   freeze. Ascending ring, MMM:S0 countdown, standalone TMC2209 at 1/16, A3144
   halls, ESP32-C5 as sole controller are carried over as locked.
