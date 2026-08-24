@@ -5,6 +5,8 @@
 #include <mutex>
 #include <vector>
 
+#include <sys/time.h>
+
 #include "esp_app_desc.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
@@ -32,7 +34,21 @@ constexpr const char* TAG = "ota";
 // than the task watchdog now tolerates, and the watchdog is deliberately set to
 // panic (spec 10.4), so the sequential form is not a preference.
 constexpr size_t CHUNK = 4096;
-constexpr int64_t RECV_DEADLINE_MS = 120000;   // a 1.25 MB image over WiFi
+// TWO bounds, because they answer different questions.
+//
+// The total budget has to be generous: a 1.5 MB image over weak WiFi is a
+// legitimately long transfer (5.8 s on a good LAN, measured).  But there is one
+// httpd task, and while this handler runs nothing else is served and the
+// display is held - so a client that has simply STOPPED must not get the full
+// budget.  Progress resets the stall bound; the total is never reset.
+constexpr int64_t RECV_TOTAL_MS = 120000;
+constexpr int64_t RECV_STALL_MS = 10000;
+// ... and a floor, because a client trickling one byte at a time is technically
+// making progress and would otherwise get the whole 120 s.  A real 1.5 MB
+// upload needs ~12 KB/s to finish inside the budget at all; 1 KB/s is
+// twelve times slower than that and still cuts a deliberate slowloris to 30 s.
+constexpr int64_t RECV_FLOOR_AFTER_MS = 30000;
+constexpr uint32_t RECV_FLOOR_BYTES = 30000;
 
 api::Context* g_ctx = nullptr;
 std::mutex g_mu;
@@ -42,7 +58,15 @@ std::string g_last_error;
 std::atomic<bool> g_pending_verify{false};
 std::string g_boot_verdict = "n/a";
 
-int64_t now_ms() { return esp_timer_get_time() / 1000; }
+int64_t now_ms() { return esp_timer_get_time() / 1000; }   // uptime, for deadlines
+
+// UTC milliseconds, which is what ModeManager's timebase is.  Releasing the
+// hold with 0 made it re-render for 1970.
+int64_t wall_ms() {
+    timeval tv;
+    gettimeofday(&tv, nullptr);
+    return static_cast<int64_t>(tv.tv_sec) * 1000 + tv.tv_usec / 1000;
+}
 
 void set_error(const std::string& e) {
     const std::lock_guard<std::mutex> lock(g_mu);
@@ -88,6 +112,13 @@ void watcher_task(void*) {
         if (v == api::BootVerdict::Wait) continue;
 
         if (v == api::BootVerdict::Confirm) {
+            if (h.nvs_was_erased) {
+                // Confirming anyway (see ota_evaluate), but this must not pass
+                // unremarked: every setting is back to its default, which
+                // includes the column modes and the calibration.
+                ESP_LOGE(TAG, "*** NVS WAS ERASED THIS BOOT - every setting is at its "
+                              "default. Check `persist`. ***");
+            }
             if (esp_ota_mark_app_valid_cancel_rollback() == ESP_OK) {
                 g_pending_verify.store(false, std::memory_order_relaxed);
                 ESP_LOGI(TAG, "image confirmed: app_main done, config ok (no NVS erase), "
@@ -98,9 +129,8 @@ void watcher_task(void*) {
             continue;
         }
 
-        ESP_LOGE(TAG, "image did NOT confirm within %lus (%s); rolling back",
-                 static_cast<unsigned long>(api::OTA_CONFIRM_DEADLINE_S),
-                 h.nvs_was_erased ? "NVS was erased" : "invariants unmet");
+        ESP_LOGE(TAG, "image did NOT confirm within %lus; rolling back",
+                 static_cast<unsigned long>(api::OTA_CONFIRM_DEADLINE_S));
         mqtt_go_offline();
         esp_ota_mark_app_invalid_rollback_and_reboot();
     }
@@ -122,6 +152,10 @@ std::string refuse(const char* verdict, const char* reason) {
 }
 
 esp_err_t ota_post(httpd_req_t* req) {
+    if (g_ctx == nullptr) {
+        return send_json(req, refuse("not_ready", "the display is still starting up"),
+                         "503 Service Unavailable");
+    }
     if (g_in_progress.exchange(true)) {
         return send_json(req, refuse("busy", "an update is already running"), "409 Conflict");
     }
@@ -149,10 +183,21 @@ esp_err_t ota_post(httpd_req_t* req) {
     std::vector<uint8_t> head;
     head.reserve(api::OTA_HEADER_BYTES);
     uint8_t buf[CHUNK];
-    const int64_t deadline = now_ms() + RECV_DEADLINE_MS;
+    const int64_t start = now_ms();
+    const int64_t deadline = start + RECV_TOTAL_MS;
+    int64_t last_progress = now_ms();
     int timeouts = 0;
 
     while (head.size() < api::OTA_HEADER_BYTES) {
+        // UNCONDITIONALLY, not only on a timeout.  recv_wait_timeout is 2 s and
+        // httpd_req_recv returns as soon as one byte is available, so a client
+        // dribbling a byte every 1.5 s never produces a timeout - and the
+        // single httpd task is parked here for as long as it likes.  read_body
+        // already had this bound; the OTA copy did not.
+        if (now_ms() > deadline || now_ms() - last_progress > RECV_STALL_MS) {
+            return send_json(req, refuse("timeout", "the upload stalled"),
+                             "408 Request Timeout");
+        }
         const int n = httpd_req_recv(req, reinterpret_cast<char*>(buf),
                                      std::min(CHUNK, api::OTA_HEADER_BYTES - head.size()));
         if (n == HTTPD_SOCK_ERR_TIMEOUT) {
@@ -167,6 +212,7 @@ esp_err_t ota_post(httpd_req_t* req) {
         }
         head.insert(head.end(), buf, buf + n);
         timeouts = 0;
+        last_progress = now_ms();
     }
 
     api::OtaPrecheck pre;
@@ -212,15 +258,25 @@ esp_err_t ota_post(httpd_req_t* req) {
     // OTA_WITH_SEQUENTIAL_WRITES, not the announced size: see CHUNK above.
     esp_err_t err = esp_ota_begin(target, OTA_WITH_SEQUENTIAL_WRITES, &handle);
     if (err != ESP_OK) {
-        g_ctx->modes.cmd_ota_hold(false, 0);
+        g_ctx->modes.cmd_ota_hold(false, wall_ms());
+        mqtt_reconfigure();
         set_error(esp_err_to_name(err));
         return send_json(req, refuse("begin_failed", esp_err_to_name(err)),
                          "500 Internal Server Error");
     }
 
+    // One place that undoes everything the upload took, because there are six
+    // exits and three of them used to forget something: the hold was released
+    // with epoch 0 (so the display re-rendered a frame for 1970), and MQTT was
+    // never restarted at all - leaving the device retained-offline in Home
+    // Assistant until the next reboot.
+    auto release = [&]() {
+        g_ctx->modes.cmd_ota_hold(false, wall_ms());
+        mqtt_reconfigure();   // reconnects if it is configured; a no-op if not
+    };
     auto fail = [&](const char* what, const char* status) {
         esp_ota_abort(handle);
-        g_ctx->modes.cmd_ota_hold(false, 0);
+        release();
         set_error(what);
         ESP_LOGE(TAG, "%s", what);
         return send_json(req, refuse("write_failed", what), status);
@@ -231,6 +287,16 @@ esp_err_t ota_post(httpd_req_t* req) {
     g_received.store(static_cast<uint32_t>(head.size()), std::memory_order_relaxed);
 
     for (;;) {
+        // Same bound, and it matters more here: by this point the motion hold
+        // is taken and MQTT is stopped, so a stalled client freezes the clock
+        // and the cues as well as the web server.
+        if (now_ms() > deadline || now_ms() - last_progress > RECV_STALL_MS) {
+            return fail("the upload stalled", "408 Request Timeout");
+        }
+        if (now_ms() - start > RECV_FLOOR_AFTER_MS &&
+            g_received.load(std::memory_order_relaxed) < RECV_FLOOR_BYTES) {
+            return fail("the upload is too slow to finish", "408 Request Timeout");
+        }
         const int n = httpd_req_recv(req, reinterpret_cast<char*>(buf), CHUNK);
         if (n == HTTPD_SOCK_ERR_TIMEOUT) {
             if (++timeouts > 2 || now_ms() > deadline) return fail("the upload stalled",
@@ -240,22 +306,24 @@ esp_err_t ota_post(httpd_req_t* req) {
         if (n == 0) break;                       // the client closed: done
         if (n < 0) return fail("the upload was interrupted", "400 Bad Request");
         timeouts = 0;
+        last_progress = now_ms();
         err = esp_ota_write(handle, buf, static_cast<size_t>(n));
         if (err != ESP_OK) return fail(esp_err_to_name(err), "500 Internal Server Error");
         const uint32_t got = g_received.fetch_add(static_cast<uint32_t>(n),
                                                   std::memory_order_relaxed) +
                              static_cast<uint32_t>(n);
         if (req->content_len > 0 && got >= req->content_len) break;
-        // Each 4 KB chunk costs one sector erase with the cache off - tens of
-        // milliseconds, far inside the watchdog's window, but this task is not
-        // subscribed to it anyway and the feed here is for the idle task's
-        // benefit on a long transfer.
-        esp_task_wdt_reset();
+        // No esp_task_wdt_reset here: the httpd task is deliberately NOT
+        // subscribed to the watchdog, so the call was a no-op whose comment
+        // claimed a protection it did not provide.  What actually keeps the
+        // watchdog quiet is that each 4 KB chunk is ONE sector erase - tens of
+        // milliseconds - and the task blocks on recv in between, which is when
+        // everything else runs.
     }
 
     err = esp_ota_end(handle);
     if (err != ESP_OK) {
-        g_ctx->modes.cmd_ota_hold(false, 0);
+        release();
         set_error(esp_err_to_name(err));
         // ESP_ERR_OTA_VALIDATE_FAILED here means a truncated or corrupt image;
         // the running one is untouched.
@@ -264,7 +332,7 @@ esp_err_t ota_post(httpd_req_t* req) {
     }
     err = esp_ota_set_boot_partition(target);
     if (err != ESP_OK) {
-        g_ctx->modes.cmd_ota_hold(false, 0);
+        release();
         set_error(esp_err_to_name(err));
         return send_json(req, refuse("set_boot_failed", esp_err_to_name(err)),
                          "500 Internal Server Error");
@@ -301,8 +369,9 @@ esp_err_t ota_status_get(httpd_req_t* req) {
 
 }  // namespace
 
-esp_err_t ota_init(api::Context& ctx) {
-    g_ctx = &ctx;
+void ota_bind(api::Context& ctx) { g_ctx = &ctx; }
+
+esp_err_t ota_init() {
     const esp_partition_t* running = esp_ota_get_running_partition();
     esp_ota_img_states_t st = ESP_OTA_IMG_UNDEFINED;
     if (running != nullptr && esp_ota_get_state_partition(running, &st) == ESP_OK) {

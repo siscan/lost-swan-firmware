@@ -14,7 +14,13 @@ namespace net {
 
 // Starts the confirm watcher.  Short-circuits immediately unless the running
 // image is PENDING_VERIFY, so it costs nothing on an ordinary boot.
-esp_err_t ota_init(api::Context& ctx);
+// Takes no Context: it must be startable as the FIRST thing app_main does,
+// before the Context exists, because an image that hangs before this point
+// would otherwise never be able to roll itself back.
+esp_err_t ota_init();
+
+// The upload route needs the dispatcher, for the motion hold.
+void ota_bind(api::Context& ctx);
 
 struct OtaState {
     bool pending_verify = false;   // this image has not confirmed itself yet

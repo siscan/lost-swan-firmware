@@ -221,12 +221,20 @@ void test_boot_criterion() {
     h.uptime_s = OTA_CONFIRM_DEADLINE_S;
     CHECK(ota_evaluate(h) == BootVerdict::Rollback);
 
-    // An erased NVS is immediate, without waiting out the clock: everything
-    // then reads back as a plausible default, and a board saved all-simulated
-    // silently starts driving unwired hardware.
+    // An erased NVS does NOT force a rollback, and the reasoning is the same
+    // as "a broken Hall is not a broken image": the erase has already
+    // happened, rolling back cannot undo it - the old image boots to the same
+    // blank NVS - and the cause is usually a full or corrupt partition the
+    // previous image would have hit too.  Discarding a working image for it
+    // helps nobody.  It is reported loudly instead.
     h = healthy();
     h.nvs_was_erased = true;
     h.uptime_s = 1;
+    CHECK(ota_evaluate(h) == BootVerdict::Confirm);
+    // ... and an erased NVS on an image that is ALSO unhealthy still rolls
+    // back, on the ordinary criterion.
+    h.app_main_completed = false;
+    h.uptime_s = 200;
     CHECK(ota_evaluate(h) == BootVerdict::Rollback);
 
     for (int which = 0; which < 4; ++which) {

@@ -159,11 +159,18 @@ const char* boot_verdict_name(BootVerdict v) {
 }
 
 BootVerdict ota_evaluate(const BootHealth& h) {
-    // An erased NVS is the one hard failure: everything then reads back as a
-    // plausible default, so a board saved all-simulated silently starts driving
-    // unwired hardware.  Roll back at once rather than waiting out the clock.
-    if (h.nvs_was_erased) return BootVerdict::Rollback;
-
+    // An erased NVS used to force an immediate rollback.  That was wrong twice
+    // over: the erase has ALREADY happened, so rolling back cannot undo it -
+    // the old image boots to the same blank NVS - and it makes an unrelated
+    // failure (a full or corrupt partition, which the previous image would
+    // have hit too) look like a bad update, so the good image gets discarded
+    // for nothing.
+    //
+    // It is still a strong signal that the settings are gone, and it is
+    // REPORTED loudly, but confirming is the safer answer: an image that runs
+    // is worth more than an image that does not, and the erase is a
+    // configuration problem, not an image problem.  Same reasoning as "a
+    // broken Hall is not a broken image".
     const bool healthy = h.app_main_completed && h.config_ok && h.httpd_ok &&
                          h.modes_ticks >= OTA_MIN_MODES_TICKS &&
                          h.motion_ticks >= OTA_MIN_MOTION_TICKS;
