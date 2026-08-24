@@ -5,6 +5,7 @@
 #include <atomic>
 #include <cstring>
 #include <string>
+#include <mutex>
 #include <thread>
 #include <vector>
 
@@ -942,7 +943,16 @@ void test_dispatch_is_serialised() {
             R"("}})";
         for (int i = 0; i < 400; ++i) {
             if (!is_ok(api::handle_command(r.ctx, cmd, r.time.utc_ms))) ++errors;
-            const ColumnConfig seen = r.motion.cols;
+            // Observed UNDER the dispatcher's own lock.  Reading it unlocked
+            // is itself a race - the other thread is legitimately mid-write
+            // inside its own critical section - and a torn read there says
+            // nothing about whether the dispatcher serialised.  (Linux CI
+            // caught exactly that; Windows happened not to.)
+            ColumnConfig seen;
+            {
+                const std::lock_guard<std::mutex> lock(r.ctx.dispatch_mu);
+                seen = r.motion.cols;
+            }
             const ColumnMode first = seen.mode[0];
             for (int c = 1; c < N_COLUMNS; ++c) {
                 if (seen.mode[static_cast<size_t>(c)] != first) ++errors;  // torn
