@@ -338,10 +338,27 @@ void test_command_round_trip() {
     CHECK(is_ok(r.cmd(R"({"cmd":"config.save"})")));
     CHECK_EQ(r.cfg.app_saves, 1);
 
-    // Later phases answer honestly rather than pretending.
-    CHECK(!is_ok(r.cmd(R"({"cmd":"audio.volume","payload":50})")));
-    CHECK(err_of(r.cmd(R"({"cmd":"audio.play","payload":"warn_4min"})")).find("phase 5") !=
-          std::string::npos);
+    // Audio (spec 9), now that phase 5 has landed.
+    CHECK(is_ok(r.cmd(R"({"cmd":"audio.volume","payload":50})")));
+    CHECK_EQ(r.audio.st.volume, 50);
+    CHECK(!is_ok(r.cmd(R"({"cmd":"audio.volume","payload":140})")));
+    CHECK(!is_ok(r.cmd(R"({"cmd":"audio.volume","payload":-1})")));
+    CHECK(is_ok(r.cmd(R"({"cmd":"audio.mute","payload":true})")));
+    CHECK(r.audio.st.mute);
+    CHECK(is_ok(r.cmd(R"({"cmd":"audio.play","payload":"warn_4min"})")));
+    CHECK_EQ(r.audio.plays, 1);
+    CHECK(!is_ok(r.cmd(R"({"cmd":"audio.play","payload":"nope"})")));
+    // A cue with no file is REFUSED, not reported as played: "the alarm did
+    // nothing" is a bad thing to discover at zero.
+    r.audio.has_files = false;
+    CHECK(!is_ok(r.cmd(R"({"cmd":"audio.play","payload":"system_failure"})")));
+    r.audio.has_files = true;
+    // Quiet hours: both bounds equal means OFF, and that has to stay
+    // expressible rather than becoming a 24-hour silence.
+    CHECK(is_ok(r.cmd(R"({"cmd":"audio.quiet","payload":{"start_min":1320,"end_min":420}})")));
+    CHECK_EQ(r.audio.st.quiet_start_min, 1320);
+    CHECK(!is_ok(r.cmd(R"({"cmd":"audio.quiet","payload":{"start_min":-1,"end_min":420}})")));
+    CHECK(!is_ok(r.cmd(R"({"cmd":"audio.quiet","payload":{"start_min":0}})")));
 
     // Reboot goes through the ops interface.
     CHECK(is_ok(r.cmd(R"({"cmd":"system.reboot"})")));
