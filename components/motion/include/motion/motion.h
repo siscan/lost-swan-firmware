@@ -62,6 +62,14 @@ ColumnConfig columns();
 // says an image is broken rather than a mechanism.
 uint32_t control_ticks();
 
+// The 50 kHz step ISR's own liveness.  The task watchdog watches the 1 kHz
+// control task; if the GPTimer stops, that task keeps looping and feeding it
+// while the drums stand still, so this is the one component whose death is
+// otherwise invisible.  False = no ISR tick for 200 ms.
+bool step_isr_alive();
+uint32_t step_isr_stalls();
+uint32_t step_isr_ticks();
+
 // True when at least one column is simulated.  Everything that reports device
 // state consults this; it is the reason the banner, the boot line, the state
 // payload and `stats` all say so.

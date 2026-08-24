@@ -240,6 +240,10 @@ function renderDiag(s) {
                  ? au.cues_total + " cues"
                  : au.cues_present + "/" + au.cues_total + " cues — ONE IS MISSING") +
               " · vol " + au.volume + (au.mute ? " · MUTED" : "")],
+    ["step timer", s.sys.step_isr_alive === false
+                     ? "STOPPED — the columns cannot move"
+                     : (s.sys.step_isr_stalls ? "ok (" + s.sys.step_isr_stalls + " stalls since boot)"
+                                              : "ok")],
     ["countdown", s.cd.phase + (s.cd.set_by && s.cd.set_by !== "unknown"
                                     ? " · set by " + s.cd.set_by + " (seq " + s.cd.seq + ")"
                                     : "")],

@@ -245,6 +245,8 @@ std::string build_state(Context& ctx, int64_t utc_ms) {
         // hard-coded "3" in four places against a compile-time constant with no
         // wire representation - correct today, silently wrong the day it moves.
         .kv("rehome_retries", REHOME_RETRIES)
+        .kv("step_isr_alive", sys.step_isr_alive)
+        .kv("step_isr_stalls", static_cast<int64_t>(sys.step_isr_stalls))
         .end_obj();
 
     w.end_obj();

@@ -97,6 +97,10 @@ struct SysInfo {
     // silent drop is exactly what hid the stale-mirror bug: the display
     // stopped tracking and nothing anywhere said why.
     uint32_t ws_dropped = 0;
+    // The 50 kHz step timer's own liveness.  The task watchdog cannot see
+    // this: if the ISR stops, the control task keeps feeding it.
+    bool step_isr_alive = true;
+    uint32_t step_isr_stalls = 0;
 };
 
 class SysInfoSource {

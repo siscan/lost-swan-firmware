@@ -62,6 +62,11 @@ CONFIG_MQTT_SKIP_PUBLISH_IF_DISCONNECTED=y
 # with time to spare.
 CONFIG_ESP_TASK_WDT_PANIC=y
 CONFIG_ESP_TASK_WDT_TIMEOUT_S=30
+# Declared rather than inherited.  This is the ONLY coverage for "a task above
+# priority 0 is spinning and starving everything below it" - the shape behind
+# several of the panics fixed in phases 4 and 5 - and it was on only by IDF
+# default, which is a load-bearing setting nobody had written down.
+CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU0=y
 
 # NOT enabled yet, deliberately:
 #   CONFIG_SPIRAM             — N8R8 has 8 MB PSRAM but nothing in Phase 1 needs
