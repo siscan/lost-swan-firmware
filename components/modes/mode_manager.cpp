@@ -336,7 +336,21 @@ void ModeManager::tick_locked(int64_t utc_ms) {
     // should not silently cancel a countdown) but NOTHING is rendered or
     // scheduled.  Cues are held too - a system-failure alarm going off while
     // someone has their hands in the mechanism is exactly wrong.
-    if (maintenance_ || ota_hold_) return;
+    //
+    // ONE exception, and it is the point of the mode: the calibration walk is a
+    // MANUAL command, and spec 5.9 says manual commands work in maintenance
+    // because "a suspect column is driven by hand from the Calibrate page".
+    // The walk used to sit below this gate, so in maintenance motion.ramp
+    // returned ok, the page reported "walking column N", cal.ramp_active stayed
+    // true - and the column never moved.  Measured on the board: IDLE at the
+    // same index for five seconds against a one-second dwell.
+    //
+    // An OTA hold is different and keeps suppressing it: motion is held for the
+    // duration by design, and the dispatcher already refuses motion.ramp there.
+    if (maintenance_ || ota_hold_) {
+        if (ramp_.active && !ota_hold_) tick_ramp(utc_ms);
+        return;
+    }
 
     if (pending_resume_ && time_.valid()) {
         pending_resume_ = false;
@@ -780,6 +794,13 @@ ModeManager::Result ModeManager::cmd_cal_ramp(int col, int from, int to, int ste
     const std::lock_guard<std::mutex> lock(mu_);
     const Enter witness(*this);
     if (col < 0 || col >= N_COLUMNS) return {false, "bad column"};
+    // An excluded column is dropped by the frame scheduler, so a walk on one
+    // would report itself active and move nothing.  Refuse instead of
+    // performing a walk nobody can see (spec 5.9: disabled is set by the user,
+    // so this is a mistake worth naming, not a state to work around).
+    if (((sched_.excluded() >> col) & 1) != 0) {
+        return {false, "that column is disabled - nothing would move"};
+    }
     const int n = ring_.col(col).slot_count();
     if (from < 0 || from >= n || to < 0 || to >= n) return {false, "index out of range"};
     if (step < 1 || step > n) return {false, "bad step"};

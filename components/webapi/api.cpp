@@ -23,6 +23,15 @@ std::string err_result(std::string_view why) {
     return w.take();
 }
 
+// Accepted, and something is different - but not the thing the caller was
+// probably after.  `ok` stays true because the command DID take effect; `note`
+// is what stops that being the whole story.
+std::string note_result(std::string_view note) {
+    Writer w;
+    w.obj().kv("ok", true).kv("note", note).end_obj();
+    return w.take();
+}
+
 std::string result_of(ModeManager::Result r) {
     return r.ok ? ok_result() : err_result(r.err ? r.err : "rejected");
 }
@@ -492,6 +501,20 @@ std::string do_config_set(Context& ctx, const RingSet& ring, const json::Value& 
     return ok_result();
 }
 
+// Did a reply say the command succeeded?  Used by the maintenance gate, which
+// runs a command and then decorates its OWN reply with a note - it must not
+// turn a rejection into a success.
+bool is_ok_doc(const std::string& res) {
+    json::Value v;
+    return json::parse(res, v, nullptr) && v.get("ok") != nullptr && v.get("ok")->boolean;
+}
+
+// Everything below the OTA-hold and maintenance gates.  Split out so those
+// gates cannot be bypassed by a command handler that happens to be declared
+// earlier, and so the gate can run a command and then qualify the answer.
+std::string dispatch_after_gates(Context& ctx, const RingSet& ring, std::string_view c,
+                                 const json::Value& p, int64_t utc_ms, Origin by);
+
 }  // namespace
 
 std::string handle_command(Context& ctx, std::string_view body, int64_t utc_ms, Origin by) {
@@ -529,6 +552,46 @@ std::string handle_command(Context& ctx, std::string_view body, int64_t utc_ms, 
         }
     }
 
+    // Maintenance is where "ok" lied hardest, across a dozen commands at once.
+    // tick_locked returns before rendering, so mode.set / clock.format / a ring
+    // swap returned ok and no column was ever commanded - and message.set,
+    // preset.set and display.frame are WORSE, because they call issue()
+    // directly, outside that gate: they drove the drums while somebody had
+    // their hands in the mechanism, or pulsed STEP into de-energised drivers
+    // after a boot in maintenance, leaving the axis believing a position it
+    // never reached.
+    //
+    // Split by what spec 5.9 actually promises.  Manual driving works - that is
+    // the point of the mode, and it is how a suspect column is exercised from
+    // the Calibrate page.  Display-driving commands are refused with a reason.
+    // The deadline commands are the third case: the deadline is absolute and
+    // genuinely arms (spec 5.9 says a repair does not cancel a countdown), so
+    // they succeed with a note rather than an error.
+    if (ctx.modes.maintenance()) {
+        for (const char* blocked : {"mode.set", "message.set", "preset.set", "display.frame",
+                                    "clock.format"}) {
+            if (c == blocked) {
+                return err_result("maintenance is on - nothing is driven; leave maintenance first");
+            }
+        }
+        for (const char* deferred : {"countdown.execute", "countdown.start", "countdown.reset",
+                                     "countdown.set_target"}) {
+            if (c == deferred) {
+                const std::string res = dispatch_after_gates(ctx, ring, c, p, utc_ms, by);
+                if (!is_ok_doc(res)) return res;
+                return note_result("the deadline is running, but maintenance is on so nothing "
+                                   "is being displayed or driven");
+            }
+        }
+    }
+
+    return dispatch_after_gates(ctx, ring, c, p, utc_ms, by);
+}
+
+namespace {
+
+std::string dispatch_after_gates(Context& ctx, const RingSet& ring, std::string_view c,
+                                 const json::Value& p, int64_t utc_ms, Origin by) {
     // ---- modes ----
     if (c == "mode.set") {
         const std::string_view m = p.as_str();
@@ -581,13 +644,33 @@ std::string handle_command(Context& ctx, std::string_view body, int64_t utc_ms, 
         int col = -1;
         if (p.type == json::Type::Int) col = static_cast<int>(p.number);
         else as_int_field(p, "column", col);
-        return ctx.motion.home(col) ? ok_result() : err_result("rehome rejected");
+        if (ctx.motion.home(col)) return ok_result();
+        // Three different refusals used to share one word.  The only ones
+        // reachable are a bad index and a disabled column - and for a re-home-
+        // all, EVERY column being disabled, which posted nothing and said ok.
+        if (col >= 0 && col < N_COLUMNS &&
+            ctx.motion.columns().mode[static_cast<size_t>(col)] == ColumnMode::Disabled) {
+            return err_result("that column is disabled - it is never homed");
+        }
+        if (col < 0) return err_result("every column is disabled - nothing to home");
+        return err_result("bad column");
     }
     if (c == "motion.cal") {
         int col = 0, delta = 0;
         if (!as_int_field(p, "column", col)) return err_result("need column");
         if (as_int_field(p, "delta", delta)) {
-            return ctx.motion.adjust_cal(col, delta) ? ok_result() : err_result("bad column");
+            switch (ctx.motion.adjust_cal(col, delta)) {
+                case MotionAdmin::CalOutcome::Moved:
+                    return ok_result();
+                case MotionAdmin::CalOutcome::NotHomed:
+                    // Applied, but nothing moved - and a nudge you cannot see
+                    // is the whole failure this reply exists to prevent.
+                    return note_result("offset applied, but the column is not homed "
+                                       "so nothing moved - re-home it");
+                case MotionAdmin::CalOutcome::BadColumn:
+                    break;
+            }
+            return err_result("bad column");
         }
         const json::Value* save = member(p, "save");
         if (save != nullptr && save->boolean) {
@@ -667,8 +750,16 @@ std::string handle_command(Context& ctx, std::string_view body, int64_t utc_ms, 
         as_int_field(p, "seconds", secs);
         if (flaps < 1 || flaps > 40) return err_result("flaps_s out of range");
         if (secs < 1 || secs > 60) return err_result("seconds out of range");
-        return ctx.motion.spin_open_loop(col, flaps, secs) ? ok_result()
-                                                           : err_result("bad column");
+        // "bad column" covered three different refusals; a disabled column is by
+        // far the likeliest and the only one a user can act on.
+        if (col < 0 || col >= N_COLUMNS) return err_result("bad column");
+        if (ctx.motion.columns().mode[static_cast<size_t>(col)] == ColumnMode::Disabled) {
+            return err_result("that column is disabled - nothing would move");
+        }
+        return ctx.motion.spin_open_loop(col, flaps, secs)
+                   ? ok_result()
+                   : err_result("that column will not accept an open-loop move right now "
+                                "(homing?)");
     }
 
     // ---- config ----
@@ -734,6 +825,16 @@ std::string handle_command(Context& ctx, std::string_view body, int64_t utc_ms, 
         if (pass != nullptr && pass->as_str().size() > 63) {
             return err_result("password too long (63 bytes max)");
         }
+        // And a MINIMUM, which matters more than it looks.  wifi.cpp offers any
+        // non-empty password as a WPA2 PSK, and esp_wifi_set_config rejects one
+        // shorter than 8 characters - but the credentials are persisted BEFORE
+        // the radio is touched, so a short password used to be saved, refused,
+        // and then retried identically on every boot.  Rejected here, before
+        // anything is written, with a message a person can act on.
+        if (pass != nullptr && !pass->as_str().empty() && pass->as_str().size() < 8) {
+            return err_result("a WPA password is 8-63 characters (leave it empty for an open "
+                              "network)");
+        }
         const bool ok = ctx.wifi.set_credentials(
             ssid->as_str(), pass != nullptr ? pass->as_str() : std::string_view{});
         return ok ? ok_result() : err_result("could not save");
@@ -750,13 +851,24 @@ std::string handle_command(Context& ctx, std::string_view body, int64_t utc_ms, 
     if (c == "mqtt.config") {
         const json::Value* en = member(p, "enabled");
         const json::Value* uri = member(p, "uri");
-        if (uri == nullptr || uri->type != json::Type::Str) return err_result("need uri");
+        if (uri != nullptr && uri->type != json::Type::Str) return err_result("uri must be a string");
         const bool want = en == nullptr || en->boolean;
+
+        // Turning MQTT OFF must not require re-sending the broker it is
+        // switching off.  It did, so an off toggle in a UI had to know the URI
+        // - and `{"enabled":false}`, the obvious payload, was refused with
+        // "need uri".
+        const std::string stored = ctx.mqtt.mqtt_status().uri;
+        const std::string_view effective_uri =
+            uri != nullptr ? uri->as_str() : std::string_view(stored);
         std::string why;
-        // Validated HERE, so a bad URI is a rejected command with a reason
-        // rather than a client that fails to connect for ever with a log line
-        // nobody is watching.
-        if (want && !broker_uri_valid(uri->as_str(), why)) return err_result(why);
+        if (want) {
+            if (effective_uri.empty()) return err_result("need uri");
+            // Validated HERE, so a bad URI is a rejected command with a reason
+            // rather than a client that fails to connect for ever with a log
+            // line nobody is watching.
+            if (!broker_uri_valid(effective_uri, why)) return err_result(why);
+        }
         // NVS strings are bounded and this partition is 24 KB.  Refused here
         // with a reason rather than deep in the driver, and long before
         // anything can fill the partition and trigger a boot-time erase.
@@ -766,15 +878,22 @@ std::string handle_command(Context& ctx, std::string_view body, int64_t utc_ms, 
                 return err_result("that value is too long (127 bytes max)");
             }
         }
-        const json::Value* user = member(p, "user");
-        const json::Value* pass = member(p, "pass");
-        const json::Value* base = member(p, "base");
-        const json::Value* hap = member(p, "ha_prefix");
-        const bool ok = ctx.mqtt.mqtt_configure(
-            want, uri->as_str(), user != nullptr ? user->as_str() : std::string_view{},
-            pass != nullptr ? pass->as_str() : std::string_view{},
-            base != nullptr ? base->as_str() : std::string_view{"swan/"},
-            hap != nullptr ? hap->as_str() : std::string_view{});
+        // Absent means KEEP, all the way down: only the fields this payload
+        // actually carries are changed.  A "just change the base topic" update
+        // used to clear the username and password on its way past.
+        MqttAdmin::MqttSettings set;
+        set.enabled = want;
+        const auto field = [&p](const char* k) -> std::optional<std::string_view> {
+            const json::Value* v = member(p, k);
+            if (v == nullptr || v->type != json::Type::Str) return std::nullopt;
+            return v->as_str();
+        };
+        set.uri = field("uri");
+        set.user = field("user");
+        set.pass = field("pass");
+        set.base = field("base");
+        set.ha_prefix = field("ha_prefix");
+        const bool ok = ctx.mqtt.mqtt_configure(set);
         return ok ? ok_result() : err_result("could not apply");
     }
     if (c == "ota.confirm") {
@@ -791,6 +910,8 @@ std::string handle_command(Context& ctx, std::string_view body, int64_t utc_ms, 
 
     return err_result("unknown command");
 }
+
+}  // namespace
 
 }  // namespace api
 }  // namespace swan

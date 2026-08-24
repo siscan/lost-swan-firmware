@@ -41,15 +41,27 @@ struct FakeMotion : api::MotionAdmin {
     AxisInfo info(int col) override { return axes[static_cast<size_t>(col)]; }
     MotionParams params() override { return p; }
     void set_params(const MotionParams& np) override { p = np; }
+    // Models the target's rule rather than always succeeding: a disabled column
+    // is never homed (spec 5.9), and a re-home-all with every column disabled
+    // posts nothing - which used to be reported as success by both the fake and
+    // the firmware, so a test written against this fake could not have caught it.
     bool home(int col) override {
         ++homes;
         last_home_col = col;
-        return true;
+        if (col >= 0) {
+            if (col >= N_COLUMNS) return false;
+            return cols.mode[static_cast<size_t>(col)] != ColumnMode::Disabled;
+        }
+        for (int i = 0; i < N_COLUMNS; ++i) {
+            if (cols.mode[static_cast<size_t>(i)] != ColumnMode::Disabled) return true;
+        }
+        return false;
     }
     int spins = 0;
     int32_t last_spin_flaps = 0;
     bool spin_open_loop(int col, int32_t flaps_s, int seconds) override {
         if (col < 0 || col >= N_COLUMNS || seconds <= 0) return false;
+        if (cols.mode[static_cast<size_t>(col)] == ColumnMode::Disabled) return false;
         ++spins;
         last_spin_flaps = flaps_s;
         axes[static_cast<size_t>(col)].index = RING_INVALID;
@@ -89,11 +101,19 @@ struct FakeMotion : api::MotionAdmin {
     }
     bool sim_available() const override { return true; }
 
-    bool adjust_cal(int col, int32_t d) override {
-        if (col < 0 || col >= N_COLUMNS) return false;
+    // Models the target: a nudge re-seeks, and a column with no home reference
+    // reports that nothing moved.  `reseeks` is what the tests assert on -
+    // asserting the RETURN VALUE is exactly the blind spot that let the web
+    // nudge ship doing nothing.
+    std::vector<std::pair<int, int>> reseeks;   // (column, index)
+    api::MotionAdmin::CalOutcome adjust_cal(int col, int32_t d) override {
+        if (col < 0 || col >= N_COLUMNS) return CalOutcome::BadColumn;
         ++cal_calls;
         axes[static_cast<size_t>(col)].cal_offset += d;
-        return true;
+        const int idx = axes[static_cast<size_t>(col)].index;
+        if (idx < 0) return CalOutcome::NotHomed;
+        reseeks.emplace_back(col, idx);
+        return CalOutcome::Moved;
     }
 };
 
@@ -133,17 +153,15 @@ struct FakeMqtt : api::MqttAdmin {
     int configures = 0;
     std::string last_uri, last_user, last_pass, last_base;
     api::MqttStatus mqtt_status() override { return st; }
-    bool mqtt_configure(bool enabled, std::string_view uri, std::string_view user,
-                        std::string_view pass, std::string_view base,
-                        std::string_view) override {
+    bool mqtt_configure(const api::MqttAdmin::MqttSettings& in) override {
         ++configures;
-        st.enabled = enabled;
-        st.uri = last_uri = std::string(uri);
-        last_user = std::string(user);
-        // An empty password keeps the stored one, exactly as the target does.
-        if (!pass.empty()) last_pass = std::string(pass);
-        last_base = std::string(base);
-        st.base = last_base;
+        st.enabled = in.enabled;
+        // Absent keeps, present replaces - the target's rule, so a test that
+        // passes here means the same thing on the board.
+        if (in.uri) st.uri = last_uri = std::string(*in.uri);
+        if (in.user) last_user = std::string(*in.user);
+        if (in.pass) last_pass = std::string(*in.pass);
+        if (in.base) st.base = last_base = std::string(*in.base);
         return true;
     }
 };
@@ -224,6 +242,15 @@ struct Rig {
 bool is_ok(const std::string& r) {
     json::Value v;
     return json::parse(r, v, nullptr) && v.get("ok") && v.get("ok")->boolean;
+}
+
+// The note a reply carries when the command took effect but the visible thing
+// the caller wanted did NOT happen.  Asserting on this is the point: the bug
+// these tests exist for returned a bare {"ok":true}.
+std::string note_of(const std::string& r) {
+    json::Value v;
+    if (!json::parse(r, v, nullptr)) return "<unparseable>";
+    return v.get("note") ? std::string(v.get("note")->as_str()) : "";
 }
 
 std::string err_of(const std::string& r) {
@@ -1034,6 +1061,132 @@ void test_countdown_identity() {
 
 }  // namespace
 
+// The Calibrate page's nudge is a MOVE.  It shipped returning ok while the
+// drum stood still, because the web path adjusted the offset and - unlike the
+// CLI - never re-seeked.  Both halves are asserted on EFFECT (a re-seek was
+// issued) rather than on the return code, which is exactly the blind spot that
+// let it through: the old code returned true in both cases below.
+void test_a_nudge_moves_the_column_or_says_why_not() {
+    Rig r;
+    for (int i = 0; i < N_COLUMNS; ++i) r.motion.axes[static_cast<size_t>(i)].index = 7;
+    r.motion.reseeks.clear();
+
+    const std::string ok = r.cmd(R"({"cmd":"motion.cal","payload":{"column":1,"delta":10}})");
+    CHECK(is_ok(ok));
+    CHECK_STREQ(note_of(ok).c_str(), "");
+    CHECK_EQ(r.motion.reseeks.size(), 1u);          // it MOVED
+    CHECK_EQ(r.motion.reseeks[0].first, 1);
+    CHECK_EQ(r.motion.reseeks[0].second, 7);        // back to the face it was showing
+    CHECK_EQ(r.motion.axes[1].cal_offset, 10);
+
+    // Not homed: the offset still applies, nothing moves, and the reply has to
+    // say so - a nudge you cannot see is the whole failure here.
+    r.motion.axes[2].index = -1;
+    r.motion.reseeks.clear();
+    const std::string note = r.cmd(R"({"cmd":"motion.cal","payload":{"column":2,"delta":-10}})");
+    CHECK(is_ok(note));                             // it DID take effect
+    CHECK(note_of(note).find("not homed") != std::string::npos);
+    CHECK_EQ(r.motion.reseeks.size(), 0u);
+    CHECK_EQ(r.motion.axes[2].cal_offset, -10);
+
+    CHECK(!is_ok(r.cmd(R"({"cmd":"motion.cal","payload":{"column":9,"delta":1}})")));
+}
+
+// A partial mqtt.config used to clear the username and password on its way
+// past - verified on hardware, `swanuser` became `(none)` after a payload that
+// only changed the base topic.  The state document never exposes the password,
+// so a Settings form cannot round-trip it and the firmware has to hold it.
+void test_mqtt_partial_update_keeps_what_it_does_not_mention() {
+    Rig r;
+    CHECK(is_ok(r.cmd(R"({"cmd":"mqtt.config","payload":{"enabled":true,)"
+                      R"("uri":"mqtt://10.0.0.5:1883","user":"swanuser",)"
+                      R"("pass":"swanpass","base":"swan/"}})")));
+    CHECK_STREQ(r.mqtt.last_user.c_str(), "swanuser");
+    CHECK_STREQ(r.mqtt.last_pass.c_str(), "swanpass");
+
+    CHECK(is_ok(r.cmd(R"({"cmd":"mqtt.config","payload":{"enabled":true,"base":"prop/"}})")));
+    CHECK_STREQ(r.mqtt.last_user.c_str(), "swanuser");   // kept
+    CHECK_STREQ(r.mqtt.last_pass.c_str(), "swanpass");   // kept
+    CHECK_STREQ(r.mqtt.st.base.c_str(), "prop/");        // changed
+    CHECK_STREQ(r.mqtt.st.uri.c_str(), "mqtt://10.0.0.5:1883");
+
+    // Present-and-empty still CLEARS, so an anonymous broker is expressible.
+    CHECK(is_ok(r.cmd(R"({"cmd":"mqtt.config","payload":{"enabled":true,"user":""}})")));
+    CHECK_STREQ(r.mqtt.last_user.c_str(), "");
+
+    // Turning it OFF must not require re-sending the broker being switched off.
+    CHECK(is_ok(r.cmd(R"({"cmd":"mqtt.config","payload":{"enabled":false}})")));
+    CHECK(!r.mqtt.st.enabled);
+    CHECK_STREQ(r.mqtt.st.uri.c_str(), "mqtt://10.0.0.5:1883");   // still remembered
+
+    // With nothing stored at all, enabling still needs one.
+    Rig fresh;
+    CHECK(!is_ok(fresh.cmd(R"({"cmd":"mqtt.config","payload":{"enabled":true}})")));
+    CHECK_STREQ(err_of(fresh.cmd(R"({"cmd":"mqtt.config","payload":{"enabled":true}})")).c_str(),
+                "need uri");
+}
+
+// Maintenance is the state in which ok lied hardest: mode.set / clock.format
+// returned ok and never rendered, and message.set / preset.set / display.frame
+// were worse - they call issue() directly, outside the gate, so they drove the
+// drums while somebody had their hands in the mechanism (or pulsed STEP into
+// de-energised drivers after a boot in maintenance, leaving the axis believing
+// a position it never reached).
+//
+// Spec 5.9's split, asserted: manual driving works, display-driving is refused,
+// and the deadline still arms because it is absolute.
+void test_maintenance_refuses_display_commands_but_not_manual_ones() {
+    Rig r;
+    CHECK(is_ok(r.cmd(R"({"cmd":"motion.maintenance","payload":true})")));
+
+    for (const char* body : {R"({"cmd":"mode.set","payload":"clock"})",
+                             R"({"cmd":"preset.set","payload":"qmarks"})",
+                             R"({"cmd":"display.frame","payload":{"indices":[1,1,1,1,1]}})",
+                             R"({"cmd":"clock.format","payload":{"h24":true}})"}) {
+        const std::string res = r.cmd(body);
+        CHECK(!is_ok(res));
+        CHECK(err_of(res).find("maintenance") != std::string::npos);
+    }
+
+    // Manual driving is the POINT of the mode - a suspect column is exercised
+    // by hand from the Calibrate page.
+    for (int i = 0; i < N_COLUMNS; ++i) r.motion.axes[static_cast<size_t>(i)].index = 3;
+    r.motion.reseeks.clear();
+    CHECK(is_ok(r.cmd(R"({"cmd":"motion.cal","payload":{"column":0,"delta":5}})")));
+    CHECK_EQ(r.motion.reseeks.size(), 1u);
+    CHECK(is_ok(r.cmd(R"({"cmd":"motion.ramp","payload":)"
+                      R"({"column":0,"from":0,"to":4,"step":1,"dwell_s":1}})")));
+    CHECK(is_ok(r.cmd(R"({"cmd":"motion.spin","payload":{"column":0,"seconds":1}})")));
+
+    // The deadline is absolute: it arms, and the reply says it will not be seen.
+    const std::string cd = r.cmd(R"({"cmd":"countdown.start"})");
+    CHECK(is_ok(cd));
+    CHECK(note_of(cd).find("maintenance") != std::string::npos);
+    CHECK(r.mm.cd_phase() == CdPhase::Running);
+
+    CHECK(is_ok(r.cmd(R"({"cmd":"motion.maintenance","payload":false})")));
+    CHECK(is_ok(r.cmd(R"({"cmd":"mode.set","payload":"clock"})")));
+}
+
+// A disabled column is excused from everything (spec 5.9).  spin accepted one
+// anyway and ran its full duration against a drum nobody drives, and rehome-all
+// with every column disabled posted nothing and said ok.
+void test_disabled_columns_are_refused_not_pretended() {
+    Rig r;
+    CHECK(is_ok(r.cmd(R"({"cmd":"motion.column","payload":{"column":2,"mode":"disabled"}})")));
+    CHECK(!is_ok(r.cmd(R"({"cmd":"motion.spin","payload":{"column":2,"seconds":1}})")));
+    CHECK(err_of(r.cmd(R"({"cmd":"motion.spin","payload":{"column":2,"seconds":1}})"))
+              .find("disabled") != std::string::npos);
+    CHECK(!is_ok(r.cmd(R"({"cmd":"motion.rehome","payload":{"column":2}})")));
+    // The other four are untouched.
+    CHECK(is_ok(r.cmd(R"({"cmd":"motion.spin","payload":{"column":1,"seconds":1}})")));
+
+    CHECK(is_ok(r.cmd(R"({"cmd":"motion.column","payload":{"all":true,"mode":"disabled"}})")));
+    const std::string all = r.cmd(R"({"cmd":"motion.rehome"})");
+    CHECK(!is_ok(all));
+    CHECK(err_of(all).find("every column") != std::string::npos);
+}
+
 void run_tests() {
     test_command_round_trip();
     test_reveal_by_name();
@@ -1046,4 +1199,8 @@ void run_tests() {
     test_dispatch_is_serialised();
     test_countdown_identity();
     test_no_unlocked_mode_access();
+    test_a_nudge_moves_the_column_or_says_why_not();
+    test_mqtt_partial_update_keeps_what_it_does_not_mention();
+    test_maintenance_refuses_display_commands_but_not_manual_ones();
+    test_disabled_columns_are_refused_not_pretended();
 }

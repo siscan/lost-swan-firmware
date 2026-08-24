@@ -5,6 +5,7 @@
 // Assertions read the rendered CHARACTERS, not slot indices - column 5 has two
 // slots per digit and which one is used depends on where the column was, so an
 // index assertion would be pinning an implementation detail.
+#include <cstdio>
 #include <cstring>
 #include <string>
 
@@ -765,6 +766,95 @@ void test_excluded_columns_leave_a_hole() {
     CHECK_EQ(r.port.gos.size(), static_cast<size_t>(N_COLUMNS));
 }
 
+// The calibration walk is a MANUAL command and runs in maintenance, which is
+// the mode you enter in order to work on a drum (spec 5.9).  It did not: the
+// walk sat below the maintenance gate in tick_locked, so motion.ramp returned
+// ok, cal_ramp_active() reported true, and the column never moved.  Measured on
+// the board before the fix - IDLE at one index for five seconds against a
+// one-second dwell.
+//
+// Asserted on port.gos, not on the return value: the return value was true the
+// whole time it was broken.
+void test_calibration_walk_runs_in_maintenance() {
+    Rig r;
+    r.begin_at(utc_ms(2026, 1, 15, 17, 0, 0));
+    CHECK(r.mm.cmd_maintenance(true, r.time.utc_ms).ok);
+
+    r.port.gos.clear();
+    CHECK(r.mm.cmd_cal_ramp(2, 0, 6, 2, 1, r.time.utc_ms).ok);
+    CHECK(r.mm.cal_ramp_active());
+    r.run_to(r.time.utc_ms + 6000);
+
+    CHECK(r.port.gos.size() >= 4u);                  // stops at 0, 2, 4, 6
+    for (const auto& g : r.port.gos) CHECK_EQ(g.col, 2);   // and NOTHING else moved
+    CHECK(!r.mm.cal_ramp_active());                  // it finished, it did not hang
+
+    // The rest of maintenance is unchanged: with no walk running, nothing moves.
+    r.port.gos.clear();
+    r.run_to(r.time.utc_ms + 3600 * 1000);
+    CHECK_EQ(r.port.gos.size(), 0u);
+    CHECK(r.mm.cmd_maintenance(false, r.time.utc_ms).ok);
+}
+
+// An excluded column is dropped by the frame scheduler, so a walk on one would
+// report itself active and move nothing - the same shape of lie.  Refused.
+void test_calibration_walk_refuses_a_disabled_column() {
+    Rig r;
+    r.begin_at(utc_ms(2026, 1, 15, 17, 0, 0));
+    r.mm.cmd_set_excluded(0b00100, r.time.utc_ms);
+
+    const auto res = r.mm.cmd_cal_ramp(2, 0, 6, 1, 1, r.time.utc_ms);
+    CHECK(!res.ok);
+    CHECK(!r.mm.cal_ramp_active());
+    r.port.gos.clear();
+    r.run_to(r.time.utc_ms + 3000);
+    for (const auto& g : r.port.gos) CHECK(g.col != 2);
+}
+
+// The class, not the instances.  Every command that a person presses expecting
+// a drum to move must either move one or report that it did not - so each case
+// here asserts that the port RECORDED something, and the negative cases assert
+// the command was refused rather than silently accepted.
+void test_commands_that_promise_motion_deliver_it() {
+    struct Case {
+        const char* what;
+        bool (*run)(Rig&);
+    };
+    static const Case cases[] = {
+        {"preset qmarks", [](Rig& r) { return r.mm.cmd_preset("qmarks", r.time.utc_ms).ok; }},
+        {"preset blank", [](Rig& r) { return r.mm.cmd_preset("blank", r.time.utc_ms).ok; }},
+        {"mode.set clock", [](Rig& r) { return r.mm.cmd_mode_set(Mode::Clock, r.time.utc_ms).ok; }},
+        {"countdown.start",
+         [](Rig& r) { return r.mm.cmd_countdown_start(r.time.utc_ms).ok; }},
+        {"cal ramp", [](Rig& r) { return r.mm.cmd_cal_ramp(0, 0, 3, 1, 0, r.time.utc_ms).ok; }},
+        {"display.frame",
+         [](Rig& r) {
+             Frame f{};
+             for (int i = 0; i < N_COLUMNS; ++i) f.idx[static_cast<size_t>(i)] = 11;
+             return r.mm.cmd_display_frame(f, r.time.utc_ms).ok;
+         }},
+    };
+    for (const Case& c : cases) {
+        Rig r;
+        r.begin_at(utc_ms(2026, 1, 15, 17, 0, 0));
+        // Park everything somewhere the command has to move away from.
+        Frame park{};
+        for (int i = 0; i < N_COLUMNS; ++i) park.idx[static_cast<size_t>(i)] = 30;
+        CHECK(r.mm.cmd_display_frame(park, r.time.utc_ms).ok);
+        r.run_to(r.time.utc_ms + 500);
+        r.port.gos.clear();
+
+        const bool accepted = c.run(r);
+        r.run_to(r.time.utc_ms + 1500);
+        if (accepted) {
+            if (r.port.gos.empty()) {
+                std::printf("  %s: accepted and NOTHING moved\n", c.what);
+            }
+            CHECK(!r.port.gos.empty());
+        }
+    }
+}
+
 }  // namespace
 
 void run_tests() {
@@ -792,4 +882,7 @@ void run_tests() {
     test_maintenance_suspends_everything();
     test_maintenance_survives_and_blocks_countdown();
     test_excluded_columns_leave_a_hole();
+    test_calibration_walk_runs_in_maintenance();
+    test_calibration_walk_refuses_a_disabled_column();
+    test_commands_that_promise_motion_deliver_it();
 }
