@@ -1977,3 +1977,86 @@ reason, so nothing gets re-litigated.
     dropping EN), that the hold is never persisted, and that rollback covers a
     crash or a power cycle but **not a hang** — `CONFIG_ESP_TASK_WDT_PANIC` is
     off, so a first boot that hangs never resets and therefore never rolls back.
+
+- 2026-08-23 — **Phase 4 and Phase 5 delivered** (MQTT + HA discovery, OTA with
+  rollback, captive-portal provisioning; audio player, cue table, placeholders).
+  Decisions and facts recorded on the way:
+  - **The task watchdog now PANICS** (Nico, from §10.4's own admission that a
+    hang was the one failure rollback did not cover).  Watched: the 1 kHz
+    motion tick and the 20 Hz modes task — the two whose hanging means the
+    display has stopped being a display.  httpd deliberately is not: it blocks
+    on recv by design.  The timeout is **30 s, not 5**, because the longest
+    legitimate stall is a LittleFS format of the 2 MB storage partition on a
+    virgin board — ~512 sector erases with the cache off, 10-25 s in which no
+    task runs at all, idle included.  `ring_store::init` unsubscribes the idle
+    task across exactly that call; the generous timeout is the second line of
+    defence.  30 s still sits well inside the 120 s mark-valid window.
+  - **The OTA survival test passed in both directions**, which is what Nico
+    asked for and what the spec's rollback claim had never been exercised in.
+    `persist` exists for it: `/api/state` cannot answer the question, because
+    the countdown resume is deferred until SNTP and `cd.target` reads 0 for the
+    first seconds after any reboot even when the deadline is intact — reading
+    the display too early reports a correct rollback as a lost deadline.
+    BRINGUP step 23 has the transcript.
+  - **Two OTA refusals that only the version tag can make.**  Every check IDF
+    itself performs — magic, SHA256, chip id, chip revision — PASSES for an
+    image built with the other board's pin map, which then drives STEP on the
+    wrong GPIOs.  And a release image onto a board with simulated columns saved
+    is worse than it sounds: `col_mode` survives *perfectly*, five `Sim` columns
+    come back, a release build compiles the `Sim` case to nothing, all five
+    fault, escalation drops EN, and `motion.column` then refuses to set `sim`
+    back.  **Surviving state the new image cannot honour is worse than state
+    that did not survive.**  Both are refused unless forced; a moving drum is
+    refused regardless.
+  - **`PROJECT_VER` now carries the board and the flavour** (`0.4.0+devkitc1.sim`).
+    `esp_app_desc_t` has nowhere else to put either, so without it an OTA cannot
+    identify a wrong-board image and a rollback test cannot prove a swap
+    happened.
+  - **MQTT publishes on change, at most 1 Hz, with a 30 s floor** — not the
+    /ws cadence.  `cd.remaining_s` is excluded from the change comparison: it is
+    derived from an absolute target and it ticks, and including it rewrote a
+    RETAINED topic once a second for a whole 108-minute run.  Measured on the
+    board: 11 state documents in 12 s before, 0 after.
+  - **`read_body` had no deadline**, despite the Phase 3 review recording it as
+    fixed.  One stalled POST took the entire web UI down for as long as the
+    client liked.  Measured: 7 of 15 requests failed (~20 s) before, 2 of 55
+    (~4 s, the designed bound) after.  `recv_wait_timeout` cut 5 s → 2 s.
+  - **The socket budget was fully consumed** by httpd's default 7 of
+    `CONFIG_LWIP_MAX_SOCKETS`' 10 (esp_http_server reserves 3 more), leaving
+    none for MQTT or the portal's DNS.  Cut to 5.
+  - **`Context::dispatch_mu`.**  `handle_command` is not atomic across its
+    sub-interfaces — `motion.column` is a read-modify-write over three separate
+    critical sections — and a second transport makes two concurrent callers
+    routine.  The contract is written on the mutex: the event sink runs under
+    ModeManager's lock, so nothing reachable from a sink may take this one.
+  - **`set_by` and `seq` on the wire.**  §7.3's "whoever set it last wins" is
+    unimplementable unless a peer can tell its own decision from somebody
+    else's.  `set_by` persists under its own NVS key rather than widening a
+    blob, because a blob whose size changes is dropped whole on the next boot —
+    which would take the deadline with it across precisely the OTA this field
+    exists to survive.
+  - **A retained command is refused on replay.**  Note the subtlety found on the
+    board: a broker CLEARS the retain flag when forwarding to an existing
+    subscription, so a live retained publish is indistinguishable from a normal
+    one and is correctly obeyed.  Only the replay on connect carries retain=1,
+    and that is the one that would restart a countdown on every reboot.
+  - **HA discovery is retractable.**  Turning MQTT off publishes an empty
+    retained payload to all 19 discovery topics *while still connected* —
+    afterwards there is no way to say it, and the ghost is permanent.  Per-column
+    mode selects are deliberately NOT exposed: five three-way selects on a
+    dashboard invite leaving a column simulated by accident.
+  - **Provisioning never triggers itself.**  No credentials, or an explicit
+    `wifi.provision`.  A router rebooting must not put a wall display into AP
+    mode: it would drop off the LAN, stop answering `lost.local`, and abandon a
+    running countdown's viewers, to fix something that fixes itself.  APSTA, so
+    a display that came up unprovisioned joins by itself when the router
+    returns.  The AP is open, deliberately — a password would have to be printed
+    on the case.
+  - **Audio assets are swappable without a reflash**, on the ring upload's
+    pattern: parsed in full, written to a temp path, renamed over the old one
+    only once it parses.  A WAV header that announces more data than the file
+    holds is clamped to the file — streaming the announced length would play
+    whatever follows it in the filesystem.  The five cues that ship are
+    synthesized placeholders and say so.
+  - `countdown.failure_loop_s` is now a real config key (`cd_loop_s`); it was
+    named in §11 and never implemented.

@@ -125,7 +125,8 @@ components/modes/              clock, message, countdown — host-testable
 components/timesvc/            SNTP, TZ
 components/webapi/             state payload, the §10.2a dispatcher, ring upload
                                staging, /ws event taps — pure, host-testable
-components/audio/              WAV player (Phase 5)
+components/audio/              wav.{h,cpp}: header parse, cue table, gain, quiet
+                               hours (pure); player.cpp: I2S/LittleFS shell
 components/net/                wifi, mdns, httpd+ws, mqtt; provisioning, ha
                                discovery and ota are the rest of Phase 4
 components/config/             NVS schema, defaults
@@ -138,6 +139,7 @@ web/sim/                       browser simulator - replays recorded real-logic t
 audio/                         WAV assets (Nico-supplied; placeholders generated)
 tools/ringgen.py               both rings → ring_table.h + data/ring.json
 tools/mqtt_broker.py           stdlib MQTT 3.1.1 broker, bench fixture only
+tools/gen_audio.py             synthesized placeholder cues (spec 9)
 tools/webpack.py               gzips web/ + ring.json into the LittleFS image
 tools/devserver/               host dev server: real /ws, real ModeManager, sim axes
 test/host/                     unit tests (build in build_host/, not build/)
@@ -213,11 +215,25 @@ Spec §5.8–§5.10 and §7.4. Rules that later phases must keep:
 
 ## Current phase
 
-**Phase 3 done (web UI, WiFi STA, mDNS, /ws + /api, ring upload, gzipped
-assets), flashed and verified on the board. Per-column mode (real/sim/disabled),
-fault classification with escalation, and maintenance mode are in. Next: Phase
-4** per spec §15 — MQTT + Home Assistant discovery, OTA with rollback,
-captive-portal provisioning. The Update page is a stub that says so.
+**Phases 4 and 5 done and verified on the board**: MQTT with HA discovery, OTA
+with rollback (survival proven in both directions, BRINGUP §23), captive-portal
+provisioning, and the audio player with synthesized placeholder cues. The
+watchdog panics now, so a hung first boot rolls back. Next: **Phase 6** per spec
+§15 — soak testing, power-loss behaviour, and the documentation pass.
+
+Things later work must not undo:
+- **MQTT publishes on change, ≥1 s apart, 30 s floor** — not the /ws cadence.
+  `cd.remaining_s` is excluded from the change comparison; it ticks, and the
+  state topic is RETAINED.
+- **A retained `swan/cmd/…` is logged and dropped.** Only the connect replay
+  carries retain=1; a live retained publish arrives with the flag cleared and
+  is correctly obeyed.
+- **The OTA mark-valid criterion is local invariants**, never homing — see
+  §10.4 for the three brick loops that ruled homing out.
+- **`persist`** is how NVS is read in a test; `/api/state` defers the countdown
+  resume until SNTP and will report a correct rollback as a lost deadline.
+- **Audio and ring assets are uploadable**, validated then renamed over. The
+  shipped cues are placeholders.
 
 Phase 4 and 5 can be exercised end to end on real silicon with `sim all`: real
 WiFi, real LittleFS, real NVS, real heap, real control core — only the Hall

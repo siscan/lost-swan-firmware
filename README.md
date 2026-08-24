@@ -23,7 +23,7 @@ Target: ESP32-C5-DevKitC-1-N8R8 (XIAO ESP32-C5 map behind a board define).
 | gate | status |
 |---|---|
 | `set-target esp32c5` + `build` clean | passes — zero warnings, both board maps |
-| host tests green | 10/10 C++ suites (rings, motion math, simulated axis, ring.json, TZ/DST, frame, modes, wear, fault policy, web API) plus the mirror widget's JS suite (CI; SKIPPED locally, no node) |
+| host tests green | 16/16 C++ suites plus the mirror widget's JS suite (CI) |
 | release image cannot carry the simulator | `-DSWAN_RELEASE=1` with `SWAN_SIM_AXES=ON` is a configure-time `FATAL_ERROR`; CI builds both halves |
 | Phase 3 adversarial review | 22 findings confirmed, all fixed — see spec §17 |
 | `git diff` empty after `tools/ringgen.py` | clean — header and ring.json both regenerate byte-identically |
@@ -33,6 +33,9 @@ Target: ESP32-C5-DevKitC-1-N8R8 (XIAO ESP32-C5 map behind a board define).
 | `/ws` verified on silicon | **done** — client registers, 1 Hz heartbeat, live state (the dev server cannot test this) |
 | ring upload vs real LittleFS | **done** — broken files rejected in 0.00 s, a valid one persists and drives resolution |
 | chip revision | **v1.2** — production silicon, inside the image's v1.0–v1.99 window |
+| MQTT + HA on hardware | **done 2026-08-23** — commands, retained state, LWT in all four cases, HA discovery |
+| OTA survival | **done 2026-08-23** — col_mode, maintenance, the deadline, seq and calibration byte-identical across an image swap **and** a rollback |
+| watchdog | **panics** — a hung first boot now resets and rolls back |
 | sim / disabled / maintenance on hardware | **done 2026-08-23** — five simulated drums run the real clock; slip recovers, a jam latches without retrying, a disabled column leaves a hole, maintenance survives a reboot. `docs/BRINGUP.md` step 17 |
 
 ## CI — the reliability source of truth
@@ -422,6 +425,64 @@ Three things worth knowing before touching this:
 **Authorisation is the broker's, not the firmware's** (decision 2026-08-23,
 extending Q7): every command is reachable by anyone who can publish. Scope the
 broker's ACL.
+
+### Audio (spec 9)
+
+Five cues — `warn_4min`, `warn_1min`, `system_failure`, `ui_execute`,
+`ui_reject` — streamed from LittleFS to I2S. The alarm loops, bounded by
+`countdown.failure_loop_s`; unbounded would mean a display in an empty house
+screaming until somebody comes home. A UI click never interrupts a warning.
+
+**The cues that ship are synthesized placeholders** (`tools/gen_audio.py`), not
+the show's sounds, and they are meant to be replaced. Upload a WAV from
+Settings → Audio and it lands in the same place under the same name, with **no
+reflash** — the same validate-then-rename path the ring table uses, so a
+truncated or non-PCM upload leaves the previous cue playable.
+
+16-bit mono PCM, 8–32 kHz (spec 9 says 22050, or 16000). A header that announces
+more data than the file holds is clamped to the file: streaming the announced
+length would play whatever follows it in the filesystem.
+
+```bash
+python tools/gen_audio.py          # regenerate the placeholders
+```
+```
+audio status | audio play <cue> | audio stop | audio vol <0-100> | audio mute
+```
+
+Volume is software gain and perceptual rather than linear — a linear scale
+spends its top half sounding identical. Quiet hours are off by default [Q8] and
+wrap midnight correctly; an explicit `audio.play` ignores them, because somebody
+testing the speaker should not be met with silence that looks like a broken amp.
+
+### Updating over the air (spec 10.4)
+
+```bash
+curl --data-binary @build/lost_swan_firmware.bin http://lost.local/api/ota
+```
+
+Streamed in 4 KB chunks, motion held for the duration, and the image is
+**identified before a byte is written**. Two refusals nothing else can make,
+because every check ESP-IDF performs passes for both:
+
+- the **other board's pin map** — it would drive STEP on the wrong GPIOs;
+- a **release image onto a board with simulated columns saved** — `col_mode`
+  survives perfectly, which is the problem: five `Sim` columns come back, a
+  release build has no `Sim` case, all five fault, escalation drops EN, and
+  `motion.column` then refuses to set `sim` back.
+
+Add `?force=1` if you mean it. A moving drum is refused regardless.
+
+Rollback is on. The new image confirms itself against **local invariants an OTA
+could plausibly have broken** — `app_main` completed, NVS loaded *without
+erasing*, ≥200 modes ticks, ≥10 000 motion ticks, httpd up — and never against
+homing, WiFi or SNTP; see spec §10.4 for the three ways "boot + home" bricks.
+`ota status`, `ota confirm` and `ota rollback` are on the console, so nobody is
+stuck watching a 120 s timer.
+
+Use `persist`, not `/api/state`, to check what survived: the countdown resume is
+deferred until SNTP, so the API reports a correct rollback as a lost deadline
+for the first few seconds after a reboot.
 
 ### A broker to test against
 

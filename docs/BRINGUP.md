@@ -551,6 +551,110 @@ RTS on the USB-Serial-JTAG port drives the chip into *download mode*, not a
 reset — the board then sits silent and off the network. `esptool.py --before
 default_reset --after hard_reset read_mac` is the reliable way to reset it.
 
+### 22. Home Assistant discovery (spec §10.3)
+
+- [ ] Point the display at a real HA broker (`mqtt mqtt://ha.local:1883 user pass`).
+      One device, **LOST Swan Timer**, 19 entities.
+- [ ] Mode select, Execute and Cancel buttons, Remaining and Deadline sensors,
+      Column fault, and — under Diagnostics — **Simulated motion** and
+      **Maintenance mode** as *problem* classes, so a simulated display looks
+      wrong in HA rather than normal.
+- [ ] `mqtt off` → the device **disappears**. Not "unavailable": gone. If a
+      ghost is left behind, the retraction did not publish while still
+      connected.
+- [ ] Pull the display's power → every entity greys out within ~45 s (the
+      keepalive), not just the ones that were changing.
+
+### 23. OTA — the survival test (spec §10.4) — **DONE 2026-08-23**
+
+Two prerequisites, both non-negotiable: **two runtime-distinguishable images**
+(`PROJECT_VER` carries the board and the flavour), and **`persist`**, which
+prints what NVS actually holds. `/api/state` cannot answer this — the countdown
+resume is DEFERRED until SNTP, so `cd.target` reads 0 for the first seconds
+after any reboot even when the deadline is intact, and reading the display too
+early reports a correct rollback as a lost deadline.
+
+Baseline on A (`0.4.0+devkitc1.sim`), five simulated columns:
+
+```
+col 3 disabled ; cal 0 37 ; audio vol 55 ; save
+countdown.execute 4 8 15 16 23 42
+persist  ->  col_mode : sim sim sim disabled sim
+             maint    : off
+             cd_phase : running     cd_target: 1787535965     cd_seq: 1
+             cal      : +37 +0 +0 +0 +0
+             image    : 0.4.0+devkitc1.sim (ota_0)
+```
+
+- [x] **Swap A → B.** `python tools/ota_upload.py <ip> build_b/…bin` — 1,503,648
+      bytes accepted in **5.8 s**, written to `ota_1`, rebooted.
+      - `Loaded app from partition at offset 0x2a0000` — the swap happened.
+      - **No `nvs partition unusable (…); erasing`.** Its absence is a REQUIRED
+        assertion, not a nicety: after that erase everything reads back as a
+        plausible default and a board saved all-simulated starts driving unwired
+        hardware.
+      - `persist` → **byte-identical** apart from `image: 0.4.1+devkitc1.sim
+        (ota_1)`. col_mode, maintenance, the deadline, seq and the calibration
+        all survived. This needs no clock.
+      - `ota status` → `verdict: confirm`, pending cleared.
+- [x] **Roll back B → A.** `ota rollback` → `Loaded app from partition at
+      offset 0x20000`, and `persist` is **identical to the baseline including
+      the image line**. This is the direction the spec's rollback claim had
+      never been exercised in.
+- [x] **Refusals, on the board:**
+      - the XIAO image onto a DevKitC-1 → `400 wrong_board`. Every check IDF
+        makes — magic, SHA256, chip id, chip revision — PASSES for it; only the
+        version tag can tell, and it would drive STEP on the wrong GPIOs.
+      - `data/ring.json` posted as firmware → `400 bad_image` in 0.1 s.
+
+### 24. The watchdog now panics (spec §10.4)
+
+- [ ] `CONFIG_ESP_TASK_WDT_PANIC=y`, timeout 30 s. Confirm a normal boot does
+      **not** trip it, including the first boot on a **blank storage
+      partition** — that is a LittleFS format, ~512 sector erases with the
+      cache off, and the one path that starves even the idle task. It is
+      unsubscribed across exactly that call.
+- [ ] Confirm an OTA write does not trip it either: 4 KB chunks with
+      `OTA_WITH_SEQUENTIAL_WRITES`, one sector erase each.
+- [ ] To prove the panic actually fires, add a temporary `while(1){}` to the
+      modes task, flash, and watch it reset — then remove it. Do this once, on
+      the bench, never on a wall.
+
+### 25. Audio (spec §9) — **DONE 2026-08-23 (placeholders)**
+
+The five cues that ship are **synthesized placeholders** (`tools/gen_audio.py`),
+not the show's sounds. They are deliberately distinguishable by ear so a bench
+test can tell which fired without looking at the console.
+
+- [x] `audio status` → all five present, 0 underruns.
+- [x] `audio play warn_4min` / `system_failure` / `audio stop` — the alarm loops
+      and stops on command.
+- [x] Through the dispatcher: `audio.play warn_1min` → ok; a cue with no file →
+      `no such cue, or no file for it` (refused, rather than reporting success
+      and playing nothing); `audio.volume 140` → `volume must be 0-100`.
+- [ ] **With the amp wired**: check the gain curve is usable across the whole
+      slider (it is perceptual, not linear), that the MAX98357A does not hiss
+      between cues, and that `system_failure` at full volume does not clip.
+- [ ] Replace a cue from Settings → Audio and confirm it takes effect with **no
+      reflash**. A truncated or non-PCM upload must leave the previous cue
+      playable.
+- [ ] Run a countdown to zero and watch the choreography: cue at 4:00, at 1:00,
+      the alarm at zero, `ZERO_HOLD_S` then the spin, then the reveal frame.
+
+### 26. Provisioning (spec §10.1)
+
+- [ ] `wifi clear` and reboot → SoftAP `LOST-Swan-xxxx` appears, **open**.
+- [ ] A phone joining should pop the sign-in sheet by itself; if it does not,
+      `http://192.168.4.1/` must work. Try iOS, Android and Windows — each
+      probes a different URL and wants a different answer.
+- [ ] Enter credentials → saved, reboot, joins.
+- [ ] **The case that matters:** with credentials present, take the router down
+      for ten minutes. The display must stay a clock, keep retrying, and must
+      **NOT** enter AP mode. A wall display dropping off the LAN because a
+      router rebooted is worse than the outage.
+- [ ] `wifi.provision` on demand brings the portal up with credentials present —
+      that is the recovery path when the SSID has changed.
+
 ## Notes
 
 - `step`, `spin` and `revs` are open-loop: they leave the displayed index
