@@ -176,6 +176,32 @@ enforced on this machine** (`HKLM:...\CI\Policy\VerifiedAndReputablePolicyState
   each round needs every binary to clear the coin-flip at once, which stopped
   converging past a handful of tests. A real test failure is never retried.
 - The winget tools are not on the inherited PATH, so the script locates them.
+- **The firmware build hits it too, at the LittleFS image step.** The
+  `joltwallet/littlefs` component creates its own venv per build directory and
+  pip writes a console-script launcher into it; that launcher is blocked by
+  hash, so `idf.py build` fails with
+
+  ```
+  'build/littlefs_py_venv/Scripts/littlefs-python.exe' was blocked by your
+  organization's Device Guard policy
+  ```
+
+  Deleting the venv does not help — pip regenerates a byte-identical launcher,
+  so the hash is the same one already denied. The module behind the launcher is
+  not blocked, so build the image directly and flash it separately:
+
+  ```bash
+  build/littlefs_py_venv/Scripts/python.exe -m littlefs create build/webfs build/storage.bin --fs-size=0x200000 --name-max=64 --block-size=4096
+  ```
+
+  ```bash
+  python -m esptool --chip esp32c5 -p COM3 write_flash 0x520000 build/storage.bin
+  ```
+
+  `idf.py app` and `idf.py app-flash` are unaffected — only the filesystem image
+  goes through that launcher — so the loop is `app-flash` for code and the two
+  commands above when `web/` or `audio/` changed. Linux CI builds the full
+  image for both boards, which is the other reason CI is the source of truth.
 
 The clean fix would be turning Smart App Control off (Settings → Privacy &
 security → Windows Security → App & browser control) — a decision for Nico, not

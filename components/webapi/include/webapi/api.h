@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <vector>
 #include <string_view>
 
 #include <mutex>
@@ -154,6 +155,10 @@ struct MqttStatus {
     bool connected = false;
     std::string uri;
     std::string base = "swan/";
+    // Settings, not secrets - the Settings form has to show what is stored.
+    // There is deliberately no password here, in either direction.
+    std::string user;
+    std::string ha_prefix = "homeassistant";
     uint32_t dropped = 0;
 };
 
@@ -168,6 +173,15 @@ struct AudioState {
     std::string cue;
     int cues_present = 0;
     int cues_total = 0;
+    // Per cue, so the Settings page can show which files are actually there and
+    // HOW LONG each one is.  "present" was the reading that lied for a whole
+    // phase: every cue parsed, reported present, and played 84 bytes.
+    struct Cue {
+        std::string name;
+        bool present = false;
+        uint32_t ms = 0;
+    };
+    std::vector<Cue> cues;
 };
 
 class AudioAdmin {

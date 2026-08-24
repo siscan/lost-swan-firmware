@@ -287,13 +287,104 @@
      slots and can render every role its column will be asked for. A bad or
      truncated upload leaves the display untouched.</p>
 
-  <h2>Network</h2>
-  <p class="hint">WiFi credentials are entered over the serial console this phase
-     (<code>wifi &lt;ssid&gt; &lt;pass&gt;</code>). Captive-portal provisioning,
-     MQTT and Home Assistant discovery arrive in Phase 4.</p>
+  <h2>WiFi</h2>
+  <div class="row"><span class="hint" id="wifi-status">—</span></div>
+  <div class="row">
+    <label for="set-ssid">network</label>
+    <input id="set-ssid" style="width:220px" maxlength="32" autocomplete="off"
+           autocapitalize="none" spellcheck="false">
+    <label for="set-wpass">password</label>
+    <input id="set-wpass" type="password" style="width:200px" maxlength="63"
+           autocomplete="off" placeholder="8-63, or empty for an open network">
+    <button id="btn-wifi-save">SAVE AND JOIN</button>
+  </div>
+  <p class="hint">The display keeps running as a clock while it joins, and stays
+     on the network it is on until the new one accepts it &mdash; so getting this
+     wrong costs you a retry, not access. A free-running clock survives a WiFi
+     outage; only SNTP re-syncs need the network.</p>
+  <div class="row">
+    <button id="btn-portal">START THE SETUP PORTAL</button>
+    <span class="hint" id="portal-hint"></span>
+  </div>
+  <p class="hint">The portal is an open access point plus a captive sign-in page,
+     for when the SSID has changed and there is no other way in. It never starts
+     itself &mdash; a router rebooting must not put a wall display into AP mode.
+     The access point follows the station's channel, so on a 5&nbsp;GHz network
+     that is where it appears.</p>
+
+  <h2>MQTT and Home Assistant</h2>
+  <div class="row"><span class="hint" id="mqtt-status">—</span></div>
+  <div class="row">
+    <label><input id="set-mqtt-en" type="checkbox"> enabled</label>
+  </div>
+  <div class="row">
+    <label for="set-mqtt-uri">broker</label>
+    <input id="set-mqtt-uri" style="width:300px" maxlength="127" spellcheck="false"
+           placeholder="mqtt://192.168.1.10:1883">
+  </div>
+  <div class="row">
+    <label for="set-mqtt-user">user</label>
+    <input id="set-mqtt-user" style="width:160px" maxlength="127" autocomplete="off"
+           spellcheck="false">
+    <label for="set-mqtt-pass">password</label>
+    <input id="set-mqtt-pass" type="password" style="width:160px" maxlength="127"
+           autocomplete="off" placeholder="unchanged">
+  </div>
+  <p class="hint">The password box <b>starts empty every time and leaving it
+     empty keeps the stored password</b> &mdash; it is never sent back to this
+     page, by design, because the state document does not carry it. Everything
+     else here shows what is actually stored, so clearing the user box does
+     clear the user.</p>
+  <div class="row">
+    <label for="set-mqtt-base">base topic</label>
+    <input id="set-mqtt-base" style="width:140px" maxlength="127" spellcheck="false"
+           placeholder="swan/">
+    <label for="set-mqtt-hap">HA discovery prefix</label>
+    <input id="set-mqtt-hap" style="width:160px" maxlength="127" spellcheck="false"
+           placeholder="homeassistant">
+  </div>
+  <div class="row">
+    <button id="btn-mqtt-save" class="primary">SAVE MQTT SETTINGS</button>
+  </div>
+  <p class="hint"><b>Anyone who can publish to your broker can drive this
+     display</b> &mdash; every command this page can send, including reboot,
+     maintenance and the OTA controls. That is deliberate (spec &sect;10.3): MQTT
+     is the canonical external API and a second credential in the firmware would
+     break Home Assistant discovery for the entities most worth having. Scope the
+     broker's ACL, not the firmware. Turning MQTT off retracts the discovery
+     entities while still connected; there is no way to say it afterwards.</p>
 
   <h2>Audio</h2>
-  <p class="hint">Volume, mute and quiet hours arrive with the player in Phase 5.</p>
+  <div class="row">
+    <label for="set-vol">volume <b id="v-vol"></b></label>
+    <input id="set-vol" type="range" min="0" max="100" step="1" style="width:220px">
+    <label><input id="set-mute" type="checkbox"> mute</label>
+  </div>
+  <p class="hint">The scale is perceptual rather than linear &mdash; a linear one
+     spends its top half sounding identical. There is no hardware volume; this is
+     software gain before the I2S write.</p>
+  <div class="row">
+    <label for="set-quiet-start">quiet from</label>
+    <input id="set-quiet-start" type="time" style="width:120px">
+    <label for="set-quiet-end">until</label>
+    <input id="set-quiet-end" type="time" style="width:120px">
+    <button id="btn-quiet-off">OFF</button>
+    <span class="hint" id="quiet-hint"></span>
+  </div>
+  <p class="hint">Quiet hours wrap midnight. They silence the countdown cues; an
+     explicit PLAY below ignores them, because somebody testing the speaker
+     should not be met with silence that looks like a broken amplifier.</p>
+
+  <h2>Cues</h2>
+  <div id="cue-rows"></div>
+  <p class="hint">The five that ship are <b>synthesized placeholders</b>, not the
+     show's sounds. Upload a 16-bit mono PCM WAV (8&ndash;32&nbsp;kHz, up to
+     192&nbsp;KB) to replace one with no reflash: it is parsed in full, written
+     to a temp file and renamed over the old one only once it parses, so a
+     truncated upload leaves the previous cue playable. <b>Check the duration
+     after uploading</b> &mdash; a cue that is present, valid and two
+     milliseconds long looks identical to a working one from every other
+     reading.</p>
 </section>
 
 <!-- ================= UPDATE ================= -->

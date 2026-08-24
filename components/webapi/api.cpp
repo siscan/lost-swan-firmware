@@ -116,6 +116,12 @@ std::string build_state(Context& ctx, int64_t utc_ms) {
         .kv("connected", mq.connected)
         .kv("uri", mq.uri)
         .kv("base", mq.base)
+        // The user and the discovery prefix are settings, not secrets, and the
+        // Settings form needs to show what is stored.  The PASSWORD is never
+        // published - which is exactly why mqtt.config treats an absent field
+        // as "keep": a form that cannot see it must still be able to save.
+        .kv("user", mq.user)
+        .kv("ha_prefix", mq.ha_prefix)
         .kv("dropped", static_cast<int64_t>(mq.dropped))
         .end_obj();
 
@@ -137,8 +143,14 @@ std::string build_state(Context& ctx, int64_t utc_ms) {
         // will silently not fire, and "the alarm did nothing" is a bad thing to
         // discover at zero.
         .kv("cues_present", au.cues_present)
-        .kv("cues_total", au.cues_total)
-        .end_obj();
+        .kv("cues_total", au.cues_total);
+    w.key("cues").arr();
+    for (const AudioState::Cue& c : au.cues) {
+        w.obj().kv("name", c.name).kv("present", c.present)
+            .kv("ms", static_cast<int64_t>(c.ms)).end_obj();
+    }
+    w.end_arr();
+    w.end_obj();
 
     // The live message as a space-separated token string: the HA text entity
     // reads it back, and an entity with no readable state logs a rejection on

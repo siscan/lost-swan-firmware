@@ -619,6 +619,9 @@ int cmd_mqtt(int argc, char** argv) {
                                                   : "off");
         std::printf("broker   : %s\n", c.uri.empty() ? "(none)" : c.uri.c_str());
         std::printf("user     : %s\n", c.user.empty() ? "(none)" : c.user.c_str());
+        // Whether one is STORED, never what it is.  A partial mqtt.config used
+        // to clear it silently, and there was no way to tell from any surface.
+        std::printf("password : %s\n", c.pass.empty() ? "(none)" : "(set)");
         std::printf("base     : %s\n", c.base.c_str());
         std::printf("dropped  : %lu\n", static_cast<unsigned long>(net::mqtt_dropped()));
         return 0;

@@ -162,6 +162,8 @@ api::MqttStatus IdfMqttAdmin::mqtt_status() {
     const config::MqttConfig c = mqtt_cached();
     api::MqttStatus s;
     s.enabled = c.enabled;
+    s.user = c.user;
+    s.ha_prefix = c.ha_prefix;
     s.connected = mqtt_connected();
     s.uri = c.uri;
     s.base = c.base;
@@ -211,6 +213,13 @@ api::AudioState IdfAudioAdmin::audio_state() {
     a.cue = st.cue;
     a.cues_total = static_cast<int>(audio::CUE_COUNT);
     for (bool h : st.have) a.cues_present += h ? 1 : 0;
+    for (size_t i = 0; i < audio::CUE_COUNT; ++i) {
+        api::AudioState::Cue c;
+        c.name = audio::cue_id_name(static_cast<audio::CueId>(i));
+        c.present = st.have[i];
+        c.ms = st.ms[i];
+        a.cues.push_back(std::move(c));
+    }
     return a;
 }
 

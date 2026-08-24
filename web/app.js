@@ -206,11 +206,32 @@ function renderDiag(s) {
 
   const sys = $("diag-sys");
   sys.textContent = "";
+  const mq = s.mqtt || {};
+  const prov = s.prov || {};
+  const au = s.audio || {};
   const facts = [
     ["wifi", s.sys.wifi + (s.sys.ssid ? " · " + s.sys.ssid : "")],
     ["address", (s.sys.ip || "—") + " · " + s.sys.host + ".local"],
-    ["rssi", s.sys.rssi + " dBm"],
-    ["heap", s.sys.heap + " B"],
+    // 0 dBm is not a reading, it is the absence of one, and it renders as a
+    // perfect signal if you print it anyway.
+    ["rssi", s.sys.wifi === "connected" ? s.sys.rssi + " dBm" : "—"],
+    // Total free heap does not decide whether an upload is refused; the largest
+    // contiguous block does, and that is the number the guards test.
+    ["heap", s.sys.heap + " B  (largest block " + s.sys.heap_largest + ")"],
+    ["image", s.sys.version + " · " + (s.sys.ota_partition || "?") +
+              (s.sys.ota_pending ? " · PENDING VERIFICATION" : "")],
+    ["mqtt", !mq.enabled ? "off"
+             : (mq.connected ? "connected · " + mq.base : "enabled, NOT connected") +
+               (mq.dropped ? " · " + mq.dropped + " dropped" : "")],
+    ["portal", prov.portal ? "up: " + prov.ssid
+                           : (prov.configured ? "down" : "down · no credentials")],
+    ["audio", (au.cues_present === au.cues_total
+                 ? au.cues_total + " cues"
+                 : au.cues_present + "/" + au.cues_total + " cues — ONE IS MISSING") +
+              " · vol " + au.volume + (au.mute ? " · MUTED" : "")],
+    ["countdown", s.cd.phase + (s.cd.set_by && s.cd.set_by !== "unknown"
+                                    ? " · set by " + s.cd.set_by + " (seq " + s.cd.seq + ")"
+                                    : "")],
     // Non-zero means the board could not push everything it wanted to.  The
     // mirror still tracks - it reconciles against this very document - but the
     // flip animations for the dropped events were lost, and a rising count
@@ -365,11 +386,114 @@ function renderSettings(s) {
   $("ring-info").textContent = "loaded from " + s.ring.source + " · " +
       s.ring.slots + " slots per drum";
 
+  renderNetwork(s);
+  renderAudio(s);
   renderColumnModes(s);
   setChk("set-maint", !!(s.motion && s.motion.maintenance));
   $("maint-hint").textContent = s.motion && s.motion.maintenance
       ? "suspended — nothing is scheduled and nothing re-homes"
       : "";
+}
+
+// Audio (spec 9).  Volume, mute, quiet hours and one row per cue - name,
+// whether the file is there, HOW LONG it is, and play/stop/replace.
+const hhmm = (min) => String(Math.floor(min / 60)).padStart(2, "0") + ":" +
+                      String(min % 60).padStart(2, "0");
+
+function renderAudio(s) {
+  const a = s.audio || {};
+  if (!editing($("set-vol"))) $("set-vol").value = a.volume;
+  $("v-vol").textContent = $("set-vol").value;
+  if (!editing($("set-mute"))) $("set-mute").checked = !!a.mute;
+
+  const quiet = a.quiet_start_min !== a.quiet_end_min;
+  if (!editing($("set-quiet-start"))) $("set-quiet-start").value = hhmm(a.quiet_start_min || 0);
+  if (!editing($("set-quiet-end"))) $("set-quiet-end").value = hhmm(a.quiet_end_min || 0);
+  $("quiet-hint").textContent = quiet ? "" : "off (both the same)";
+
+  const host = $("cue-rows");
+  const cues = a.cues || [];
+  // Rebuilt only when the set changes - a file input must not be recreated
+  // underneath somebody who has just picked a file.
+  if (host.childElementCount !== cues.length) {
+    host.textContent = "";
+    cues.forEach((c) => {
+      const row = el("div", { class: "row", id: "cue-" + c.name });
+      row.appendChild(el("b", { style: "min-width:9rem;display:inline-block" }, c.name));
+      row.appendChild(el("span", { class: "hint", id: "cue-state-" + c.name }, ""));
+      const play = el("button", null, "PLAY");
+      play.onclick = () => send("audio.play", c.name);
+      row.appendChild(play);
+      const stop = el("button", null, "STOP");
+      stop.onclick = () => send("audio.stop");
+      row.appendChild(stop);
+      const file = el("input", { type: "file", accept: ".wav,audio/wav", id: "cue-file-" + c.name });
+      row.appendChild(file);
+      const up = el("button", null, "REPLACE");
+      up.onclick = () => uploadCue(c.name);
+      row.appendChild(up);
+      host.appendChild(row);
+    });
+  }
+  cues.forEach((c) => {
+    const st = $("cue-state-" + c.name);
+    if (!st) return;
+    const playing = a.playing && a.cue === c.name;
+    st.textContent = (c.present ? (c.ms / 1000).toFixed(2) + " s" : "MISSING") +
+                     (playing ? "  ♪ playing" : "");
+    st.className = c.present ? "hint" : "hint warn";
+  });
+}
+
+function uploadCue(name) {
+  const f = $("cue-file-" + name).files[0];
+  if (!f) { toast("choose a .wav for " + name + " first", false); return; }
+  fetch("/api/audio/" + name, { method: "POST", body: f })
+    .then((r) => r.json().catch(() => ({ ok: false, err: "HTTP " + r.status })))
+    .then((r) => {
+      if (r.ok) toast(name + " replaced: " + r.rate + " Hz, " + r.bytes + " bytes", true);
+      else toast("rejected: " + (r.err || "?"), false);
+    })
+    .catch(() => toast("upload failed", false));
+}
+
+// WiFi, the portal and MQTT.  All three publish state on every document and
+// none of it was rendered - so a display could be publishing to a broker, or
+// beaconing an open access point, with nothing on any page saying so.
+function renderNetwork(s) {
+  const sys = s.sys || {};
+  const prov = s.prov || {};
+  const mq = s.mqtt || {};
+
+  $("wifi-status").textContent =
+      sys.wifi === "connected"
+          ? "connected to " + (sys.ssid || "?") + " · " + sys.ip + " · " + sys.rssi + " dBm"
+          : (prov.configured ? "not connected (" + sys.wifi + ")"
+                             : "no credentials stored — this display is a standalone clock");
+  if (!editing($("set-ssid"))) $("set-ssid").value = sys.ssid || "";
+
+  $("btn-portal").textContent = prov.portal ? "STOP THE SETUP PORTAL"
+                                            : "START THE SETUP PORTAL";
+  $("portal-hint").textContent = prov.portal
+      ? "up: join \"" + prov.ssid + "\" and a sign-in page should appear"
+      : "";
+
+  // The one readout that says whether the canonical external API is actually
+  // working.  "enabled" is a setting; "connected" is a fact.
+  $("mqtt-status").textContent = !mq.enabled
+      ? "off"
+      : (mq.connected ? "connected to " + mq.uri + " as " + mq.base
+                      : "enabled but NOT connected to " + mq.uri) +
+        (mq.dropped ? " · " + mq.dropped + " dropped" : "");
+  const setIf = (id, v) => { const n = $(id); if (!editing(n)) n.value = v; };
+  const chkIf = (id, v) => { const n = $(id); if (!editing(n)) n.checked = v; };
+  chkIf("set-mqtt-en", !!mq.enabled);
+  setIf("set-mqtt-uri", mq.uri || "");
+  setIf("set-mqtt-base", mq.base || "");
+  setIf("set-mqtt-user", mq.user || "");
+  setIf("set-mqtt-hap", mq.ha_prefix || "");
+  // The password box is deliberately never written back - there is nothing to
+  // write it back FROM, and an empty box is what tells the firmware to keep it.
 }
 
 // One row per column: what it is, and what it is doing.  Built once and then
@@ -633,6 +757,67 @@ function wire() {
   $("btn-cols-real").onclick = () => send("motion.column", { all: true, mode: "real" });
   $("btn-cols-sim").onclick = () => send("motion.column", { all: true, mode: "sim" });
   $("set-maint").onchange = (e) => send("motion.maintenance", e.target.checked);
+
+  // Audio.  oninput for the label, onchange for the command: a drag is one
+  // setting, not two hundred.
+  $("set-vol").oninput = () => { $("v-vol").textContent = $("set-vol").value; };
+  $("set-vol").onchange = () => send("audio.volume", parseInt($("set-vol").value, 10));
+  $("set-mute").onchange = () => send("audio.mute", $("set-mute").checked);
+
+  const quietMinutes = (id) => {
+    const v = $(id).value;
+    if (!v) return 0;
+    const [h, m] = v.split(":").map((x) => parseInt(x, 10));
+    return h * 60 + m;
+  };
+  const pushQuiet = () => send("audio.quiet", {
+    start_min: quietMinutes("set-quiet-start"),
+    end_min: quietMinutes("set-quiet-end"),
+  });
+  $("set-quiet-start").onchange = pushQuiet;
+  $("set-quiet-end").onchange = pushQuiet;
+  $("btn-quiet-off").onclick = () => {
+    $("set-quiet-start").value = "00:00";
+    $("set-quiet-end").value = "00:00";
+    pushQuiet();
+  };
+
+  // WiFi.  One command, same as the portal uses.
+  $("btn-wifi-save").onclick = () => {
+    const ssid = $("set-ssid").value.trim();
+    if (!ssid) { toast("enter a network name", false); return; }
+    send("wifi.credentials", { ssid, pass: $("set-wpass").value });
+    $("set-wpass").value = "";
+    toast("saved; joining " + ssid, true);
+  };
+
+  $("btn-portal").onclick = () => {
+    const up = state && state.prov && state.prov.portal;
+    send("wifi.provision", !up);
+  };
+
+  // MQTT.  Only the fields that carry something are sent: absent means KEEP,
+  // which is the firmware's contract and the only way a form can save settings
+  // it was never shown the password for.
+  $("btn-mqtt-save").onclick = () => {
+    const payload = { enabled: $("set-mqtt-en").checked };
+    const put = (id, key) => {
+      const v = $(id).value.trim();
+      if (v !== "") payload[key] = v;
+    };
+    put("set-mqtt-uri", "uri");
+    put("set-mqtt-base", "base");
+    put("set-mqtt-hap", "ha_prefix");
+    // The user IS sent even when empty, because the box shows what is stored:
+    // clearing it has to mean clearing it.  The password is the opposite - the
+    // box starts empty every time and cannot show what is stored, so an empty
+    // one has to mean "leave it alone".
+    payload.user = $("set-mqtt-user").value.trim();
+    if ($("set-mqtt-pass").value !== "") payload.pass = $("set-mqtt-pass").value;
+    bus.send("mqtt.config", payload);
+    $("set-mqtt-pass").value = "";
+    toast($("set-mqtt-en").checked ? "MQTT settings saved" : "MQTT off; discovery retracted", true);
+  };
 
   $("btn-ota-upload").onclick = () => {
     const f = $("ota-file").files[0];
