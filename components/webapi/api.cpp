@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "modes/wear.h"
+#include "motion/axis_control.h"   // REHOME_RETRIES, published so the UI stops guessing
 #include "ring/json_lite.h"
 #include "ring/json_write.h"
 
@@ -208,7 +209,10 @@ std::string build_state(Context& ctx, int64_t utc_ms) {
         .kv("flaps_s_alarm", mp.flaps_s_alarm)
         .kv("flaps_s_home", mp.flaps_s_home)
         .kv("accel", mp.accel)
-        .kv("hall_tol", mp.hall_tol);
+        .kv("hall_tol", mp.hall_tol)
+        .kv("en_idle_off", mp.en_idle_off)
+        .kv("failure_loop_s", cfg.failure_loop_s)
+        .kv("ntp", ctx.modes.ntp());
     write_reveal(w, ring, cfg);
     w.end_obj();
 
@@ -237,6 +241,10 @@ std::string build_state(Context& ctx, int64_t utc_ms) {
         .kv("reset", sys.reset_reason)
         .kv("version", sys.version)
         .kv("ws_dropped", static_cast<int64_t>(sys.ws_dropped))
+        // The denominator both pages print beside cols[].retry.  It was a
+        // hard-coded "3" in four places against a compile-time constant with no
+        // wire representation - correct today, silently wrong the day it moves.
+        .kv("rehome_retries", REHOME_RETRIES)
         .end_obj();
 
     w.end_obj();
@@ -415,6 +423,13 @@ std::string do_motion_params(Context& ctx, const json::Value& p) {
         if (v < 1 || v > 400) return err_result("hall_tol out of range");
         mp.hall_tol = v;
     }
+    // Settable from nowhere at all until now - not the API, not the console -
+    // while `save` persisted it faithfully.  Spec 5.7 leaves it false until the
+    // bench test says a loaded drum does not creep with EN released.
+    if (const json::Value* en = member(p, "en_idle_off")) {
+        if (en->type != json::Type::Bool) return err_result("en_idle_off must be true or false");
+        mp.en_idle_off = en->boolean;
+    }
     ctx.motion.set_params(mp);
     return ok_result();
 }
@@ -459,6 +474,10 @@ std::string do_config_set(Context& ctx, const RingSet& ring, const json::Value& 
         if (v < 0 || v > 120) return err_result("spin_s out of range");
         cfg.spin_s = v;
     }
+    if (as_int_field(p, "failure_loop_s", v)) {
+        if (v < 0 || v > 86400) return err_result("failure_loop_s out of range");
+        cfg.failure_loop_s = v;
+    }
     if (as_int_field(p, "failure_timeout_s", v)) {
         if (v < 0 || v > 86400) return err_result("failure_timeout_s out of range");
         cfg.failure_timeout_s = v;
@@ -500,6 +519,15 @@ std::string do_config_set(Context& ctx, const RingSet& ring, const json::Value& 
             next[static_cast<size_t>(i)] = got;
         }
         cfg.reveal = next;
+    }
+
+    if (const json::Value* ntp = member(p, "ntp")) {
+        // Same story: named in spec 11, implemented in NVS, reachable from no
+        // surface, so `pool.ntp.org` was effectively hard-coded.
+        if (ntp->type != json::Type::Str) return err_result("ntp must be a string");
+        if (ntp->as_str().size() > 127) return err_result("that value is too long (127 bytes max)");
+        if (ntp->as_str().empty()) return err_result("need an NTP server");
+        ctx.modes.set_ntp(ntp->as_str());
     }
 
     if (const json::Value* tz = member(p, "tz")) {
@@ -777,7 +805,7 @@ std::string dispatch_after_gates(Context& ctx, const RingSet& ring, std::string_
     // ---- config ----
     if (c == "config.set") return do_config_set(ctx, ring, p, utc_ms);
     if (c == "config.save") {
-        return ctx.cfg.save_app(ctx.modes.config(), ctx.modes.tz_string())
+        return ctx.cfg.save_app(ctx.modes.config(), ctx.modes.tz_string(), ctx.modes.ntp())
                    ? ok_result()
                    : err_result("save failed");
     }

@@ -130,14 +130,34 @@ function press(label) {
     execute();
     return;
   } else if (entry.length < MAX_ENTRY) {
-    // Digits auto-space, so the pad produces "4 8 15 16 23 42" without the
-    // operator having to think about separators.
+    // Digits do NOT auto-space - the Numbers include two-digit values, so the
+    // pad cannot know where one ends.  The separator key is deliberate, and the
+    // prompt says so, because "4815162342" parses as 481 5 16 23 42 and is
+    // rejected with nothing on screen explaining why.  (The comment here used
+    // to claim the opposite, which is how it went unnoticed.)
     entry += label;
   }
   renderEntry();
 }
 
+// CANCEL sits next to EXECUTE and ends a run that may have people watching it.
+// A running countdown asks first; an idle one has nothing to lose.
+function doCancel() {
+  if (phase === "running" && !window.confirm(
+        "Cancel the countdown? It is running, and this cannot be undone - " +
+        "restarting means entering the Numbers again.")) {
+    return;
+  }
+  bus.send("countdown.cancel");
+  entry = "";
+  renderEntry();
+}
+
 function execute() {
+  if (!timeValid) {
+    setMsg("CLOCK NOT SYNCED - THE DEADLINE CANNOT BE SET YET", "err");
+    return;
+  }
   const numbers = entry.trim().replace(/\s+/g, " ");
   if (!numbers) {
     setMsg("ENTER THE NUMBERS", "err");
@@ -190,9 +210,7 @@ function buildPad() {
     document.querySelectorAll(".key.down").forEach((x) => x.classList.remove("down"));
     if (!b) return;
     if (b.dataset.key === "CANCEL") {
-      bus.send("countdown.cancel");
-      entry = "";
-      renderEntry();
+      doCancel();
       return;
     }
     press(b.dataset.key);
@@ -206,15 +224,26 @@ function buildPad() {
 function bindKeyboard() {
   window.addEventListener("keydown", (ev) => {
     if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
+    // Not while a control has focus: preventDefault on Space or Enter there
+    // suppresses the button's own activation, so tabbing to CRT and pressing
+    // Space typed a separator instead of toggling it.
+    const t = ev.target;
+    if (t && (t.tagName === "BUTTON" || t.tagName === "INPUT" || t.tagName === "A" ||
+              t.isContentEditable)) {
+      return;
+    }
+    if (ev.repeat) return;   // a held digit used to fill the buffer
     let k = null;
     if (ev.key >= "0" && ev.key <= "9") k = ev.key;
     else if (ev.key === " ") k = "SP";
     else if (ev.key === "Backspace") k = "DEL";
     else if (ev.key === "Escape") k = "CLR";
     else if (ev.key === "Enter") k = "EXECUTE";
+    else if (ev.key === "c" || ev.key === "C") k = "CANCEL";
     if (!k) return;
     ev.preventDefault();
     clickSound(k === "EXECUTE" ? "go" : "key");
+    if (k === "CANCEL") { doCancel(); return; }
     press(k);
   });
 }
@@ -238,10 +267,34 @@ let target = 0;      // epoch seconds, 0 when not running
 let skewMs = 0;      // device clock minus ours
 let phase = "idle";
 let secondsLive = 240;
+let mode = "clock";        // what the display is actually doing
+let clockFace = "--:--";   // the columns' own reading, for the idle face
+let cueState = {};         // the audio block, for whether a cue could be heard
+let timeValid = false;     // deadline commands are refused until SNTP has synced
+let retryMax = 3;          // the device's REHOME_RETRIES, published on the wire
+
+// Every reason a cue can fire and be inaudible.  All four are on the wire.
+function audioSilent() {
+  if (cueState.mute || cueState.volume === 0) return true;
+  if (cueState.cues_present !== cueState.cues_total) return true;
+  const qs = cueState.quiet_start_min, qe = cueState.quiet_end_min;
+  if (qs === qe) return false;                       // quiet hours off
+  const d = new Date(Date.now() + skewMs);
+  const now = d.getHours() * 60 + d.getMinutes();
+  return qs < qe ? (now >= qs && now < qe) : (now >= qs || now < qe);
+}
 
 function tickReadout() {
   const el = $("clock");
   if (!target || phase === "idle") {
+    // 108:00 is the countdown's IDLE FACE, not a statement about the display.
+    // On a prop CRT in a corridor, a clock-mode display showing 108:00 reads as
+    // a stopped countdown - so say what is actually up there instead.
+    if (mode && mode !== "countdown") {
+      el.textContent = mode === "clock" ? clockFace : "— — : — —";
+      el.className = "big dim";
+      return;
+    }
     el.textContent = "108:00";
     el.className = "big";
     return;
@@ -258,6 +311,21 @@ function onState(s) {
   phase = s.cd.phase;
   secondsLive = s.cd.seconds_live_s;
   $("mode").textContent = s.mode;
+  mode = s.mode;
+  cueState = s.audio || {};
+  timeValid = !!s.time_valid;
+  retryMax = (s.sys && s.sys.rehome_retries) || 3;
+  // The columns' own reading, so the idle face shows what is on the wall
+  // rather than a countdown that is not running.
+  // The physical layout (spec 7.1): col 1 is AM/PM, cols 2-3 the hours, cols
+  // 4-5 the minutes, with the band between them rendered as the colon.
+  const f = s.cols.map((c) => (c.face === "blank" ? "" : c.face));
+  // Only when the columns are actually showing a time.  Before SNTP syncs they
+  // carry the WiFi glyph (spec 7.1), and rendering a glyph name into a clock
+  // face reads as a fault - "wifi:" - rather than as "no time yet".
+  const digits = [1, 2, 3, 4].every((i) => f[i] === "" || /^[0-9]$/.test(f[i]));
+  const hhmm = (f[1] + f[2]) + ":" + (f[3] + f[4]);
+  clockFace = digits && hhmm !== ":" ? (f[0] ? f[0] + " " : "") + hhmm : "— — : — —";
 
   const sub = {
     idle: "SYSTEM STANDBY",
@@ -307,7 +375,7 @@ function onState(s) {
     const jammed = busy.some(({ c }) => c.cause === "jam");
     chip.textContent = (jammed ? "JAMMED " : faulted ? "FAULT " : "HOMING ") +
         busy.length + "/" + s.cols.length +
-        (retry && !faulted ? " · try " + retry.c.retry + "/3" : "");
+        (retry && !faulted ? " · try " + retry.c.retry + "/" + retryMax : "");
   }
 
   tickReadout();
@@ -329,7 +397,11 @@ bus.on("state", onState)
    .on("go", (e) => flap && flap.flipTo(e.col, e.idx, e.flaps))
    .on("spin", (e) => flap && flap.spin(e.col, e.flaps, e.secs))
    .on("mode", (e) => { $("mode").textContent = e.name; })
-   .on("cue", (e) => setMsg("♪ " + e.name.replace(/_/g, " "), "ok"))
+   // "fired", not "played": mute, a volume of 0, quiet hours or a missing WAV
+   // all produce silence, and every one of those facts is in the state document
+   // this page already receives.
+   .on("cue", (e) => setMsg((audioSilent() ? "⃠ " : "♪ ") + e.name.replace(/_/g, " "),
+                            audioSilent() ? "warn" : "ok"))
    .on("result", (e) => {
      if (!e.res) return;
      if (e.res.ok) {

@@ -890,6 +890,34 @@ API; anything the UI can do, a prop can do with a publish.
 | `clock.format` | `{h24}` | |
 | `system.reboot` | — | |
 
+The table above is the **control** set — what a person or a prop drives the
+display with.  The dispatcher also accepts a **configuration and maintenance**
+set, which was implemented across Phases 3–5 and never written down here; the
+2026-08-24 audit found the omission by counting (20 documented, 35 accepted):
+
+| command | payload | effect |
+|---|---|---|
+| `motion.params` | `{flaps_s_normal?, flaps_s_alarm?, flaps_s_home?, accel?, hall_tol?, en_idle_off?}` | live motion tuning, no persistence |
+| `motion.save` | — | persist calibration **and** speeds (one NVS record) |
+| `motion.ramp` / `ramp_stop` | `{column, from, to, step, dwell_s}` | the Calibrate index walk |
+| `config.set` | any of §11's mode keys, plus `tz`, `ntp`, `reveal` | live apply |
+| `config.save` | — | persist what `config.set` applied |
+| `ring.upload` | the document | stage a ring table (the UI uses `POST /api/ring/upload`, which adds a heap guard) |
+| `audio.volume` / `mute` / `quiet` / `play` / `stop` | §9 | the player |
+| `wifi.credentials` | `{ssid, pass}` | join a network; does **not** reboot, and keeps the portal up until the STA joins |
+| `wifi.provision` | `true` \| `false` | the captive portal, explicitly only |
+| `mqtt.config` | `{enabled, uri?, user?, pass?, base?, ha_prefix?}` | **absent field = keep**; present-and-empty = clear |
+| `ota.confirm` / `ota.rollback` | — | the §10.4 decision, by hand |
+
+**Deliberately not on the web UI**, and why — so their absence is a decision
+rather than a gap: `display.frame` and `countdown.set_target` are the prop and
+test surface (§10.2a "for props and tests"), and every job they would do from a
+browser is covered by the presets, the message picker and the Numbers;
+`countdown.reset` is an alias of `countdown.start`; `motion.sim_fault` is bench
+tooling for a simulated column and is on the console; `net.auth_pass` is
+unimplemented by Q7; and `motion.fault_policy` is executed as §5.8/§7.4 rather
+than configured.  Everything else in both tables is reachable from the browser.
+
 **MQTT adds a transport, not a command set.**  No command names exist that the
 web UI does not have, and no argument ever rides a topic segment: it is
 `swan/cmd/<command>` plus a JSON payload, full stop.  A second topic grammar

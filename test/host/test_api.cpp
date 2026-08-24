@@ -127,7 +127,10 @@ struct FakeCfgSink : api::ConfigSink {
         last_motion = mp;
         return true;
     }
-    bool save_app(const ModesConfig& m, std::string_view tz) override {
+    std::string last_ntp;
+    bool save_app(const ModesConfig& m, std::string_view tz,
+                  std::string_view ntp) override {
+        last_ntp = std::string(ntp);
         ++app_saves;
         last_modes = m;
         last_tz = std::string(tz);

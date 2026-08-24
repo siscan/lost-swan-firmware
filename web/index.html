@@ -77,7 +77,7 @@
   <div class="row" id="msg-pickers"></div>
   <div class="row">
     <label for="msg-dwell">dwell (s)</label>
-    <input id="msg-dwell" type="number" min="1" max="86400" value="600" style="width:110px">
+    <input id="msg-dwell" type="number" min="1" max="86400" style="width:110px">
     <label><input id="msg-hold" type="checkbox"> hold until changed</label>
     <button id="btn-message" class="primary">SHOW MESSAGE</button>
   </div>
@@ -91,6 +91,10 @@
     <button data-cmd='{"cmd":"preset.set","payload":"reveal"}'>REVEAL</button>
     <button data-cmd='{"cmd":"preset.set","payload":"wifi"}'>WIFI GLYPH</button>
   </div>
+  <p class="hint">A preset takes the display over, including from a running
+     countdown &mdash; the deadline keeps running underneath and the cues still
+     fire, but the columns stop showing it until the mode is set again.
+     <span id="reveal-preset-hint"></span></p>
 
   <h2>Countdown</h2>
   <div class="row">
@@ -108,7 +112,7 @@
   <div class="grid" id="cal-cards"></div>
   <div class="row">
     <button data-cmd='{"cmd":"motion.rehome"}'>REHOME ALL</button>
-    <button data-cmd='{"cmd":"motion.save"}' class="primary">SAVE OFFSETS</button>
+    <button data-cmd='{"cmd":"motion.save"}' class="primary">SAVE CALIBRATION AND SPEEDS</button>
   </div>
 
   <h2>Index walk</h2>
@@ -118,9 +122,9 @@
   <div class="row">
     <label for="ramp-col">column</label>
     <select id="ramp-col"></select>
-    <label for="ramp-from">from</label><input id="ramp-from" type="number" value="0" min="0" max="49" style="width:74px">
-    <label for="ramp-to">to</label><input id="ramp-to" type="number" value="49" min="0" max="49" style="width:74px">
-    <label for="ramp-step">step</label><input id="ramp-step" type="number" value="1" min="1" max="49" style="width:74px">
+    <label for="ramp-from">from</label><input id="ramp-from" type="number" value="0" min="0" style="width:74px">
+    <label for="ramp-to">to</label><input id="ramp-to" type="number" value="49" min="0" style="width:74px">
+    <label for="ramp-step">step</label><input id="ramp-step" type="number" value="1" min="1" style="width:74px">
     <label for="ramp-dwell">dwell (s)</label><input id="ramp-dwell" type="number" value="2" min="0" max="600" style="width:74px">
   </div>
   <div class="row">
@@ -150,9 +154,24 @@
   <div class="row"><label for="p-home">flaps_s_home <b id="v-home"></b></label>
     <input id="p-home" type="range" min="1" max="40" step="1"></div>
   <div class="row"><label for="p-accel">motion.accel <b id="v-accel"></b></label>
-    <input id="p-accel" type="range" min="10000" max="300000" step="1000"></div>
+    <input id="p-accel" type="range" min="1000" max="1000000" step="1000"></div>
+  <div class="row"><label for="p-halltol">motion.hall_tol <b id="v-halltol"></b></label>
+    <input id="p-halltol" type="range" min="1" max="400" step="1"></div>
+  <p class="hint">hall_tol is the edge error accepted in silence &mdash; a
+     quarter of a flap by default (41&nbsp;µsteps). Set it after measuring edge
+     repeatability over twenty revolutions (BRINGUP step 6), not before.</p>
   <div class="row">
-    <button id="btn-motion-save" class="primary">SAVE SPEEDS TO NVS</button>
+    <label><input id="set-enidle" type="checkbox"> release EN at rest
+      (<code>motion.en_idle_off</code>)</label>
+    <span class="hint">Off until the bench test says a loaded drum does not creep
+      with the drivers released (spec &sect;5.7). EN is ganged, so this is all
+      five or none.</span>
+  </div>
+  <div class="row">
+    <button id="btn-motion-save" class="primary">SAVE CALIBRATION AND SPEEDS</button>
+    <span class="hint">One write, both things &mdash; the same button as on the
+      cards above. The offsets and the four speeds live in one NVS record, so
+      saving either commits both.</span>
   </div>
 </section>
 
@@ -214,6 +233,12 @@
     <input id="set-tz" style="width:280px" spellcheck="false">
   </div>
   <div class="row">
+    <label for="set-ntp">NTP server</label>
+    <input id="set-ntp" style="width:220px" maxlength="127" spellcheck="false">
+    <span class="hint">Takes effect at the next boot &mdash; SNTP is started once,
+      early. The clock free-runs without it; drift is seconds a day.</span>
+  </div>
+  <div class="row">
     <label for="set-gran">granularity (min)</label>
     <select id="set-gran"></select>
     <span class="hint" id="gran-hint"></span>
@@ -250,7 +275,12 @@
     <label for="set-zero">zero hold (s)</label><input id="set-zero" type="number" min="0" max="60" style="width:90px">
     <label for="set-spin">spin (s)</label><input id="set-spin" type="number" min="0" max="120" style="width:90px">
     <label for="set-ftimeout">failure timeout (s)</label><input id="set-ftimeout" type="number" min="0" max="86400" style="width:110px">
+    <label for="set-floop">alarm loop (s)</label><input id="set-floop" type="number" min="0" max="86400" style="width:110px">
   </div>
+  <p class="hint">The alarm loops for at most <em>alarm loop</em> seconds &mdash;
+     unbounded would mean a display in an empty house screaming until somebody
+     comes home. <em>failure timeout</em> of 0 means the reveal frame stays up
+     until the mode is changed.</p>
   <div class="row">
     <label><input id="set-cdland" type="checkbox"> countdown moves land on the tick</label>
   </div>
@@ -271,7 +301,9 @@
 
   <div class="row">
     <button id="btn-config-save" class="primary">SAVE SETTINGS TO NVS</button>
-    <span class="hint">Changes above apply live; this persists them.</span>
+    <span class="hint">Clock, countdown, reveal and message settings apply live;
+      this persists them. Column modes, maintenance, WiFi, MQTT and audio are
+      <em>not</em> in this &mdash; each writes NVS the moment you change it.</span>
   </div>
 
   <h2>Ring</h2>

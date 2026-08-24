@@ -112,9 +112,11 @@ bool IdfConfigSink::save_motion(const MotionParams& p) {
     return config::save(p) == ESP_OK;
 }
 
-bool IdfConfigSink::save_app(const ModesConfig& m, std::string_view tz) {
+bool IdfConfigSink::save_app(const ModesConfig& m, std::string_view tz,
+                             std::string_view ntp) {
     app_.modes = m;
     app_.tz = std::string(tz);
+    app_.ntp = std::string(ntp);
     return config::save_app(app_) == ESP_OK;
 }
 

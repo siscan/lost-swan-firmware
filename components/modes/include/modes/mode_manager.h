@@ -89,7 +89,7 @@ struct ModesConfig {
     // countdown.failure_loop_s (spec 11): the alarm loops, bounded.
     // Unbounded would mean a display in an empty house screaming until
     // somebody comes home.
-    int failure_loop_s = 60;         // countdown.failure_timeout_s
+    int failure_loop_s = 60;         // countdown.failure_loop_s, NVS cd_loop_s
     int32_t alarm_flaps_s = 25;        // motion.flaps_s_alarm
     // countdown.reveal[5]: ring indices; -1 = unset -> blank (Nico has not
     // picked the glyphs yet - decision log).  NOTE: an index means a
@@ -113,6 +113,10 @@ public:
     void set_config(const ModesConfig& c);
     ModesConfig config() const;
     bool set_tz(std::string_view posix_tz);  // false = parse rejected, kept old
+    // The NTP server, owned here for the same reason tz is: it is written on
+    // the HTTP task and read on the modes task, and a bare std::string across
+    // that boundary is a data race.  Spec 11 named it and nothing could set it.
+    void set_ntp(std::string_view server);
 
     // Load the persisted deadline and pick the boot mode.  A live countdown
     // resumes (spec 7.3 power-cycle behaviour) - but only once the time
@@ -191,6 +195,7 @@ public:
     // a mirrored copy elsewhere would be written by one task and read by
     // another with nothing between them.
     std::string tz_string() const;
+    std::string ntp() const;
 
     // Calibration walk (spec 5.6, Calibrate page): step `col` forward from
     // index `from` towards `to` in increments of `step`, dwelling `dwell_s` at
@@ -236,6 +241,7 @@ private:
     ModesConfig cfg_;
     TimeZone tz_;  // default-constructed = UTC0 until set_tz
     std::string tz_str_;  // the string it was parsed from, for reporting
+    std::string ntp_ = "pool.ntp.org";
 
     mutable std::mutex mu_;  // serializes every public entry point
 

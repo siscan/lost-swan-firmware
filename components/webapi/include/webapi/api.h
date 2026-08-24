@@ -72,7 +72,8 @@ class ConfigSink {
 public:
     virtual ~ConfigSink() = default;
     virtual bool save_motion(const MotionParams& p) = 0;
-    virtual bool save_app(const ModesConfig& m, std::string_view tz) = 0;
+    virtual bool save_app(const ModesConfig& m, std::string_view tz,
+                          std::string_view ntp) = 0;
 };
 
 // Link/diagnostic facts the UI shows.  Faked on the host.
@@ -197,9 +198,12 @@ public:
 class WifiAdmin {
 public:
     virtual ~WifiAdmin() = default;
-    // Saving credentials reboots by default (spec 10.1): the STA has to be
-    // restarted anyway, and a clean boot is easier to reason about than an
-    // in-place reconfigure with an AP still up.
+    // Saving credentials does NOT reboot, and must not: this is called from
+    // the captive portal, over the portal's own access point, so tearing the
+    // radio down takes the reply with it - and a mistyped password then left
+    // the display unprovisioned with no way back.  The AP stays up until the
+    // STA actually joins, which is the only evidence the credentials work.
+    // (This comment said the opposite, describing the bug rather than the fix.)
     virtual bool set_credentials(std::string_view ssid, std::string_view pass) = 0;
     virtual bool start_portal() = 0;
     virtual bool stop_portal() = 0;

@@ -34,7 +34,8 @@ class IdfConfigSink final : public api::ConfigSink {
 public:
     explicit IdfConfigSink(config::AppConfig& app) : app_(app) {}
     bool save_motion(const MotionParams& p) override;
-    bool save_app(const ModesConfig& m, std::string_view tz) override;
+    bool save_app(const ModesConfig& m, std::string_view tz,
+                  std::string_view ntp) override;
 
 private:
     config::AppConfig& app_;

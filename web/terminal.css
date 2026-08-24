@@ -322,7 +322,12 @@ html, body {
    one more amber warning among several. */
 .chip.rig {
   color: #0b0805;
-  background: var(--warn, #d8a13a);
-  border-color: var(--warn, #d8a13a);
+  background: var(--amber);
+  border-color: var(--amber);
   font-weight: bold;
 }
+
+/* The idle face when the display is NOT counting down: present, but plainly not
+   a running countdown.  The largest element on a kiosk screen should not assert
+   something the drums are not showing. */
+.big.dim { color: var(--p-dim); }

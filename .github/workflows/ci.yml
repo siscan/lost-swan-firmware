@@ -37,6 +37,16 @@ jobs:
         run: cmake --build build_host
       - name: Run
         run: ctest --test-dir build_host --output-on-failure
+      # A syntax error in any of these kills the WHOLE page - the browser stops
+      # at the first one and every control on it is dead.  It cost a flash cycle
+      # to find that by hand once (`let audio` declared twice in terminal.js);
+      # node parses all four in under a second.
+      - name: Web scripts parse
+        run: |
+          for f in web/*.js; do node --check "$f" || exit 1; done
+          echo "parsed: $(ls web/*.js | tr '
+' ' ')"
+
       - name: Mirror widget (node, faked DOM, virtual clock)
         run: node test/host/test_flap.js
       - name: Simulator traces are current

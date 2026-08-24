@@ -567,7 +567,9 @@ esp_err_t ws_handler(httpd_req_t* req) {
     return httpd_ws_send_frame(req, &reply);
 }
 
-// A cue WAV, uploaded from Settings -> Audio (spec 9).  Exactly the ring
+// A cue WAV, uploaded from Settings -> Audio (spec 9).  That control exists
+// as of the 2026-08-24 UI pass; before it, this route was reachable only by
+// a hand-rolled POST and the comment said otherwise.  Exactly the ring
 // upload's shape and for exactly its reason: validated in full, written to a
 // temp path, and renamed over the old one ONLY once it parses.  A truncated or
 // malformed upload therefore leaves the previous cue playable rather than

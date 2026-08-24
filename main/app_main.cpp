@@ -361,6 +361,10 @@ extern "C" void app_main() {
                                     swan::time_service::source(),
                                     swan::config::countdown_store(), cues);
     g_modes->set_config(g_app.modes);
+    // ModeManager owns the NTP string for the same reason it owns tz: it is
+    // written on the HTTP task and read on the modes task.  Seed it from NVS
+    // before anything can save, or a save would write the default over it.
+    g_modes->set_ntp(g_app.ntp);
     // A disabled column is a hole in every frame from the first render, not a
     // column that moves once and then stops.
     g_sched->set_excluded(cols.excluded_mask());

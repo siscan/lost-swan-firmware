@@ -863,6 +863,18 @@ std::string ModeManager::tz_string() const {
     return tz_str_;
 }
 
+void ModeManager::set_ntp(std::string_view server) {
+    const std::lock_guard<std::mutex> lock(mu_);
+    const Enter witness(*this);
+    ntp_ = std::string(server);
+}
+
+std::string ModeManager::ntp() const {
+    const std::lock_guard<std::mutex> lock(mu_);
+    const Enter witness(*this);
+    return ntp_;
+}
+
 ModeManager::Result ModeManager::cmd_clock_format(bool h24, int64_t utc_ms) {
     const std::lock_guard<std::mutex> lock(mu_);
     const Enter witness(*this);

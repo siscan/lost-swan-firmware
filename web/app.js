@@ -1,7 +1,7 @@
 // LOST Swan split-flap - web UI (spec 10.2).
 //
 // Every control on every page sends a §10.2a command through /ws (or POST
-// /api/cmd when the socket is down).  There is no second control path: what
+// /api/cmd when the socket is down).  The one exception is the ring upload, which POSTs the document to /api/ring/upload rather than issuing ring.upload - that route adds a heap guard the dispatcher command does not have: what
 // this page can do, an MQTT publish can do, and the firmware validates all of
 // it identically.
 "use strict";
@@ -24,6 +24,8 @@ let state = null;      // the last /ws state document
 // per-column mode selects - was never in that query and so was never
 // protected at all.  Asking the element is both narrower and complete.
 const editing = (node) => document.activeElement === node;
+// The device's own REHOME_RETRIES, not a copy of it.
+const retryMax = () => (state && state.sys && state.sys.rehome_retries) || 3;
 let wear = null;       // GET /api/wear, refetched when an input to it changes
 let wearKey = "";      // the (h24, live_s) the current table was computed for
 
@@ -58,7 +60,16 @@ bus.on("state", (e) => onState(e))
    .on("mode", (e) => { $("s-mode").textContent = e.name; })
    .on("cue", (e) => toast("♪ " + e.name, true))
    .on("result", (e) => {
-     if (e.res && e.res.ok === false) toast(e.res.err || "rejected", false);
+     if (!e.res) return;
+     if (e.res.ok === false) {
+       // "rejected" alone is what the Numbers ritual returns, and on the
+       // Terminal page it is the one refusal that needs saying in words.
+       toast(e.res.err === "rejected" ? "wrong numbers" : (e.res.err || "rejected"), false);
+     } else if (e.res.note) {
+       // Accepted, but not the thing you were probably after - a nudge on an
+       // unhomed column, a deadline armed while maintenance holds the display.
+       toast(e.res.note, true);
+     }
    });
 
 // --------------------------------------------------------------------------
@@ -147,7 +158,7 @@ function renderMotion(s) {
                           : " (not retried)");
     }
     if (c.state === "HOMING") {
-      return n + (c.retry > 0 ? " re-homing " + c.retry + "/3" : " homing");
+      return n + (c.retry > 0 ? " re-homing " + c.retry + "/" + retryMax() : " homing");
     }
     if (c.state === "UNHOMED") return n + " unhomed";
     if (c.index < 0) return n + " position unknown";
@@ -196,7 +207,7 @@ function renderDiag(s) {
       [String(c.revs), true], [String(c.flips), true], [String(c.minor), true],
       [String(c.major), true], [String(c.faults), true], [String(c.h2h), true],
       [String(c.err), true], [c.hall ? "●" : "○", false],
-      [c.retry > 0 ? c.retry + "/3" : "—", false],
+      [c.retry > 0 ? c.retry + "/" + retryMax() : "—", false],
     ];
     cells.forEach(([text, num]) => tr.appendChild(el("td", num ? { class: "num" } : null, text)));
     body.appendChild(tr);
@@ -293,6 +304,12 @@ function buildPickers() {
     rev.appendChild(w2);
   }
 
+  const slots = ring.columns[0].slots;
+  ["ramp-from", "ramp-to", "ramp-step"].forEach((id) => {
+    $(id).max = String(slots - 1);
+  });
+  $("ramp-to").value = String(slots - 1);
+
   ["ramp-col", "spin-col"].forEach((id) => {
     const sel = $(id);
     sel.textContent = "";
@@ -351,6 +368,7 @@ const SLIDERS = [
   ["p-alarm", "v-alarm", "flaps_s_alarm"],
   ["p-home", "v-home", "flaps_s_home"],
   ["p-accel", "v-accel", "accel"],
+  ["p-halltol", "v-halltol", "hall_tol"],
 ];
 
 function renderSettings(s) {
@@ -367,6 +385,8 @@ function renderSettings(s) {
   setVal("set-zero", s.cfg.zero_hold_s);
   setVal("set-spin", s.cfg.spin_s);
   setVal("set-ftimeout", s.cfg.failure_timeout_s);
+  setVal("set-floop", s.cfg.failure_loop_s);
+  setVal("set-ntp", s.cfg.ntp);
   setChk("set-cdland", s.cfg.cd_land_on_tick);
   setChk("set-clockland", s.cfg.clock_land_on_tick);
   setVal("set-dwell", s.cfg.msg_dwell_s);
@@ -388,6 +408,24 @@ function renderSettings(s) {
 
   renderNetwork(s);
   renderAudio(s);
+  // The dwell field used to be a hard-coded 600 in the markup, silently
+  // overriding the configured msg.dwell_s on the first message anyone sent.
+  if (!editing($("msg-dwell"))) $("msg-dwell").value = s.cfg.msg_dwell_s;
+  // ... and the pickers never read back the live message, though it is on the
+  // wire: opening Modes on a display already showing one offered five blanks.
+  if (s.msg) {
+    const toks = String(s.msg).split(" ");
+    const sel = document.querySelectorAll("#msg-pickers select");
+    if (sel.length === toks.length) {
+      toks.forEach((t, i) => { if (!editing(sel[i])) sel[i].value = t; });
+    }
+  }
+  const revealSet = (s.cfg.reveal || []).some((n) => n !== null);
+  $("reveal-preset-hint").textContent = revealSet
+      ? ""
+      : "REVEAL is five blanks until the reveal glyphs are chosen, below in Settings.";
+  if (!editing($("set-enidle"))) $("set-enidle").checked = !!s.cfg.en_idle_off;
+
   renderColumnModes(s);
   setChk("set-maint", !!(s.motion && s.motion.maintenance));
   $("maint-hint").textContent = s.motion && s.motion.maintenance
@@ -693,7 +731,13 @@ function wire() {
     b.onclick = () => send(spec.cmd, spec.payload);
   });
 
-  $("btn-execute").onclick = () => send("countdown.execute", $("numbers").value.trim());
+  $("btn-execute").onclick = () => {
+    if (state && !state.time_valid) {
+      toast("the clock has not synced yet - the deadline cannot be set", false);
+      return;
+    }
+    send("countdown.execute", $("numbers").value.trim());
+  };
   $("numbers").addEventListener("keydown", (e) => {
     if (e.key === "Enter") $("btn-execute").click();
   });
@@ -733,14 +777,25 @@ function wire() {
       send("motion.params", patch);
     };
   });
+  $("set-enidle").onchange = () => send("motion.params", { en_idle_off: $("set-enidle").checked });
   $("btn-motion-save").onclick = () => send("motion.save");
 
   // Settings apply live too; SAVE persists.
   $("set-h24").onchange = () => send("clock.format", { h24: $("set-h24").checked });
   $("set-tz").onchange = () => pushConfig({ tz: $("set-tz").value.trim() });
-  const GRANULARITIES = [1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30, 60];
+  $("set-ntp").onchange = () => pushConfig({ ntp: $("set-ntp").value.trim() });
+  // The list comes from the device (GET /api/wear enumerates exactly the
+  // granularities it accepts), so a second copy of "the divisors of 60" cannot
+  // drift from the one the API enforces.  The literals are only a fallback for
+  // a page loaded while that fetch is failing.
   const gsel = $("set-gran");
-  GRANULARITIES.forEach((g) => gsel.appendChild(el("option", { value: String(g) }, String(g))));
+  const fillGranularities = (list) => {
+    if (gsel.childElementCount) return;
+    list.forEach((g) => gsel.appendChild(el("option", { value: String(g) }, String(g))));
+  };
+  fetch("/api/wear").then((r) => r.json())
+      .then((doc) => fillGranularities(doc.clock.map((e) => e.granularity_min)))
+      .catch(() => fillGranularities([1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30, 60]));
   gsel.onchange = () => pushConfig({ granularity_min: +gsel.value });
   $("set-live").onchange = () => pushConfig({ seconds_live_s: +$("set-live").value });
   $("set-secmode").onchange = () => pushConfig({ seconds_mode: $("set-secmode").value });

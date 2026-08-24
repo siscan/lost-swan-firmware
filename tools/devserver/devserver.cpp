@@ -134,7 +134,7 @@ struct DevCfgSink final : api::ConfigSink {
         std::printf("[dev] motion params saved (host: not persisted)\n");
         return true;
     }
-    bool save_app(const ModesConfig&, std::string_view tz) override {
+    bool save_app(const ModesConfig&, std::string_view tz, std::string_view) override {
         ++app_saves;
         std::printf("[dev] app config saved, tz=%.*s (host: not persisted)\n",
                     static_cast<int>(tz.size()), tz.data());
