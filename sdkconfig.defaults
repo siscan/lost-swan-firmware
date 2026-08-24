@@ -34,7 +34,6 @@ CONFIG_HTTPD_WS_POST_HANDSHAKE_CB_SUPPORT=y
 
 # --- Watchdogs (spec 12).  Motion control task subscribes explicitly.
 CONFIG_ESP_TASK_WDT_INIT=y
-CONFIG_ESP_TASK_WDT_TIMEOUT_S=5
 
 # --- C++17 for application code (CLAUDE.md).
 CONFIG_COMPILER_CXX_EXCEPTIONS=n
