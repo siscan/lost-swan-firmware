@@ -331,3 +331,149 @@ html, body {
    a running countdown.  The largest element on a kiosk screen should not assert
    something the drums are not showing. */
 .big.dim { color: var(--p-dim); }
+
+/* ==========================================================================
+   Protocol mode (phase 7).  The purist terminal: a near-black screen, a
+   blinking prompt in the upper left, and nothing else.  It sits OVER the
+   friendly terminal rather than replacing it, so turning the toggle off
+   restores the working page exactly - nothing that works today is lost.
+   ========================================================================== */
+.protocol {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: #020806;          /* near-black, darker than the normal screen */
+  color: var(--p-hot);
+  padding: clamp(10px, 2.4vmin, 34px);
+  display: flex;
+  flex-direction: column;
+  gap: 0.6em;
+  overflow: hidden;
+  font-size: clamp(13px, 2.1vmin, 26px);
+  letter-spacing: 0.14em;
+}
+
+/* The prompt is upper LEFT, not centred: this is a computer terminal, not a
+   readout. */
+.pr-line {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45em;
+  flex: 0 0 auto;
+}
+
+.pr-caret { color: var(--p-mid); }
+.pr-entry { white-space: pre; }
+
+.pr-cursor {
+  display: inline-block;
+  width: 0.6em;
+  height: 1.05em;
+  background: var(--p-hot);
+  animation: blink 1.06s steps(1, end) infinite;
+  transform: translateY(0.12em);
+}
+
+.pr-status {
+  flex: 0 0 auto;
+  min-height: 1.2em;
+  color: var(--p-dim);
+  font-size: 0.72em;
+  letter-spacing: 0.3em;
+}
+
+/* The flood.  `pre-wrap` plus `break-all` is what makes §7.3's "no emitted line
+   breaks - the text wraps at the display's width" literally true: the string
+   contains no newline, and the browser does the wrapping. */
+.pr-flood {
+  flex: 1 1 auto;
+  overflow: hidden;
+  white-space: pre-wrap;
+  word-break: break-all;
+  line-height: 1.25;
+  color: var(--p-hot);
+}
+
+/* Asleep is the show-accurate state and it must LOOK like nothing: no status,
+   no entry, just the cursor. */
+.protocol[data-sit="asleep"] .pr-status,
+.protocol[data-sit="asleep"] .pr-entry { visibility: hidden; }
+
+.protocol[data-sit="failure"] .pr-line { display: none; }
+.protocol[data-sit="failure"] .pr-status { color: var(--p-hot); }
+
+@media (prefers-reduced-motion: reduce) {
+  .pr-cursor { animation: none; }
+}
+
+/* ==========================================================================
+   The Pearl log printout (phase 7).  Green-bar tractor paper: the alternating
+   band is a repeating-linear-gradient rather than an image, so it costs no
+   bytes and scales to any screen.
+   ========================================================================== */
+.pearl {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: none;
+  flex-direction: column;
+  background: rgba(0, 0, 0, 0.86);
+  padding: clamp(6px, 1.6vmin, 22px);
+  gap: 0.6em;
+}
+.pearl.on { display: flex; }
+
+.pearl-paper {
+  flex: 1 1 auto;
+  overflow: auto;
+  border-radius: 2px;
+  background:
+    repeating-linear-gradient(
+      to bottom,
+      #e8f0e2 0, #e8f0e2 2.6em,
+      #d3e4cd 2.6em, #d3e4cd 5.2em);
+  /* The sprocket margins - two perforated strips, drawn, not an image. */
+  border-left: clamp(10px, 2.2vmin, 26px) solid #cfd8cb;
+  border-right: clamp(10px, 2.2vmin, 26px) solid #cfd8cb;
+  box-shadow: inset 0 0 0 1px #b9c6b4;
+}
+
+.pearl-text {
+  margin: 0;
+  padding: clamp(8px, 1.8vmin, 22px);
+  color: #1b2a1b;
+  font-family: inherit;
+  font-size: clamp(9px, 1.45vmin, 16px);
+  line-height: 2.6em;          /* one entry per band */
+  white-space: pre-wrap;
+  word-break: break-word;
+  letter-spacing: 0.06em;
+}
+
+.pearl-foot {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 0.6em;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.pearl-hint {
+  color: var(--p-dim);
+  font-size: clamp(9px, 1.4vmin, 15px);
+  letter-spacing: 0.24em;
+}
+
+/* The PRINT LOG? prompt, on the protocol screen's idle state. */
+.pr-ask {
+  color: var(--p-mid);
+  font-size: 0.8em;
+  letter-spacing: 0.24em;
+  min-height: 1.2em;
+}
+
+@media (max-width: 520px) {
+  /* A phone cannot show 58 columns of tractor paper at a readable size, so the
+     banner rules wrap; break-word above keeps entries legible rather than
+     clipped. */
+  .pearl-text { font-size: 10px; line-height: 2.2em; }
+}

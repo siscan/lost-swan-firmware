@@ -16,6 +16,14 @@ const PREFS = {
                   // real work on a phone GPU
   click: true,
   dock: true,
+
+  // Phase 7, the show-accuracy pack.  ALL DEFAULT OFF: the friendly terminal is
+  // what this page is for the rest of the time, and nothing that works today is
+  // allowed to disappear behind a flourish.  Per browser, in localStorage -
+  // presentation is not device state and has no business in NVS.
+  protocol: false,   // the purist terminal: near-black, inert until 4:00
+  boot: false,       // the Swan logo drawn stroke by stroke on load
+  egg: false,        // the chat easter egg, and CHESS from the idle prompt
 };
 
 function loadPrefs() {
@@ -39,6 +47,10 @@ function applyPrefs() {
   document.querySelectorAll("[data-toggle]").forEach((b) => {
     b.classList.toggle("on", !!PREFS[b.dataset.toggle]);
   });
+  // The phase 7 modules own their own DOM, so they have to be told.  Each is
+  // optional: a page served without protocol.js must still toggle CRT.
+  if (window.SwanProtocol) window.SwanProtocol.apply();
+  if (window.SwanTerm) SwanTerm.emit("prefs", PREFS);
 }
 
 // --------------------------------------------------------------------------
@@ -252,6 +264,7 @@ function bindKeyboard() {
 // State
 // --------------------------------------------------------------------------
 let flap = null;
+let bootPlayedOnce = false;
 let pendingExecute = false;
 
 function mmss(total) {
@@ -268,6 +281,7 @@ let skewMs = 0;      // device clock minus ours
 let tzOffsetS = 0;   // the DEVICE's UTC offset, not this browser's
 let phase = "idle";
 let secondsLive = 240;
+let secondsMode = "seconds";   // cd.seconds_mode, for the rendering contract
 let mode = "clock";        // what the display is actually doing
 let cueState = {};         // the audio block, for whether a cue could be heard
 let timeValid = false;     // deadline commands are refused until SNTP has synced
@@ -309,6 +323,29 @@ function audioSilent() {
   return qs < qe ? (now >= qs && now < qe) : (now >= qs || now < qe);
 }
 
+// THE RENDERING CONTRACT, spec 7.3: displayed = ceil(remaining / step) * step.
+//
+// The same formula the firmware uses, deliberately - this readout and the
+// separate terminal prop both derive their display from the same deadline, and
+// two screens showing one countdown must not disagree by a whole step.  It is a
+// port of components/modes/render.cpp's countdown_step_s / countdown_shown_s;
+// if you change one, change both.
+//
+// CEILING, not floor: the show holds 108:00 until a full minute has elapsed, so
+// a value owns the window ABOVE it.  That also puts 000:00 exactly on the
+// deadline instead of a second before its own klaxon.
+function countdownStepS(secondsMode, remainingS, liveS) {
+  if (secondsMode === "minutes") return 60;
+  if (remainingS > Math.floor(liveS / 60) * 60) return 60;
+  return secondsMode === "seconds" ? 1 : 10;
+}
+
+function countdownShownS(secondsMode, remainingS, liveS) {
+  if (!(remainingS > 0)) return 0;
+  const step = countdownStepS(secondsMode, remainingS, liveS);
+  return Math.ceil(remainingS / step) * step;
+}
+
 function tickReadout() {
   const el = $("clock");
   if (!target || phase === "idle") {
@@ -327,8 +364,15 @@ function tickReadout() {
     return;
   }
   const now = (Date.now() + skewMs) / 1000;
-  const rem = Math.max(0, Math.round(target - now));
-  el.textContent = mmss(rem);
+  const rem = Math.max(0, target - now);
+  // The stepped value, not the raw remainder: this readout is the reference the
+  // flaps land against (spec 7.3), so showing a live second count while the
+  // drums sit on MMM:00 would make the two disagree all through the quiet
+  // phase.  The CLOCK rider is a different thing entirely - a screen has no
+  // flaps, so realClockFace ignores clock.granularity_min - but the countdown's
+  // resolution is the contract both surfaces share.
+  const shown = countdownShownS(secondsMode, rem, secondsLive);
+  el.textContent = mmss(shown);
   el.className = "big" + (rem <= 60 ? " crit" : rem <= secondsLive ? " warn" : "");
 }
 
@@ -338,6 +382,7 @@ function onState(s) {
   target = s.cd.target;
   phase = s.cd.phase;
   secondsLive = s.cd.seconds_live_s;
+  secondsMode = s.cd.seconds_mode || "seconds";
   $("mode").textContent = s.mode;
   mode = s.mode;
   cueState = s.audio || {};
@@ -423,18 +468,36 @@ const bus = new SwanBus({
     // Re-prime on reconnect: snap to the display rather than animating a long
     // catch-up one flap at a time.  A kiosk may have been offline for hours.
     if (!up && flap) flap.primed = false;
+    // Reconnect replays it, per the spec: a kiosk that dropped off the network
+    // and came back should look like it started up, not like it stuttered.
+    if (up && bootPlayedOnce) playBoot();
+    if (up) bootPlayedOnce = true;
   },
 });
 
-bus.on("state", onState)
+bus.on("state", (s) => {
+     onState(s);
+     const before = SwanTerm.state ? SwanTerm.state.cd.phase : null;
+     SwanTerm.state = s;
+     SwanTerm.emit("state", s);
+     if (s.cd.phase !== before) SwanTerm.emit("phase", s.cd.phase);
+   })
+   // The firmware's own announcement that the reveal frame is CONFIRMED on
+   // every column - not "commanded".  After the alarm spin the columns converge
+   // with the index unknown, measured at 2.45-2.48 s with the canon five, so
+   // this is the beat rather than an estimate.
+   .on("reveal", (e) => SwanTerm.emit("reveal", e))
    .on("go", (e) => flap && flap.flipTo(e.col, e.idx, e.flaps))
    .on("spin", (e) => flap && flap.spin(e.col, e.flaps, e.secs))
    .on("mode", (e) => { $("mode").textContent = e.name; })
    // "fired", not "played": mute, a volume of 0, quiet hours or a missing WAV
    // all produce silence, and every one of those facts is in the state document
    // this page already receives.
-   .on("cue", (e) => setMsg((audioSilent() ? "⃠ " : "♪ ") + e.name.replace(/_/g, " "),
-                            audioSilent() ? "warn" : "ok"))
+   .on("cue", (e) => {
+     setMsg((audioSilent() ? "⃠ " : "♪ ") + e.name.replace(/_/g, " "),
+            audioSilent() ? "warn" : "ok");
+     SwanTerm.emit("cue", e);
+   })
    .on("result", (e) => {
      if (!e.res) return;
      if (e.res.ok) {
@@ -450,7 +513,70 @@ bus.on("state", onState)
               "err");
      }
      pendingExecute = false;
+     SwanTerm.emit("result", e.res);
    });
+
+// --------------------------------------------------------------------------
+// THE HOST SURFACE for the Phase 7 modules (protocol.js, pearl.js, bootanim.js,
+// chat.js, chess.js).  They are separate files so each can be read, replaced or
+// deleted on its own, and so the friendly terminal keeps working when one of
+// them is not loaded at all.
+//
+// Rules every module obeys, and the reason each one exists:
+//   - Screen-side only.  The ONE exception is protocol mode's EXECUTE, which
+//     goes through `send`, i.e. the same countdown.execute path this page's own
+//     EXECUTE key uses.  Nothing else may send a command, and nothing may touch
+//     the flaps.
+//   - Time the failure sequence off `target` plus the retained timing keys
+//     (cfg.zero_hold_s, cfg.spin_s) and off the `reveal` EVENT for the landing -
+//     never off the arrival time of a message.  Publish skew on swan/countdown
+//     was measured at up to ~0.7 s (BRINGUP 30), so arrival is not a clock.
+//   - Every feature is behind a PREFS toggle that defaults to off.
+// --------------------------------------------------------------------------
+const SwanTerm = {
+  // The last state document, or null before the first arrives.
+  state: null,
+  prefs: PREFS,
+  savePref,
+  clickSound,
+  setMsg,
+  // The one sanctioned command path (protocol mode's EXECUTE only).
+  send: (cmd, payload) => bus.send(cmd, payload),
+  // The device's wall clock as a Date whose UTC fields are its LOCAL fields.
+  deviceNow,
+  // Seconds remaining against the device's clock, or null when nothing is armed.
+  remaining() {
+    if (!target) return null;
+    return target - (Date.now() + skewMs) / 1000;
+  },
+  phase: () => phase,
+  mode: () => mode,
+  timeValid: () => timeValid,
+  secondsLive: () => secondsLive,
+  secondsMode: () => secondsMode,
+  // The spec 7.3 rendering contract, shared with protocol mode and pinned by
+  // test/host/test_countdown.js.
+  shownS: (remainingS) => countdownShownS(secondsMode, remainingS, secondsLive),
+  _shownS: countdownShownS,
+  _stepS: countdownStepS,
+
+  // Listeners.  "state" on every document, "reveal" when the firmware announces
+  // the reveal frame has landed on every column, "phase" on a countdown phase
+  // change, "cue" when an audio cue fires.
+  _subs: {},
+  on(evt, fn) {
+    (this._subs[evt] || (this._subs[evt] = [])).push(fn);
+    return this;
+  },
+  emit(evt, arg) {
+    const l = this._subs[evt];
+    if (!l) return;
+    for (const fn of l) {
+      try { fn(arg); } catch (e) { console.error("SwanTerm." + evt, e); }
+    }
+  },
+};
+window.SwanTerm = SwanTerm;
 
 function wireToggles() {
   document.querySelectorAll("[data-toggle]").forEach((b) => {
@@ -475,6 +601,15 @@ buildPad();
 bindKeyboard();
 wireToggles();
 renderEntry();
+
+// The boot animation (phase 7), on load and on reconnect.  Behind PREFS.boot,
+// which defaults off; SwanBoot.play resolves immediately when it is, and the
+// whole call is guarded so a missing bootanim.js cannot stop the page.
+function playBoot() {
+  if (!PREFS.boot || !window.SwanBoot) return Promise.resolve();
+  return window.SwanBoot.play({ skipable: true }).catch(() => {});
+}
+playBoot();
 
 SwanFlap.loadGlyphs("glyphs.svg").then((ok) => {
   if (ok && flap) flap.refresh();
