@@ -907,7 +907,7 @@ set, which was implemented across Phases 3–5 and never written down here; the
 
 | command | payload | effect |
 |---|---|---|
-| `motion.params` | `{flaps_s_normal?, flaps_s_alarm?, flaps_s_home?, accel?, hall_tol?, en_idle_off?}` | live motion tuning, no persistence |
+| `motion.params` | `{flaps_s_normal?, flaps_s_alarm?, flaps_s_home?, accel?, hall_tol?, en_idle_off?, hall_active_low?}` | live motion tuning, no persistence (`motion.save` commits) |
 | `motion.save` | — | persist calibration **and** speeds (one NVS record) |
 | `motion.ramp` / `ramp_stop` | `{column, from, to, step, dwell_s}` | the Calibrate index walk |
 | `config.set` | any of §11's mode keys, plus `tz`, `ntp`, `reveal` | live apply |
@@ -918,7 +918,7 @@ set, which was implemented across Phases 3–5 and never written down here; the
 | `wifi.provision` | `true` \| `false` | the captive portal, explicitly only |
 | `mqtt.config` | `{enabled, uri?, user?, pass?, base?, ha_prefix?}` | **absent field = keep**; present-and-empty = clear |
 | `motion.spin` | `{column, flaps_s?, seconds?}` | the Calibrate page's test spin; open loop, so the index becomes unknown |
-| `motion.enable` | `true` or `false` | EN, **ganged across all five drivers** (§2.2) — the recovery from an escalation that dropped it |
+| `motion.enable` | `true` or `false` | EN, **ganged across all five drivers** (§2.2) — the recovery from an escalation that dropped it. Re-asserting it after an escalation **re-homes every non-disabled column**, because the drums have been sitting de-energized. While EN is down the dispatcher refuses `mode.set`, `message.set`, `preset.set`, `display.frame`, `motion.rehome`, `motion.spin` and `motion.ramp` — a de-energized display must not answer `ok` to a command it cannot obey |
 | `ota.confirm` / `ota.rollback` | — | the §10.4 decision, by hand |
 
 **Deliberately not on the web UI**, and why — so their absence is a decision
@@ -1046,6 +1046,11 @@ motion.flaps_s_home      default 8
 motion.accel             default 82000
 motion.hall_tol          default 41
 motion.en_idle_off       default false
+motion.hall_active_low   default true.  The A3144's output is active-LOW with a
+                         3V3 pull-up (§2, tagged VERIFY).  Settable live with
+                         motion.params, persisted by motion.save, and on the
+                         Calibrate page - it was loaded and saved but settable
+                         from nowhere until 2026-08-24.  NVS key m_hall_lo
 motion.fault_policy      [Q5] - executed as §5.8/§7.4
 motion.columns[5]        real | sim | disabled per column, default all real.
                          NVS key col_mode (5-byte blob).  `disabled` is set by
@@ -2400,17 +2405,106 @@ numbered section — if you find one that disagrees, fix the section.
     intact; the two past-zero cuts woke **silently into the reveal**, no cue
     replayed and nothing spinning, which is the §17 no-replay rule holding under
     a power cut rather than a reboot.
-  - **Soak, first runs.**  Five simulated columns at 20 flaps/s: ~120 wraps and
-    ~6,000 flips per column in nine minutes, zero major resyncs, zero faults,
-    `hall_to_hall` pinned at **8242–8243** and a worst edge error of **one
-    microstep**.  That is §3's 272000/33 = 8242.42 behaving exactly as §5.3
-    describes — one `resync_minor` per wrap IS the 0.42 residue being absorbed
-    at each edge, not a defect.  Recorded because it is the first end-to-end
-    evidence that the non-integer geometry works, and because the same run
+  - **Soak: 66 minutes, ~1,000 wraps per column.**  Five simulated columns at
+    20 flaps/s — about 8.2 million microsteps each, 41 million across the
+    display — with **zero major resyncs, zero faults**, `hall_to_hall` pinned at
+    **8242–8243** throughout and a worst edge error of **one microstep**.  The
+    heap sat flat at 66–71 KB with its minimum unchanged from boot, so nothing
+    leaks over an hour of continuous motion.  That is §3's 272000/33 = 8242.42
+    behaving exactly as §5.3 describes: one `resync_minor` per wrap IS the 0.42
+    residue being absorbed at each edge, not a defect.  It is the first
+    end-to-end evidence that the non-integer geometry works — and the same run
     against a real column is the measurement that would actually settle it.
   - **The presentation terminal's clock shows real time** (Nico).
     `clock.granularity_min` exists to save flap wear and a screen has no flaps,
     so the CRT reads the actual minute while the drums stay floored to the
-    granularity — visible side by side: drums `AM 10:15`, CRT `AM 10:21`.  The
-    docked flap mirror still follows the real columns, toggle and all: it is a
-    mirror and must not lie about what the wall is doing.
+    granularity — measured side by side on the board: drums `PM 12:30`, CRT
+    `PM 12:43`.  The docked flap mirror still follows the real columns, toggle
+    and all: it is a mirror and must not lie about what the wall is doing.
+
+- 2026-08-24 — **Adversarial review of groups 3–7 and Phase 6, run once at the
+  end as Nico asked.**  Seven finder lenses over the journal, the streaming
+  parser, the escalation paths, the web forms and the task/lock boundaries,
+  every finding put to three independent refuters.  **The run was cut short by
+  a usage limit**: the synthesise step and 46 agents died mid-flight, so
+  candidates that had not yet been judged were dropped unjudged rather than
+  refuted — this is a partial sweep, not a clean one.  Fifteen findings
+  survived verification and all are fixed and on hardware, together with four
+  I confirmed myself while applying them.  Grouped by what they actually were:
+  - **The escalation had no ending.**  §5.8 drops EN for all five and stops
+    every axis — and then the display put itself back to work.  `drop_enable`'s
+    Stop is one-shot; the frame scheduler's convergence pass re-commanded every
+    column **50 ms later**, so "stop everything" lasted one tick and the axes
+    carried on stepping into dead drivers, completing moves in software and
+    publishing faces the drums never reached.  EN is a scheduler hold now, like
+    maintenance and the OTA hold.  And **nothing ever came back**: that Stop
+    leaves every axis Unhomed with no hall reference, the scheduler skips
+    Unhomed columns and `go` refuses them, so re-energizing gave a display that
+    was powered and permanently still behind a banner promising a retry that
+    had been cancelled.  Re-asserting EN after an escalation now re-homes every
+    non-disabled column, on the boot stagger, and says why.  The dispatcher
+    refuses display commands while EN is down for the same reason the
+    maintenance gate exists — `ok` meant "received", and STEP was being pulsed
+    into de-energised drivers.  Verified end to end on the board (BRINGUP 27c).
+  - **Two more from the same cluster.**  Re-enabling a column *in maintenance*
+    homed it into released drivers, so it ran 1.2 revolutions, saw no edge and
+    latched a `no_hall` FAULT — a fault manufactured by the act of re-enabling,
+    on a column that was fine, in the mode you enter to repair one.  And the
+    deferred park's bail-out cleared the drive bit under a **moving** axis,
+    which is precisely the failure the deferred park exists to prevent; it posts
+    a Stop first now, and its bound went from 10 s to 30 s because a park is a
+    Go at `flaps_s_normal`, which Settings can set to 1 flap/s.
+  - **No recovery was ever journalled.**  `rehome_attempt` is cleared at the
+    Seek→Settle edge, several hundred milliseconds before the `homed` event that
+    was supposed to carry it, so the count read 0 every time and `note_recover`
+    could not fire at all.  The count rides the event now; a `slip` injected on
+    the board produces `{"e":"recover","col":2,"d":"after 1"}`.
+  - **`log_read` allocated up to 8 KB inside `portENTER_CRITICAL`**, which masks
+    the 50 kHz step ISR — reading the log from a browser could drop steps on a
+    moving display.  Sized under the lock, allocated outside it, filled through
+    a new allocation-free `read_into`.  The same file's truncation marker was
+    unreachable: the vprintf hook formats into a fixed buffer, so `vsnprintf`
+    does the cutting and the ring only ever sees a string that already fits — a
+    cut line read back as a complete one, which is the worst way to read a
+    backtrace.
+  - **Two in the new streaming parser.**  A surrogate PAIR came out as two
+    3-byte sequences — CESU-8, not valid UTF-8 — which would have gone into a
+    ring slot id and back out of `/api/ring` as mojibake; pairs combine and lone
+    halves are refused.  And keys were matched by NAME at any depth while the
+    format skips unrecognised content BY DEPTH, so an object nested inside a
+    column could carry a `ring` key and be read as that column's table.  The
+    skip rule is by depth; the key rule has to be too.
+  - **The WiFi form fought the user, and it was the critical one.**  The guard
+    against the 1 Hz state document was "is the caret in this element", which is
+    right for everything in Settings that applies on `change` and wrong for the
+    only two forms with an explicit SAVE: typing a network name and **tabbing to
+    the password** put the old SSID back, so SAVE AND JOIN re-joined the network
+    it was already on with the new password.  Same shape across all five MQTT
+    fields.  A form the user has started editing is now left alone until it is
+    saved.
+  - **Four things existed and had no surface.**  "alarm loop (s)" was rendered
+    from state and read back by nobody, so every value typed into it was
+    discarded; `motion.hall_active_low` was settable from nowhere at all while
+    `motion.save` persisted it faithfully — and spec §2 tags the A3144's
+    polarity `VERIFY`, so the value a bench measurement is most likely to
+    overturn could only be changed by recompiling; EN was on no page at all; and
+    §12's log and journal were URLs you had to know.  All four are on the pages
+    now.
+  - **The presentation clock used the BROWSER's timezone.**  `skewMs` corrects
+    the epoch, not the zone, and a kiosk Pi is UTC out of the box — so the CRT
+    read hours from the drums beside it with both of them correct about the
+    instant.  The state document carries the device's offset now; proved by
+    moving the device to `JST-9` and watching the CRT go to 04:43 while the
+    browser stayed at 12:43.
+  - **Method note, and a cost worth recording.**  A raw newline inside a string
+    literal reached the board for the third time, in the new log viewer.  The
+    symptom is why it keeps happening: `app.js` fails to parse, so every page
+    stops rendering while the board stays perfectly healthy — the state document
+    keeps arriving and the API keeps answering, and the only evidence is one
+    line in a browser console.  CI's `node --check` catches it after a push;
+    `tools/jscheck.py` now catches it in `test-host.ps1`, where there is no node
+    to run.  Also worth keeping: `idf.py flash` on this machine writes a
+    **stale** `storage.bin`, because Device Guard blocks the littlefs launcher
+    and the image is built by hand (README) — a web change is not on the board
+    until that command is re-run, and the symptom is a UI that looks like it
+    ignored the fix.

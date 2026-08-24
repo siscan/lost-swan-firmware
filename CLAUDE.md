@@ -146,6 +146,9 @@ tools/mqtt_broker.py           stdlib MQTT 3.1.1 broker, bench fixture only
 tools/ota_upload.py            push an image to a running display (spec 10.4)
 tools/gen_audio.py             synthesized placeholder cues (spec 9)
 tools/webpack.py               gzips web/ + ring.json into the LittleFS image
+tools/jscheck.py               web asset syntax scan (no node needed); run by
+                               test-host.ps1 - a raw newline in a JS string
+                               literal is a blank UI, not an error
 tools/devserver/               host dev server: real /ws, real ModeManager, sim axes
 test/host/                     unit tests (build in build_host/, not build/)
 ```
@@ -239,6 +242,17 @@ or touch the flaps, with one exception: protocol mode's EXECUTE uses the same
 `countdown.execute` path the friendly terminal already uses.
 
 Things later work must not undo:
+- **EN down is a scheduler hold, and coming back up re-homes.** Escalation
+  (§5.8) releases EN and stops every axis; the frame layer must stay silent
+  while it is down (`ModeManager::set_drivers_enabled`, pushed by the modes
+  task) and the dispatcher must refuse display commands, or the convergence
+  pass undoes the stop 50 ms later. Re-asserting EN after an escalation
+  re-homes every non-disabled column — nothing else ever will.
+- **A raw newline in a JS string literal is a blank UI, not an error.**
+  `tools/jscheck.py` runs in `test-host.ps1` and `node --check` runs in CI.
+  And on this machine `idf.py flash` writes a **stale** `storage.bin` — the
+  LittleFS image is built by hand because Device Guard blocks the launcher
+  (README), so a web change is not on the board until that command is re-run.
 - **MQTT publishes on change, ≥1 s apart, 30 s floor** — not the /ws cadence.
   `cd.remaining_s` is excluded from the change comparison; it ticks, and the
   state topic is RETAINED.

@@ -770,6 +770,12 @@ soak stop
       microstep**.  That is spec §3's 272000/33 = 8242.42 showing up exactly as
       §5.3 says it should: one `resync_minor` per wrap IS the 0.42 residue being
       absorbed at each edge, not a defect.
+- [x] **66 minutes, sampled every three minutes** (the long run, 2026-08-24):
+      **~1,000 wraps per column** - about 8.2 million microsteps each, 41 million
+      across the display - still zero major resyncs, zero faults, `hall_to_hall`
+      still 8242-8243, worst edge error still **one microstep**, and the heap
+      flat at 66-71 KB with the minimum unchanged from boot.  Nothing drifts and
+      nothing leaks over an hour of continuous motion.
 - [ ] **With one real column**, the same run.  This is the measurement that
       matters: the simulated drum was written from the same assumptions as the
       classifier, so a clean sim soak proves the plumbing and nothing about the
@@ -789,6 +795,42 @@ soak stop
       over the file with one 256-byte buffer now.  Worth repeating after any
       change to the journal, because the failure looks like a reboot with no
       obvious cause.
+
+### 27c. Escalation, and what happens after it — **DONE 2026-08-24**
+
+The one sequence nobody had run to the end.  Five simulated columns, then:
+
+```
+sim fault 0 miss 4
+sim fault 1 miss 4
+go 0 10
+go 1 10                # two jams -> two faults -> escalation
+stats                  # "drivers disabled"
+sim fault 0 clear
+sim fault 1 clear
+en 1                   # the recovery
+stats
+```
+
+- [x] Two faults drop EN for all five, as §5.8 requires — `drivers disabled`.
+- [x] **The display then STAYS stopped.**  It did not before: `drop_enable`
+      posts a Stop, and 50 ms later the frame scheduler's convergence pass
+      re-commanded every column, so the axes carried on stepping into dead
+      drivers and published faces the drums never reached.  EN is a scheduler
+      hold now.
+- [x] **`en 1` re-homes all five**, with the log line saying why —
+      *"EN re-asserted after an escalation - re-homing all five, because nothing
+      knows where the drums are now"*.  It did not before, and could not: that
+      Stop leaves every axis Unhomed, the scheduler skips Unhomed columns and
+      `go` refuses them, so the display came back energized and permanently
+      still behind a banner promising a retry that had been cancelled.
+- [x] While EN is down, `preset.set` and `motion.spin` are **refused with a
+      reason** rather than answered `ok`; `motion.enable` is not blocked,
+      because it is the way out.
+- [x] A recovery reaches the journal: inject `sim fault 2 slip 400`, and
+      `GET /api/journal` gains `{"e":"recover","col":2,"d":"after 1"}`.  That
+      line was unreachable until today — the retry counter is cleared at the
+      hall edge, several hundred milliseconds before the event that carries it.
 
 ### 28. Power loss (spec 15 phase 6) — **DONE 2026-08-24**
 

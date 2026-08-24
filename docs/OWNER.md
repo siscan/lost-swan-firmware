@@ -85,8 +85,11 @@ and they are not the same:
 If **two** columns fault at once, or one faults during the alarm spin, the
 display cuts power to all five motors on purpose — two failures together is
 usually power, wiring or the frame, and the mechanism is worth more than the
-display. Diagnostics will say `step timer`/`drivers` are off; re-energise from
-the Calibrate page once you have looked.
+display. Diagnostics then reads **drivers: DE-ENERGIZED**, and the display
+stops: it will not move again, and it will refuse anything you ask it to show,
+with a message saying why. **Look first, then press ENERGIZE THE MOTORS on the
+Calibrate page.** That re-homes all five, because the drums have been sitting
+unpowered and nothing knows where they are.
 
 **Before you put your hands in the mechanism**, turn on **maintenance**
 (Settings → Maintenance). Nothing schedules, nothing re-homes itself, and the
@@ -118,15 +121,17 @@ countdown cues; pressing PLAY yourself always plays.
 
 ## What it remembers
 
-**The log** (`http://lost.local/api/log`) is the last few thousand lines the
-firmware printed, in memory, lost at power-off. Useful when something has just
-gone wrong. It opens in a browser tab; there is no button for it yet.
+Both are at the bottom of the **Diagnostics** page, under *Log and journal*.
 
-**The journal** (`http://lost.local/api/journal`) is permanent and much
-shorter: every countdown you started and how, every zero, every fault and
-recovery, every mode change, and every boot with the reason it restarted. It
-survives power loss and is the display's actual history. Also a URL rather than
-a button for now.
+**The log** is the last few kilobytes the firmware printed, in memory, lost at
+power-off. It tells you how many lines it is holding and how many it has thrown
+away, so "the log starts here" is a fact rather than a guess. Useful when
+something has just gone wrong.
+
+**The journal** is permanent and much shorter: every countdown you started and
+how, every zero, every fault and recovery, every mode change, and every boot
+with the reason it restarted. It survives power loss and is the display's
+actual history.
 
 ## Updating
 

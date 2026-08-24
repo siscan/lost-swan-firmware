@@ -159,11 +159,11 @@ Device Guard blocks the LittleFS image builder (see *Host unit tests* below for
 the whole story). So:
 
 ```bash
-.uild.ps1 app
+.\build.ps1 app
 ```
 
 ```bash
-.uild.ps1 -p COM3 bootloader-flash partition-table-flash app-flash
+.\build.ps1 -p COM3 bootloader-flash partition-table-flash app-flash
 ```
 
 Then build and write the filesystem image separately:
@@ -179,6 +179,13 @@ python -m esptool --chip esp32c5 -p COM3 write_flash 0x520000 build/storage.bin
 `python` here must be the ESP-IDF one (`~/.espressif/python_env/idf5.5_py3.13_env/Scripts/python.exe`)
 or a system Python with `esptool` installed — the bare `python` on this machine
 has neither esptool nor pyserial.
+
+**Consequence worth stating plainly: on this machine `idf.py flash` writes a
+STALE `storage.bin`.** The app is rebuilt and flashed correctly, but the
+filesystem image is whatever those two commands last produced — so a change to
+anything under `web/` is not on the board until you re-run them. The symptom is
+a UI that looks like it ignored your fix, which has cost a debugging session
+more than once.
 
 On a machine without Device Guard, none of that applies: `idf.py flash` does the
 lot.
