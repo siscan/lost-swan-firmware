@@ -715,6 +715,18 @@ soak stop
       Watch `heap_min` against `heap_start`: a steady fall is a leak, a sawtooth
       is normal traffic.
 
+### 27b. The journal under a burst — **DONE 2026-08-24**
+
+- [x] 500 mode changes in 37 s, which is well past the 400-entry cap: the board
+      runs straight through it, the journal rotates, `GET /api/journal` returns
+      exactly 200 whole objects, and the heap does not move.
+      **It did not, the first time**: rotation read every line into memory and
+      panicked the board (`reset=panic`, twice), and an unlimited
+      `GET /api/journal` did the same from the other side.  Both are two passes
+      over the file with one 256-byte buffer now.  Worth repeating after any
+      change to the journal, because the failure looks like a reboot with no
+      obvious cause.
+
 ### 28. Power loss (spec 15 phase 6) — **DONE 2026-08-24**
 
 Twelve cuts, each a hardware reset with no shutdown path — the same thing as

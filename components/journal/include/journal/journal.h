@@ -74,8 +74,11 @@ struct RotationPolicy {
 bool needs_rotation(const RotationPolicy& p, std::size_t entries, std::size_t bytes);
 
 // Keep the newest `keep_entries` lines of `all`, in order.  Returns the text to
-// write.  Splitting this out is what makes rotation testable: the shell only
-// has to do temp-write-then-rename around it.
+// write.  This states the POLICY and is what the host tests assert on; the
+// firmware's rotate() implements the same rule in two passes over the file with
+// one 256-byte buffer, because building a vector of every line is O(the whole
+// file) on a device where an allocation failure is abort() - it panicked the
+// board the first time a burst pushed the journal past its cap.
 std::string compact(const RotationPolicy& p, const std::vector<std::string>& lines);
 
 // ---------------------------------------------------------------------------
@@ -98,8 +101,9 @@ bool note_fault(int64_t utc_s, int column, const char* cause);
 bool note_recover(int64_t utc_s, int column, int attempts);
 bool note_mode(int64_t utc_s, const char* mode);
 
-// Newest last, at most `max_lines` (0 = all).  Reads the file, so it belongs on
-// the HTTP task, not the modes task.
+// Newest last, at most `max_lines`.  0 means the DEFAULT, not "all": this is
+// served to a browser, so an unbounded read is an allocation an outsider picks
+// the size of.  Reads the file, so it belongs on the HTTP task.
 std::string read(std::size_t max_lines = 0);
 
 struct Stats {

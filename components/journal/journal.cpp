@@ -12,7 +12,6 @@
 #include <cstdio>
 #include <cerrno>
 #include <cstring>
-#include <vector>
 #include <sys/stat.h>
 
 #include "esp_log.h"
@@ -29,6 +28,10 @@ namespace {
 constexpr const char* TAG = "journal";
 constexpr const char* PATH = "/fs/journal.jsonl";
 constexpr const char* TMP = "/fs/journal.tmp";
+// What a read returns when the caller does not say, and the hard cap.
+// 200 entries is ~17 KB, which is what the Pearl printout wants anyway.
+constexpr std::size_t READ_DEFAULT_LINES = 200;
+constexpr std::size_t READ_MAX_LINES = 400;
 
 // 8 KB of internal RAM.  See the note in log_ring.h for why this is a byte
 // budget rather than spec 12's "~200 lines".
@@ -95,34 +98,50 @@ std::size_t count_lines(std::size_t* bytes_out) {
     return lines;
 }
 
+// Compaction, in bounded memory.  The first version read every line into a
+// vector<string> and handed it to compact() - which is O(the whole file) in a
+// place that runs on a device with a fragmented 70 KB heap, and with exceptions
+// off an allocation failure is abort().  It duly panicked the board the first
+// time a burst pushed the journal past its cap: the same class of defect this
+// phase removed from the ring upload, reintroduced by me, three files away.
+//
+// Two passes, one line buffer: count the lines, then copy from the Kth onward.
 void rotate() {
     std::FILE* f = std::fopen(PATH, "rb");
     if (f == nullptr) return;
-    std::vector<std::string> lines;
-    std::string cur;
-    char buf[256];
-    std::size_t n;
-    while ((n = std::fread(buf, 1, sizeof buf, f)) > 0) {
-        for (std::size_t i = 0; i < n; ++i) {
-            if (buf[i] == '\n') {
-                if (!cur.empty()) lines.push_back(cur);
-                cur.clear();
-            } else {
-                cur.push_back(buf[i]);
-            }
-        }
+    std::size_t lines = 0;
+    int ch;
+    while ((ch = std::fgetc(f)) != EOF) {
+        if (ch == '\n') ++lines;
     }
-    std::fclose(f);
-    // A trailing partial line is a power cut mid-append.  Dropping it is the
-    // whole reason the format is one self-contained object per line.
-    const std::string keep = compact(g_policy, lines);
+    if (lines <= g_policy.keep_entries) {
+        std::fclose(f);
+        return;
+    }
+    const std::size_t skip = lines - g_policy.keep_entries;
 
+    std::rewind(f);
     std::FILE* t = std::fopen(TMP, "wb");
     if (t == nullptr) {
+        std::fclose(f);
         ESP_LOGW(TAG, "rotate: cannot open %s", TMP);
         return;
     }
-    const bool ok = std::fwrite(keep.data(), 1, keep.size(), t) == keep.size();
+    std::size_t seen = 0;
+    bool ok = true;
+    // Skip the oldest, byte by byte - no line is ever held in full.
+    while (seen < skip && (ch = std::fgetc(f)) != EOF) {
+        if (ch == '\n') ++seen;
+    }
+    char buf[256];
+    std::size_t n;
+    while ((n = std::fread(buf, 1, sizeof buf, f)) > 0) {
+        if (std::fwrite(buf, 1, n, t) != n) {
+            ok = false;
+            break;
+        }
+    }
+    std::fclose(f);
     std::fclose(t);
     if (!ok) {
         std::remove(TMP);
@@ -138,7 +157,7 @@ void rotate() {
     }
     g_rotations.fetch_add(1, std::memory_order_relaxed);
     ESP_LOGI(TAG, "journal rotated: kept the newest %u of %u entries",
-             static_cast<unsigned>(g_policy.keep_entries), static_cast<unsigned>(lines.size()));
+             static_cast<unsigned>(g_policy.keep_entries), static_cast<unsigned>(lines));
 }
 
 void writer_task(void*) {
@@ -247,30 +266,33 @@ bool note_mode(int64_t utc_s, const char* mode) {
 }
 
 std::string read(std::size_t max_lines) {
+    // Bounded, for the same reason rotate() is: this is served to a browser, so
+    // "the whole file" is an allocation an outsider chooses the size of.  A
+    // request with no limit gets the newest READ_DEFAULT_LINES rather than
+    // everything, and the cap is enforced here rather than trusted from the
+    // caller.
+    if (max_lines == 0 || max_lines > READ_MAX_LINES) max_lines = READ_DEFAULT_LINES;
+
     std::FILE* f = std::fopen(PATH, "rb");
     if (f == nullptr) return {};
-    std::vector<std::string> lines;
-    std::string cur;
+    std::size_t lines = 0;
+    int ch;
+    while ((ch = std::fgetc(f)) != EOF) {
+        if (ch == '\n') ++lines;
+    }
+    const std::size_t skip = lines > max_lines ? lines - max_lines : 0;
+    std::rewind(f);
+    std::size_t seen = 0;
+    while (seen < skip && (ch = std::fgetc(f)) != EOF) {
+        if (ch == '\n') ++seen;
+    }
+    std::string out;
+    // At most max_lines * a generous per-line bound; an entry is ~84 bytes.
+    out.reserve(max_lines * 96);
     char buf[256];
     std::size_t n;
-    while ((n = std::fread(buf, 1, sizeof buf, f)) > 0) {
-        for (std::size_t i = 0; i < n; ++i) {
-            if (buf[i] == '\n') {
-                if (!cur.empty()) lines.push_back(cur);
-                cur.clear();
-            } else {
-                cur.push_back(buf[i]);
-            }
-        }
-    }
+    while ((n = std::fread(buf, 1, sizeof buf, f)) > 0) out.append(buf, n);
     std::fclose(f);
-    const std::size_t from =
-        (max_lines != 0 && lines.size() > max_lines) ? lines.size() - max_lines : 0;
-    std::string out;
-    for (std::size_t i = from; i < lines.size(); ++i) {
-        out += lines[i];
-        out.push_back('\n');
-    }
     return out;
 }
 

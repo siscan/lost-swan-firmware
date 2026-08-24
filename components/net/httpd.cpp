@@ -439,6 +439,7 @@ esp_err_t journal_handler(httpd_req_t* req) {
             limit = static_cast<std::size_t>(std::atoi(v));
         }
     }
+    // journal::read bounds this itself; 0 means "the default", not "all".
     const std::string body = journal::read(limit);
     httpd_resp_set_type(req, "application/x-ndjson; charset=utf-8");
     return httpd_resp_send(req, body.data(), static_cast<ssize_t>(body.size()));
