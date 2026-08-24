@@ -142,6 +142,9 @@ struct AxisCtl {
     uint32_t seq_seen = 0;
     uint32_t home_delay = 0;  // control ticks until homing starts
     uint8_t rehome_retries = 0;
+    // Latched at the Seek->Settle edge and published with `homed`; see
+    // TickEvents::recovered_after.
+    uint8_t recovered_after = 0;
 };
 
 static_assert(std::atomic<int32_t>::is_always_lock_free,
@@ -181,6 +184,11 @@ struct TickEvents {
     bool rehome = false;              // fault -> automatic re-home scheduled
     uint8_t rehome_attempt = 0;
     bool gave_up = false;             // retries exhausted -> latched FAULT
+    // Attempts this homing pass cost, published WITH `homed` - because
+    // rehome_attempt is cleared at the Seek->Settle edge, several hundred
+    // milliseconds before the pass completes, so reading it when `homed`
+    // arrives always saw 0 and "column recovered" could never be written.
+    uint8_t recovered_after = 0;
     bool resync_major = false;
 };
 

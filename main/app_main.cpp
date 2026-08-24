@@ -150,6 +150,12 @@ void modes_task(void*) {
         esp_task_wdt_reset();
         swan::g_modes_ticks.fetch_add(1, std::memory_order_relaxed);
         const int64_t now = utc_ms_now();
+        // Before the tick, so the frame layer sees the CURRENT state of EN.
+        // Escalation can release it (spec 5.8) and it stops every axis; without
+        // this the convergence pass re-commanded all five 50 ms later and
+        // "stop everything" lasted exactly one tick.
+        g_modes->set_drivers_enabled(swan::motion::is_enabled());
+
         // Before the tick, so a cue fired inside it reads a current value.
         if (g_modes->time_valid()) {
             const swan::LocalTime lt = g_modes->local_now();

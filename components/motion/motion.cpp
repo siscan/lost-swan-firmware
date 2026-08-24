@@ -126,6 +126,12 @@ ColumnConfig g_cols;  // guarded by g_lock for the masks; read freely otherwise
 // See set_columns: posting the park there raced republish_masks and lost.
 DRAM_ATTR bool g_park_pending[N_COLUMNS] = {};
 
+// Set when escalation released EN, cleared when somebody re-asserts it.  The
+// distinction matters: a normal boot asserts EN and homes immediately anyway,
+// but a RECOVERY has to re-home because the drums have been sitting
+// de-energized and nothing knows where they are.
+DRAM_ATTR bool g_dropped_by_escalation = false;
+
 // Defined below; the deferred park and the escalation both need it.
 void post(int col, const Request& r);
 
@@ -239,6 +245,7 @@ void apply_escalation(int col, FaultCause cause) {
                      "Check the mechanism before re-enabling (`en 1`).",
                      col, any_fast_spin(col) ? "a high-speed spin" : "a multi-column failure");
             enable(false);
+            g_dropped_by_escalation = true;
             // ... and STOP them.  Releasing EN only wrote the pin: the axes
             // carried on stepping in software into dead drivers, completed
             // their moves, and published indices the drums never reached - so
@@ -299,8 +306,12 @@ void log_events(int col, const TickEvents& ev, const IsrSnap& in, const AxisCtl&
     if (ev.homed) {
         ESP_LOGI(TAG, "col %d homed at pos=%lld", col, static_cast<long long>(in.pos));
         // Only a homing that ENDED a fault is a recovery; a boot home is not.
-        const unsigned tries = a.rehome_attempt.load(RLX);
-        if (tries > 0) journal::note_recover(journal_utc_s(), col, static_cast<int>(tries));
+        // The count comes off the EVENT, not off the axis: the axis clears it
+        // when the hall edge lands, which is before this event exists, so
+        // reading it here always saw zero and no recovery was ever journalled.
+        if (ev.recovered_after > 0) {
+            journal::note_recover(journal_utc_s(), col, ev.recovered_after);
+        }
     }
 }
 
@@ -330,11 +341,22 @@ void tick_park_pending() {
         // 10 s is four times the worst legitimate park (a 49-flip wrap at the
         // homing speed); past that something is wrong and holding the driver
         // on helps nobody.
-        if (++waited[i] > 10000) {
+        // 30 s, and it STOPS the axis first.  Clearing the drive bit under a
+        // moving axis is the very thing the deferred park exists to prevent:
+        // the DDA keeps advancing, the move "completes" in software and the
+        // column reports itself parked on blank while the drum stands wherever
+        // the bit was pulled.  The old 10 s bound was also derived from the
+        // homing speed, and a park is a Go at flaps_s_normal - which Settings
+        // can set as low as 1 flap/s, making a legitimate 49-flip park take 49 s.
+        if (++waited[i] > 30000) {
+            Request r;
+            r.kind = ReqKind::Stop;
+            post(i, r);
             g_park_pending[i] = false;
             waited[i] = 0;
             changed = true;
-            ESP_LOGW(TAG, "col %d did not reach blank; disabling it where it stands", i);
+            ESP_LOGW(TAG, "col %d did not reach blank in 30 s; stopped where it stands "
+                          "and disabled there", i);
         }
     }
     if (changed) republish_masks();
@@ -568,6 +590,16 @@ void set_columns(const ColumnConfig& c) {
             }
         }
         if (was == ColumnMode::Disabled && now != ColumnMode::Disabled) {
+            // A column can be re-enabled while a repair is in progress, and a
+            // homing pass with EN released steps 1.2 revolutions into dead
+            // drivers, sees no edge and latches a no_hall FAULT - a fault
+            // manufactured by the act of re-enabling, on a column that is fine.
+            // Leaving maintenance re-homes everything anyway (spec 5.9).
+            g_park_pending[i] = false;   // it is not parking any more
+            if (next.maintenance) {
+                ESP_LOGI(TAG, "col %d re-enabled; it will home when maintenance ends", i);
+                continue;
+            }
             // Leaving disabled has to HOME.  A disabled column is never homed -
             // not at boot, not on a re-home-all - so after a reboot it comes
             // back Unhomed with no hall reference, motion::go refuses it on
@@ -675,9 +707,31 @@ MotionParams params() {
     return p;
 }
 
+
 void enable(bool on) {
+    const bool recovering = on && g_dropped_by_escalation;
+    g_dropped_by_escalation = false;
     g_enabled.store(on, RLX);
     gpio_set_level(static_cast<gpio_num_t>(PIN_EN), on ? 0 : 1);  // active low
+
+    // Coming back up after an escalation dropped EN: RE-HOME.  The Stop that
+    // accompanied the drop left every axis Unhomed with no hall reference, and
+    // nothing re-arms one by itself - the frame scheduler skips Unhomed columns
+    // and go() refuses them - so without this the display came back energized
+    // and permanently still, with a banner telling the user to wait for a retry
+    // that had been cancelled.  The drums have also been sitting de-energized,
+    // so their position is genuinely unknown.
+    if (recovering) {
+        ESP_LOGW(TAG, "EN re-asserted after an escalation - re-homing all five, because "
+                      "nothing knows where the drums are now");
+        Request r;
+        r.kind = ReqKind::Home;
+        for (int i = 0; i < N_COLUMNS; ++i) {
+            if (g_cols.mode[static_cast<size_t>(i)] == ColumnMode::Disabled) continue;
+            r.delay_ticks = 1 + i * HOME_STAGGER_MS;
+            post(i, r);
+        }
+    }
 }
 
 bool is_enabled() { return g_enabled.load(RLX); }

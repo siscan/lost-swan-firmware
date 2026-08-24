@@ -713,6 +713,30 @@ void test_maintenance_suspends_everything() {
     CHECK(r.port.gos.size() <= static_cast<size_t>(N_COLUMNS));
 }
 
+// Escalation drops EN for all five (spec 5.8) and stops every axis - and then
+// the frame layer put them straight back to work.  The Stop is one-shot; the
+// convergence pass runs every tick, so "stop everything" lasted 50 ms and the
+// axes carried on stepping into dead drivers, completing moves and publishing
+// faces the drums never reached.
+void test_en_down_stops_the_frame_layer() {
+    Rig r;
+    r.configure(cfg_minutely());
+    r.begin_at(utc_ms(2026, 1, 15, 17, 0, 0));
+    r.run_to(r.time.utc_ms + 2000);
+    CHECK(r.port.gos.size() > 0);
+
+    r.mm.set_drivers_enabled(false);
+    r.port.gos.clear();
+    r.run_to(r.time.utc_ms + 3600 * 1000);
+    CHECK_EQ(r.port.gos.size(), 0u);
+
+    // Energizing resumes it - and the motion layer separately re-homes,
+    // because the drums have been sitting unpowered.
+    r.mm.set_drivers_enabled(true);
+    r.run_to(r.time.utc_ms + 500);
+    CHECK(r.port.gos.size() > 0);
+}
+
 void test_maintenance_survives_and_blocks_countdown() {
     Rig r;
     r.begin_at(utc_ms(2026, 1, 15, 17, 0, 0));
@@ -880,6 +904,7 @@ void run_tests() {
     test_time_step_preserves_message_dwell();
     test_mode_set_message_requires_message();
     test_maintenance_suspends_everything();
+    test_en_down_stops_the_frame_layer();
     test_maintenance_survives_and_blocks_countdown();
     test_excluded_columns_leave_a_hole();
     test_calibration_walk_runs_in_maintenance();

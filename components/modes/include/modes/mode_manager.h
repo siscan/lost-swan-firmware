@@ -127,6 +127,14 @@ public:
     // which is what the host tests and the trace generator want.
     void set_journal(JournalFn fn);
 
+    // EN, as the motion layer sees it.  Pushed by the modes task each tick.
+    // The frame layer must not command a de-energized display: escalation drops
+    // EN and stops every axis, and within one 50 ms tick the convergence pass
+    // re-issued a Go to each of them - so the axes carried on stepping into
+    // dead drivers and published faces the drums never reached, which is
+    // exactly what dropping EN is supposed to stop.
+    void set_drivers_enabled(bool on);
+
     bool set_tz(std::string_view posix_tz);  // false = parse rejected, kept old
     // The NTP server, owned here for the same reason tz is: it is written on
     // the HTTP task and read on the modes task, and a bare std::string across
@@ -210,6 +218,13 @@ public:
     // a mirrored copy elsewhere would be written by one task and read by
     // another with nothing between them.
     std::string tz_string() const;
+
+    // The device's UTC offset in seconds at `utc_s`, DST included.  Published
+    // in the state document because a browser only knows its OWN zone: a kiosk
+    // Pi is UTC out of the box, so the presentation terminal's clock read
+    // hours away from the drums standing next to it while both were correct
+    // about the instant.
+    int32_t tz_offset_s(int64_t utc_s) const;
     std::string ntp() const;
 
     // Calibration walk (spec 5.6, Calibrate page): step `col` forward from
@@ -258,6 +273,7 @@ private:
     std::string tz_str_;  // the string it was parsed from, for reporting
     std::string ntp_ = "pool.ntp.org";
     JournalFn journal_;
+    std::atomic<bool> drivers_{true};
     // Called with mu_ held; see the contract on JournalFn.
     void note_locked(journal::Event::Kind k, const char* detail, uint32_t seq = 0,
                      Origin by = Origin::Unknown, int column = -1);

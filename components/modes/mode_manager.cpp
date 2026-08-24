@@ -351,8 +351,13 @@ void ModeManager::tick_locked(int64_t utc_ms) {
     //
     // An OTA hold is different and keeps suppressing it: motion is held for the
     // duration by design, and the dispatcher already refuses motion.ramp there.
-    if (maintenance_ || ota_hold_) {
-        if (ramp_.active && !ota_hold_) tick_ramp(utc_ms);
+    // EN down joins maintenance and the OTA hold: the deadline keeps running,
+    // nothing is scheduled.  Escalation releases EN *and* stops every axis, and
+    // without this the convergence pass re-commanded all five on the very next
+    // tick - 50 ms later - so "stop everything" lasted one tick.
+    const bool no_drivers = !drivers_.load(std::memory_order_relaxed);
+    if (maintenance_ || ota_hold_ || no_drivers) {
+        if (ramp_.active && !ota_hold_ && !no_drivers) tick_ramp(utc_ms);
         return;
     }
 
@@ -879,6 +884,15 @@ ModeManager::Result ModeManager::cmd_ring_swap(const std::function<bool()>& swap
     return {true, nullptr};
 }
 
+int32_t ModeManager::tz_offset_s(int64_t utc_s) const {
+    const std::lock_guard<std::mutex> lock(mu_);
+    const Enter witness(*this);
+    const LocalTime lt = tz_.to_local(utc_s);
+    const int64_t local = TimeZone::days_from_civil(lt.year, lt.month, lt.day) * 86400 +
+                          lt.hour * 3600 + lt.minute * 60 + lt.second;
+    return static_cast<int32_t>(local - utc_s);
+}
+
 std::string ModeManager::tz_string() const {
     const std::lock_guard<std::mutex> lock(mu_);
     const Enter witness(*this);
@@ -889,6 +903,13 @@ void ModeManager::set_ntp(std::string_view server) {
     const std::lock_guard<std::mutex> lock(mu_);
     const Enter witness(*this);
     ntp_ = std::string(server);
+}
+
+void ModeManager::set_drivers_enabled(bool on) {
+    // A plain atomic, deliberately: it is written by the modes task and read by
+    // the modes task, and taking mu_ here would put a lock on the 20 Hz path
+    // for a bool.
+    drivers_.store(on, std::memory_order_relaxed);
 }
 
 void ModeManager::set_journal(JournalFn fn) {

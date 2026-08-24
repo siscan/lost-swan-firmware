@@ -109,6 +109,10 @@ void on_hall_edge(TickCtx& c) {
 
     if (st == AxisState::Homing && a.home_phase == HomePhase::Seek) {
         a.home_phase = HomePhase::Settle;
+        // Remember what this pass cost before clearing it: the `homed` event
+        // that carries it is published when the SETTLE move finishes, and by
+        // then the counter is long since zero.
+        a.recovered_after = a.rehome_attempt.load(RLX);
         a.rehome_retries = 0;
         a.rehome_attempt.store(0, RLX);
         // Forward-clamped, NOT plan_target.  By the time the control tick sees
@@ -273,6 +277,8 @@ IsrWrite axis_control_tick(AxisCtl& a, const IsrSnap& in, const Request& req,
                     a.rehome_attempt.store(0, RLX);
                     a.state.store(AxisState::Idle, RLX);
                     ev.homed = true;
+                    ev.recovered_after = a.recovered_after;
+                    a.recovered_after = 0;
                 }
             }
             break;
