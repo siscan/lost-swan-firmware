@@ -94,14 +94,34 @@ esp_err_t provision_start() {
     // APSTA, not AP-only: the STA half keeps trying in the background, so a
     // display that came up unprovisioned because the router was down joins by
     // itself the moment it returns - without anyone having to notice.
-    wifi_mode_t mode = WIFI_MODE_NULL;
-    esp_wifi_get_mode(&mode);
-    ESP_ERROR_CHECK(esp_wifi_set_mode(mode == WIFI_MODE_STA ? WIFI_MODE_APSTA : WIFI_MODE_AP));
+    wifi_mode_t prev = WIFI_MODE_NULL;
+    esp_wifi_get_mode(&prev);
+    const wifi_mode_t want = prev == WIFI_MODE_STA ? WIFI_MODE_APSTA : WIFI_MODE_AP;
+    esp_err_t err = esp_wifi_set_mode(want);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "portal: set_mode failed: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    // ONE radio, so the access point cannot pick its own channel while the
+    // station is associated: it has to use the station's.  Hard-coding 1 was a
+    // remote PANIC - with the STA on a 5 GHz channel esp_wifi_set_config
+    // returns ESP_ERR_INVALID_ARG ("channel number 1 is out of supported 5G
+    // channel range of AP") and the ESP_ERROR_CHECK that used to wrap it
+    // aborted the board.  Any `wifi.provision` on a 5 GHz network rebooted the
+    // display, which is the one command whose whole job is to rescue a display
+    // that cannot reach the network.
+    uint8_t channel = 1;   // unassociated: 2.4 GHz, the most findable by a phone
+    wifi_ap_record_t joined = {};
+    if (esp_wifi_sta_get_ap_info(&joined) == ESP_OK && joined.primary != 0) {
+        channel = joined.primary;
+        ESP_LOGI(TAG, "portal follows the station onto channel %u", channel);
+    }
 
     wifi_config_t cfg = {};
     std::strncpy(reinterpret_cast<char*>(cfg.ap.ssid), ssid.c_str(), sizeof cfg.ap.ssid - 1);
     cfg.ap.ssid_len = static_cast<uint8_t>(ssid.size());
-    cfg.ap.channel = 1;
+    cfg.ap.channel = channel;
     cfg.ap.max_connection = 4;
     // OPEN, deliberately.  A password would have to be printed on the case or
     // guessed, and the portal exists precisely for the person standing in front
@@ -109,8 +129,18 @@ esp_err_t provision_start() {
     // radio range can join and set the WiFi credentials.  They could also
     // unplug it.
     cfg.ap.authmode = WIFI_AUTH_OPEN;
-    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &cfg));
-    ESP_ERROR_CHECK(esp_wifi_start());
+    err = esp_wifi_set_config(WIFI_IF_AP, &cfg);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "portal: ap config (channel %u) failed: %s", channel, esp_err_to_name(err));
+        esp_wifi_set_mode(prev);        // leave the radio as we found it
+        return err;
+    }
+    err = esp_wifi_start();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "portal: wifi start failed: %s", esp_err_to_name(err));
+        esp_wifi_set_mode(prev);
+        return err;
+    }
 
     g_dns_stop.store(false, std::memory_order_relaxed);
     if (g_dns_task == nullptr) {
