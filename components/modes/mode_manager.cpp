@@ -212,7 +212,10 @@ void ModeManager::enter_mode(Mode m, int64_t utc_ms) {
         persist();
     }
 
-    if (mode_ != m) prev_mode_ = mode_;
+    if (mode_ != m) {
+        prev_mode_ = mode_;
+        note_locked(journal::Event::Kind::ModeChange, mode_name(m));
+    }
     mode_ = m;
     rendered_key_ = RENDER_NONE;  // clock re-renders on entry
     cd_shown_ = SHOWN_NONE;          // countdown re-renders on entry
@@ -266,6 +269,7 @@ ModeManager::Result ModeManager::cmd_maintenance(bool on, int64_t utc_ms) {
     const Enter witness(*this);
     if (maintenance_ == on) return {true, nullptr};
     maintenance_ = on;
+    note_locked(journal::Event::Kind::Maintenance, on ? "on" : "off");
     if (on) {
         // Drop anything scheduled.  Nothing may move on its own from here.
         sched_.cancel_pending();
@@ -565,6 +569,8 @@ void ModeManager::tick_countdown(int64_t utc_ms) {
         if (rem_ms <= 0) {
             cd_.phase = CdPhase::Zero;
             persist();  // a reboot after zero must wake into the reveal
+            // The event the whole machine exists for.
+            note_locked(journal::Event::Kind::CountdownZero, nullptr, cd_.seq, cd_.set_by);
         }
     }
 
@@ -701,21 +707,36 @@ ModeManager::Result ModeManager::cmd_message_set(
     return {true, nullptr};
 }
 
-ModeManager::Result ModeManager::cmd_countdown_execute(std::string_view numbers,
-                                                       int64_t utc_ms, Origin by) {
-    if (!numbers_valid(numbers)) return {false, "rejected"};  // wrong Numbers
-    return cmd_countdown_start(utc_ms, by);
-}
-
-ModeManager::Result ModeManager::cmd_countdown_start(int64_t utc_ms, Origin by) {
-    const std::lock_guard<std::mutex> lock(mu_);
-    const Enter witness(*this);
+// One body, so the ritual and an automation start cannot drift apart, and so
+// exactly ONE journal entry is written for either - phase 7 prints these, and
+// "start" immediately after "execute" for the same act would be a lie about
+// what happened.
+ModeManager::Result ModeManager::start_locked(int64_t utc_ms, Origin by,
+                                              journal::Event::Kind kind, const char* detail) {
     // "now + 6480" is meaningless before the first sync; a start issued on
     // the 1970 clock would detonate the alarm the moment SNTP steps time.
     if (!time_.valid()) return {false, "time not synced"};
     countdown_arm(utc_ms / 1000 + COUNTDOWN_S, utc_ms, by);
     enter_mode(Mode::Countdown, utc_ms);  // countdown overrides whatever runs
+    note_locked(kind, detail, cd_.seq, by);
     return {true, nullptr};
+}
+
+ModeManager::Result ModeManager::cmd_countdown_execute(std::string_view numbers,
+                                                       int64_t utc_ms, Origin by) {
+    if (!numbers_valid(numbers)) return {false, "rejected"};  // wrong Numbers
+    const std::lock_guard<std::mutex> lock(mu_);
+    const Enter witness(*this);
+    // The Numbers as entered: "accepted - 4 8 15 16 23 42 - by ui" is the line
+    // the Pearl printout exists to carry.
+    return start_locked(utc_ms, by, journal::Event::Kind::CountdownExecute,
+                        std::string(numbers).c_str());
+}
+
+ModeManager::Result ModeManager::cmd_countdown_start(int64_t utc_ms, Origin by) {
+    const std::lock_guard<std::mutex> lock(mu_);
+    const Enter witness(*this);
+    return start_locked(utc_ms, by, journal::Event::Kind::CountdownStart, nullptr);
 }
 
 ModeManager::Result ModeManager::cmd_countdown_cancel(int64_t utc_ms, Origin by) {
@@ -728,6 +749,7 @@ ModeManager::Result ModeManager::cmd_countdown_cancel(int64_t utc_ms, Origin by)
     cd_.set_by = by;
     ++cd_.seq;
     persist();
+    note_locked(journal::Event::Kind::CountdownCancel, nullptr, cd_.seq, by);
     if (mode_ == Mode::Countdown) tick_locked(utc_ms);
     return {true, nullptr};
 }
@@ -867,6 +889,32 @@ void ModeManager::set_ntp(std::string_view server) {
     const std::lock_guard<std::mutex> lock(mu_);
     const Enter witness(*this);
     ntp_ = std::string(server);
+}
+
+void ModeManager::set_journal(JournalFn fn) {
+    const std::lock_guard<std::mutex> lock(mu_);
+    const Enter witness(*this);
+    journal_ = std::move(fn);
+}
+
+// Held-lock helper.  Everything it needs is already in hand, and the sink is
+// contractually non-blocking, so this costs a queue send.
+void ModeManager::note_locked(journal::Event::Kind k, const char* detail, uint32_t seq,
+                              Origin by, int column) {
+    if (!journal_) return;
+    journal::Event e{};
+    e.kind = k;
+    // 0 when the clock has not synced - the journal renders those as uptime,
+    // because "we do not know when" is a fact worth keeping rather than a
+    // reason to invent a timestamp.
+    e.utc_s = time_.valid() ? time_.now_utc() : 0;
+    e.seq = seq;
+    e.column = static_cast<int8_t>(column);
+    // Omit rather than write "unknown": these lines are printed, and
+    // "MODE CLOCK BY UNKNOWN" is noise where "MODE CLOCK" is a fact.
+    if (by != Origin::Unknown) std::snprintf(e.who, sizeof e.who, "%s", origin_name(by));
+    if (detail != nullptr) std::snprintf(e.detail, sizeof e.detail, "%s", detail);
+    journal_(e);
 }
 
 std::string ModeManager::ntp() const {

@@ -34,6 +34,8 @@ set(SWAN_PURE_SRC
     ${SWAN_ROOT}/components/modes/wear.cpp
     ${SWAN_ROOT}/components/ring/ring_runtime.cpp
     ${SWAN_ROOT}/components/ring/json_lite.cpp
+    ${SWAN_ROOT}/components/ring/json_stream.cpp
+    ${SWAN_ROOT}/components/ring/ring_stream.cpp
     ${SWAN_ROOT}/components/webapi/api.cpp
     ${SWAN_ROOT}/components/webapi/mqtt_bridge.cpp
     ${SWAN_ROOT}/components/webapi/ha_discovery.cpp
@@ -42,7 +44,9 @@ set(SWAN_PURE_SRC
     ${SWAN_ROOT}/components/audio/wav.cpp
     ${SWAN_ROOT}/components/webapi/ring_upload.cpp
     ${SWAN_ROOT}/components/motion/axis_control.cpp
-    ${SWAN_ROOT}/components/motion/fault_policy.cpp)
+    ${SWAN_ROOT}/components/motion/fault_policy.cpp
+    ${SWAN_ROOT}/components/journal/log_ring.cpp
+    ${SWAN_ROOT}/components/journal/journal_record.cpp)
 
 add_library(swan_test_cfg INTERFACE)
 target_include_directories(swan_test_cfg INTERFACE
@@ -54,6 +58,7 @@ target_include_directories(swan_test_cfg INTERFACE
     ${SWAN_ROOT}/components/webapi/include
     ${SWAN_ROOT}/components/audio/include
     ${SWAN_ROOT}/components/swan_hal/include
+    ${SWAN_ROOT}/components/journal/include
     ${CMAKE_CURRENT_LIST_DIR})
 
 if(MSVC)
@@ -63,8 +68,9 @@ else()
 endif()
 
 # test name -> optional data-file argument (argv[1], g_argv1 in check.h)
-set(SWAN_TESTS test_ring test_motion_math test_axis_sim test_ring_json test_tz test_frame test_modes test_wear test_fault_policy test_mqtt_bridge test_ha_discovery test_ota test_portal test_audio test_api)
+set(SWAN_TESTS test_ring test_motion_math test_axis_sim test_ring_json test_tz test_frame test_modes test_wear test_fault_policy test_mqtt_bridge test_ha_discovery test_ota test_portal test_audio test_journal test_ring_stream test_api)
 set(test_ring_json_ARGS ${SWAN_ROOT}/data/ring.json)
+set(test_ring_stream_ARGS ${SWAN_ROOT}/data/ring.json)
 # Sniffed against the REAL built binary when there is one; the suite says so
 # and skips that check otherwise, rather than passing on a synthetic header.
 set(test_ota_ARGS ${SWAN_ROOT}/build/lost_swan_firmware.bin)

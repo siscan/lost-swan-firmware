@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "esp_heap_caps.h"
+#include "journal/journal.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "ring/json_write.h"
@@ -405,6 +406,43 @@ esp_err_t ring_handler(httpd_req_t* req) {
 // Measured, not tabulated (spec 7.1): a whole day and a whole run walked
 // through the real renderers.  ~4,700 renders for the entire table, on the
 // HTTP task at priority 3 - well clear of the motion path.
+// Spec 12: the last few KB of ESP_LOGx, readable without a serial cable.
+// text/plain rather than JSON - it IS text, and a browser can show it raw.
+esp_err_t log_handler(httpd_req_t* req) {
+    const journal::LogStats st = journal::log_stats();
+    // Bounded so a phone on a slow link is not handed everything at once, and
+    // so the httpd task's response buffer stays predictable.
+    const std::string body = journal::log_read(8192);
+    char hdr[160];
+    std::snprintf(hdr, sizeof hdr,
+                  "# swan log ring: %u lines, %u/%u bytes used, %u evicted since boot\n",
+                  (unsigned)st.lines, (unsigned)st.used, (unsigned)st.capacity,
+                  (unsigned)st.dropped);
+    httpd_resp_set_type(req, "text/plain; charset=utf-8");
+    httpd_resp_send_chunk(req, hdr, HTTPD_RESP_USE_STRLEN);
+    if (!body.empty()) {
+        httpd_resp_send_chunk(req, body.data(), static_cast<ssize_t>(body.size()));
+    }
+    return httpd_resp_send_chunk(req, nullptr, 0);
+}
+
+// The persistent event journal, as JSONL, newest last.  Phase 7 renders this as
+// the Pearl printout, so it is served raw rather than pre-formatted: the
+// browser decides what it looks like, the device decides what is true.
+esp_err_t journal_handler(httpd_req_t* req) {
+    std::size_t limit = 0;
+    char q[64];
+    if (httpd_req_get_url_query_str(req, q, sizeof q) == ESP_OK) {
+        char v[16];
+        if (httpd_query_key_value(q, "n", v, sizeof v) == ESP_OK) {
+            limit = static_cast<std::size_t>(std::atoi(v));
+        }
+    }
+    const std::string body = journal::read(limit);
+    httpd_resp_set_type(req, "application/x-ndjson; charset=utf-8");
+    return httpd_resp_send(req, body.data(), static_cast<ssize_t>(body.size()));
+}
+
 esp_err_t wear_handler(httpd_req_t* req) {
     const ModesConfig cfg = g_ctx->modes.config();
     // Pinned: this walks tens of thousands of renders, easily spanning several
@@ -441,20 +479,20 @@ esp_err_t ring_upload_handler(httpd_req_t* req) {
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "upload interrupted");
         return ESP_OK;
     }
-    // Heap guard.  json_lite builds a DOM whose peak is several times the body
-    // size, in vectors that must grow CONTIGUOUSLY - so total free heap is the
-    // wrong number to look at.  With exceptions off an allocation failure is
-    // abort(), i.e. a reboot rather than a rejected upload, which is exactly
-    // what a 4 KB flood did to this board.  Refuse politely instead.
+    // Heap guard, sized for the STREAMING loader.  It used to be sized for the
+    // DOM one - MAX_NODES_UNTRUSTED * 64 * 1.7, about 76 KB - and that number
+    // is now both wrong and harmful: the streaming parser never builds a
+    // document, and after the journal took its 8 KB the old guard rejected the
+    // real ring.json on a healthy board (79 KB free, guard wanted 84 KB).
     //
-    // The bound comes from the PARSER's caps, not from the body size: whatever
-    // arrives, json_lite stops at MAX_NODES_UNTRUSTED values, so the worst
-    // case is that many Values (~64 B each on RV32) plus the transient of one
-    // container vector doubling.  Guessing from the body was wrong - a 4 KB
-    // flood passed a body-derived check and then panicked the board.
+    // What streaming actually needs, and none of it depends on the input: the
+    // six tables it may build (six * 50 slots * two short strings, ~12 KB with
+    // allocator overhead), the parser's own fixed state (a 192-byte token and a
+    // depth stack), and the transient of RingTable::from_slots building its
+    // role index.  16 KB of contiguous headroom covers all of it with room to
+    // spare, and the body itself has already been read by this point.
     const size_t largest = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
-    constexpr size_t kParsePeak = json::MAX_NODES_UNTRUSTED * 64 * 17 / 10;  // ~76 KB
-    const size_t need = kParsePeak + 8 * 1024;
+    const size_t need = 16 * 1024;
     if (largest < need) {
         json::Writer w;
         w.obj().kv("ok", false)
@@ -697,7 +735,7 @@ esp_err_t httpd_start(api::Context& ctx) {
 
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
     cfg.uri_match_fn = httpd_uri_match_wildcard;  // one wildcard route for the UI
-    cfg.max_uri_handlers = 12;   // + /api/ota and /api/ota/status
+    cfg.max_uri_handlers = 14;   // + /api/ota, /api/ota/status, /api/log, /api/journal
     cfg.stack_size = 8192;   // JSON building plus a 2 KB file chunk
     cfg.lru_purge_enable = true;
     cfg.close_fn = on_socket_close;
@@ -743,6 +781,8 @@ esp_err_t httpd_start(api::Context& ctx) {
         {"/api/state", HTTP_GET, state_handler, nullptr, false, false, nullptr},
         {"/api/ring", HTTP_GET, ring_handler, nullptr, false, false, nullptr},
         {"/api/wear", HTTP_GET, wear_handler, nullptr, false, false, nullptr},
+        {"/api/log", HTTP_GET, log_handler, nullptr, false, false, nullptr},
+        {"/api/journal", HTTP_GET, journal_handler, nullptr, false, false, nullptr},
         {"/api/cmd", HTTP_POST, cmd_handler, nullptr, false, false, nullptr},
         {"/api/ring/upload", HTTP_POST, ring_upload_handler, nullptr, false, false, nullptr},
         {"/api/audio/*", HTTP_POST, audio_upload_handler, nullptr, false, false, nullptr},

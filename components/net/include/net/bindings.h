@@ -8,10 +8,14 @@
 #include "config/config.h"
 #include "net/httpd.h"
 #include "ring/ring_store.h"
+#include "esp_system.h"
 #include "webapi/api.h"
 
 namespace swan {
 namespace net {
+
+// The reset reason as a short word, for the journal's boot entry.
+const char* reset_reason_name(esp_reset_reason_t r);
 
 class IdfMotionAdmin final : public api::MotionAdmin {
 public:

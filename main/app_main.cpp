@@ -18,6 +18,7 @@
 #include <atomic>
 
 #include "esp_log.h"
+#include "journal/journal.h"
 #include "esp_task_wdt.h"
 #include "hal/boot_health.h"
 #include "frame/motion_port.h"
@@ -171,6 +172,12 @@ void modes_task(void*) {
                 // Persist only what validated.  A failure here leaves RAM and
                 // flash disagreeing until the next boot, so say so loudly.
                 const esp_err_t werr = swan::ring_store::write_accepted(body);
+                // The only filesystem write on a watched task.  ~9.4 KB plus a
+                // rename is ~100 ms on a healthy filesystem and nowhere near
+                // the 30 s timeout - but a degraded one is exactly when this
+                // would be slow AND exactly when a spurious panic would be
+                // least welcome, so feed the watchdog on the way out.
+                esp_task_wdt_reset();
                 if (werr != ESP_OK) {
                     ESP_LOGE(TAG, "ring.json accepted but NOT persisted (%s); it will be lost "
                                   "on reboot", esp_err_to_name(werr));
@@ -275,6 +282,11 @@ extern "C" void app_main() {
     // work.  But a hang with the watchdog fed by a task that is still running
     // is not, and the watcher costs nothing: it short-circuits immediately
     // unless this image is PENDING_VERIFY.
+    // Before anything that can log: the ring is what a person reads when the
+    // board did something surprising and there was no serial cable attached.
+    swan::journal::init();
+    swan::journal::log_capture_start();
+
     if (swan::net::ota_init() != ESP_OK) {
         ESP_LOGE(TAG, "ota watcher failed to start");
     }
@@ -365,6 +377,25 @@ extern "C" void app_main() {
     // written on the HTTP task and read on the modes task.  Seed it from NVS
     // before anything can save, or a save would write the default over it.
     g_modes->set_ntp(g_app.ntp);
+    // The journal sink.  One zero-timeout queue send, called from inside
+    // ModeManager's lock - see the contract on JournalFn.  Anything heavier
+    // here is the cue-sink deadlock again.
+    g_modes->set_journal([](const swan::journal::Event& e) { swan::journal::record(e); });
+
+    // One boot line, carrying the version and WHY it restarted.  This is the
+    // entry that turns "it rebooted at some point" into "it panicked at 03:14",
+    // which is the whole reason the journal survives power.
+    {
+        swan::journal::Event boot{};
+        boot.kind = swan::journal::Event::Kind::Boot;
+        const time_t now = time(nullptr);
+        boot.utc_s = now > 1600000000 ? static_cast<int64_t>(now) : 0;
+        const esp_app_desc_t* d = esp_app_get_description();
+        std::snprintf(boot.detail, sizeof boot.detail, "%s %s",
+                      swan::net::reset_reason_name(esp_reset_reason()),
+                      d != nullptr ? d->version : "?");
+        swan::journal::record(boot);
+    }
     // A disabled column is a hole in every frame from the first render, not a
     // column that moves once and then stops.
     g_sched->set_excluded(cols.excluded_mask());

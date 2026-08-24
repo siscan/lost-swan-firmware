@@ -15,7 +15,10 @@
 #include "driver/gptimer.h"
 #include "esp_attr.h"
 #include "esp_check.h"
+#include <ctime>
+
 #include "esp_log.h"
+#include "journal/journal.h"
 #include "esp_task_wdt.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -29,6 +32,15 @@
 namespace swan {
 namespace motion {
 namespace {
+
+// The motion layer has no clock of its own by design (it counts microsteps, not
+// seconds).  time(nullptr) is the system clock, which is 0-ish until SNTP syncs
+// - and the journal renders a 0 as "uptime only" rather than inventing a date.
+int64_t journal_utc_s() {
+    const time_t t = time(nullptr);
+    return t > 1600000000 ? static_cast<int64_t>(t) : 0;
+}
+
 
 constexpr const char* TAG = "motion";
 constexpr auto RLX = std::memory_order_relaxed;
@@ -63,7 +75,15 @@ std::atomic<bool> g_enabled{false};
 // Step ISR - 50 kHz, IRAM.  The per-axis work is the core's two always_inline
 // helpers, so the fake host ISR and this one execute the same code.
 // ---------------------------------------------------------------------------
+// Incremented by the step ISR and read by the control tick.  The task watchdog
+// covers the 1 kHz control task, but the thing that actually moves the drums is
+// this ISR - and if the GPTimer stops, the control task keeps looping and
+// feeding the watchdog perfectly happily while nothing moves.  Nothing was
+// counting the one component whose death is invisible from every other angle.
+DRAM_ATTR volatile uint32_t g_isr_ticks = 0;
+
 bool IRAM_ATTR on_step_alarm(gptimer_handle_t, const gptimer_alarm_event_data_t*, void*) {
+    ++g_isr_ticks;
     uint32_t step_mask = 0;
 
     for (int i = 0; i < N_COLUMNS; ++i) {
@@ -197,6 +217,11 @@ void log_events(int col, const TickEvents& ev, const IsrSnap& in, const AxisCtl&
         ESP_LOGE(TAG, "col %d FAULT: %s (pos=%lld hall=%lld err=%ld)", col, ev.fault_reason,
                  static_cast<long long>(in.pos), static_cast<long long>(in.hall),
                  static_cast<long>(a.last_hall_err.load(RLX)));
+        // Into the permanent journal too: a fault at 3 a.m. that recovered by
+        // itself is exactly the thing the console has already forgotten by the
+        // time anybody looks.  A zero-timeout queue send from the control
+        // task - it never waits on the filesystem.
+        journal::note_fault(journal_utc_s(), col, ev.fault_reason);
     }
     if (ev.rehome) {
         ESP_LOGW(TAG, "col %d re-home attempt %u/%d", col,
@@ -219,6 +244,9 @@ void log_events(int col, const TickEvents& ev, const IsrSnap& in, const AxisCtl&
     }
     if (ev.homed) {
         ESP_LOGI(TAG, "col %d homed at pos=%lld", col, static_cast<long long>(in.pos));
+        // Only a homing that ENDED a fault is a recovery; a boot home is not.
+        const unsigned tries = a.rehome_attempt.load(RLX);
+        if (tries > 0) journal::note_recover(journal_utc_s(), col, static_cast<int>(tries));
     }
 }
 
@@ -266,13 +294,54 @@ void control_tick() {
 }
 
 std::atomic<uint32_t> g_control_ticks{0};
+std::atomic<bool> g_step_isr_alive{true};
+std::atomic<uint32_t> g_isr_stalls{0};
+
+// The step ISR should tick ~50 times per control tick.  Zero for this many
+// consecutive control ticks (200 ms) means the timer has stopped, which is not
+// something any other check can see: the control task is still looping, the
+// watchdog is still fed, the web UI still answers, and the drums are still.
+constexpr uint32_t ISR_DEAD_TICKS = 200;
 
 void control_task(void*) {
-    esp_task_wdt_add(nullptr);
+    // Checked, unlike before.  The modes task does the same call under
+    // ESP_ERROR_CHECK; the two most important tasks in the firmware were using
+    // opposite error policies for it, and a silent failure here means the 1 kHz
+    // tick runs unwatched for ever with nothing saying so.
+    const esp_err_t werr = esp_task_wdt_add(nullptr);
+    if (werr != ESP_OK) {
+        ESP_LOGE(TAG, "the control task is NOT watched by the task watchdog (%s)",
+                 esp_err_to_name(werr));
+    }
     TickType_t last = xTaskGetTickCount();
+    uint32_t last_isr = g_isr_ticks;
+    uint32_t idle_for = 0;
     for (;;) {
         vTaskDelayUntil(&last, pdMS_TO_TICKS(1));
         control_tick();
+
+        const uint32_t now_isr = g_isr_ticks;
+        if (now_isr == last_isr) {
+            if (++idle_for == ISR_DEAD_TICKS) {
+                // Report rather than reboot.  A false positive that panicked a
+                // wall display would be worse than the fault it is looking for,
+                // and this is visible in `stats`, in Diagnostics and in the
+                // state payload the moment it happens.
+                g_step_isr_alive.store(false, std::memory_order_relaxed);
+                g_isr_stalls.fetch_add(1, std::memory_order_relaxed);
+                ESP_LOGE(TAG, "*** THE STEP TIMER HAS STOPPED - no ISR ticks for %u ms. "
+                              "The columns cannot move; nothing else will notice this. ***",
+                         static_cast<unsigned>(ISR_DEAD_TICKS));
+            }
+        } else {
+            if (!g_step_isr_alive.load(std::memory_order_relaxed)) {
+                ESP_LOGW(TAG, "the step timer is ticking again");
+                g_step_isr_alive.store(true, std::memory_order_relaxed);
+            }
+            idle_for = 0;
+            last_isr = now_isr;
+        }
+
         g_control_ticks.fetch_add(1, std::memory_order_relaxed);
         esp_task_wdt_reset();
     }
@@ -423,6 +492,10 @@ void set_columns(const ColumnConfig& c) {
 }
 
 ColumnConfig columns() { return g_cols; }
+
+bool step_isr_alive() { return g_step_isr_alive.load(std::memory_order_relaxed); }
+uint32_t step_isr_stalls() { return g_isr_stalls.load(std::memory_order_relaxed); }
+uint32_t step_isr_ticks() { return g_isr_ticks; }
 
 uint32_t control_ticks() { return g_control_ticks.load(std::memory_order_relaxed); }
 

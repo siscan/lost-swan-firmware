@@ -19,10 +19,9 @@
 
 namespace swan {
 namespace net {
-namespace {
 
-constexpr const char* TAG = "bindings";
-
+// Public: app_main writes it into the journal's boot entry, which is what turns
+// "it rebooted at some point" into "it panicked at 03:14".
 const char* reset_reason_name(esp_reset_reason_t r) {
     switch (r) {
         case ESP_RST_POWERON:  return "poweron";
@@ -38,6 +37,10 @@ const char* reset_reason_name(esp_reset_reason_t r) {
         default:               return "unknown";
     }
 }
+
+namespace {
+
+constexpr const char* TAG = "bindings";
 
 void reboot_task(void*) {
     // Let the HTTP response reach the browser before the device goes away.
@@ -132,6 +135,8 @@ api::SysInfo IdfSysInfo::get() {
     s.heap_largest = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
     s.uptime_s = static_cast<uint32_t>(esp_timer_get_time() / 1000000);
     s.reset_reason = reset_reason_name(esp_reset_reason());
+    s.step_isr_alive = motion::step_isr_alive();
+    s.step_isr_stalls = motion::step_isr_stalls();
     const esp_app_desc_t* d = esp_app_get_description();
     s.version = d != nullptr ? d->version : "unknown";
     s.ws_dropped = ws_dropped();

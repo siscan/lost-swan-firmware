@@ -19,6 +19,7 @@
 #include <string_view>
 
 #include "frame/frame.h"
+#include "journal/journal.h"
 #include "modes/render.h"
 #include "ring/ring_runtime.h"
 #include "timesvc/time_source.h"
@@ -64,6 +65,16 @@ public:
     virtual ~CueSink() = default;
     virtual void on_cue(Cue c) = 0;
 };
+
+// Where significant events go so they can outlive a power cut (the persistent
+// journal).  A std::function rather than an interface because the host tests
+// and the dev server want a lambda, and the firmware wants one line.
+//
+// CONTRACT, and it is the one the cue sink broke once already: this is called
+// from INSIDE ModeManager's lock.  An implementation may not take a lock the
+// modes task might already hold, may not re-enter ModeManager, and may not
+// block.  The firmware's does exactly one thing - a zero-timeout queue send.
+using JournalFn = std::function<void(const journal::Event&)>;
 
 struct ModesConfig {
     bool h24 = false;                  // clock.h24
@@ -112,6 +123,10 @@ public:
 
     void set_config(const ModesConfig& c);
     ModesConfig config() const;
+    // Set once at boot.  Null (the default) means nothing is journalled,
+    // which is what the host tests and the trace generator want.
+    void set_journal(JournalFn fn);
+
     bool set_tz(std::string_view posix_tz);  // false = parse rejected, kept old
     // The NTP server, owned here for the same reason tz is: it is written on
     // the HTTP task and read on the modes task, and a bare std::string across
@@ -242,6 +257,12 @@ private:
     TimeZone tz_;  // default-constructed = UTC0 until set_tz
     std::string tz_str_;  // the string it was parsed from, for reporting
     std::string ntp_ = "pool.ntp.org";
+    JournalFn journal_;
+    // Called with mu_ held; see the contract on JournalFn.
+    void note_locked(journal::Event::Kind k, const char* detail, uint32_t seq = 0,
+                     Origin by = Origin::Unknown, int column = -1);
+    Result start_locked(int64_t utc_ms, Origin by, journal::Event::Kind kind,
+                        const char* detail);
 
     mutable std::mutex mu_;  // serializes every public entry point
 
