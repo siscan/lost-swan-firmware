@@ -5,6 +5,13 @@ Target: ESP32-C5-DevKitC-1-N8R8 (XIAO ESP32-C5 map behind a board define).
 
 **Start here:** `CLAUDE.md` (working agreement) → `docs/FIRMWARE_SPEC.md` (the spec).
 
+> **Who this is for.** This file is the *build* document: toolchain, tests, CI,
+> and how the pieces fit. If you own the display and want to know what it does
+> and what to do when it misbehaves, read **[`docs/OWNER.md`](docs/OWNER.md)**.
+> If you are bringing up hardware, **[`docs/BRINGUP.md`](docs/BRINGUP.md)**. If
+> you want to know why something is the way it is, the decision log is
+> **[`docs/FIRMWARE_SPEC.md`](docs/FIRMWARE_SPEC.md) §17**.
+
 ## Status
 
 - **Spec v1.0** — all questions answered (spec §16); resolutions in the §17 decision log
@@ -14,11 +21,13 @@ Target: ESP32-C5-DevKitC-1-N8R8 (XIAO ESP32-C5 map behind a board define).
   and then latch FAULT with cause `no_hall`, by design.  `sim all` runs the
   whole stack against modelled drums instead, which is how Phases 4 and 5 get
   exercised on real silicon while the mechanics are weeks out
-- Code: **Phase 3 complete** (web UI, WiFi STA, mDNS, `/ws` + `/api`, ring
-  upload, gzipped assets in LittleFS) on top of Phase 2 (fluid ring, frame
-  scheduler, modes with the deadline countdown, time service, browser
-  simulator).  Nothing has been flashed or measured on hardware —
-  `docs/BRINGUP.md` tracks that separately.
+- Code: **Phases 1–6 complete.**  Phase 3 the web UI, 3.5 the presentation
+  terminal, 4 MQTT + HA discovery + OTA with rollback + captive-portal
+  provisioning, 5 audio, 6 hardening (soak, watchdog coverage, power loss, the
+  fault-path matrix, the streaming ring parser, the log ring and the event
+  journal).  All of it is running on the board against **simulated drums** —
+  the mechanism does not exist yet, so every figure below is the firmware
+  working, not the machine.  `docs/BRINGUP.md` marks what still needs a motor.
 
 | gate | status |
 |---|---|
@@ -108,13 +117,71 @@ port per command silently resets the board between commands. Clear both before
 
 | what | version | notes |
 |---|---|---|
-| ESP-IDF | **v5.5.5** | `git clone -b v5.5.5 --depth 1 --recursive --shallow-submodules` into `~/esp/esp-idf` |
-| Toolchain | riscv32-esp-elf **14.2.0_20260121** | installed by `install.ps1 -Targets esp32c5` |
+| ESP-IDF | **v5.5.5** | see *First-time setup* below — `build.ps1` requires it at `~/esp/esp-idf` |
+| Toolchain | riscv32-esp-elf **14.2.0_20260121** | installed by `install.ps1 esp32c5` (targets are POSITIONAL; there is no `-Targets` flag) |
 | IDF CMake / Ninja | 3.30.2 / 1.12.1 | from `~/.espressif/tools` |
 | Python | 3.13.15 | `winget install Python.Python.3.13 --scope user` |
 | Host compiler | MinGW-w64 GCC **16.1.0** (WinLibs POSIX UCRT) | `winget install BrechtSanders.WinLibs.POSIX.UCRT --scope user`; host tests only |
-| Board | ESP32-C5-DevKitC-1-N8R8 | ordered 2026-08-21 |
-| Chip revision | **unknown** — first `idf.py monitor` prints it; below v1.0 goes back | |
+| Board | ESP32-C5-DevKitC-1-N8R8 | V1.2, on the bench since 2026-08-23 |
+| Chip revision | **v1.2** | production silicon, inside the image's v1.0–v1.99 window (spec §2.0) |
+
+## First-time setup
+
+Once, on a machine that has never built this:
+
+```bash
+git clone -b v5.5.5 --depth 1 --recursive --shallow-submodules https://github.com/espressif/esp-idf.git $HOME/esp/esp-idf
+```
+
+```bash
+cd $HOME/esp/esp-idf && ./install.ps1 esp32c5
+```
+
+`build.ps1` expects ESP-IDF at exactly `~/esp/esp-idf` and stops with a message
+if it is not there. The target is **positional** — `install.ps1 esp32c5`, not
+`-Targets`, which is a PowerShell binding error.
+
+**Which USB port.** The DevKitC-1 has two USB-C sockets. The one labelled
+**USB** (nearer the RF shield) is the native USB-Serial/JTAG and is what
+everything here assumes; the one labelled **UART** is the bridge and also works.
+To find the COM number:
+
+```bash
+python -m serial.tools.list_ports -v
+```
+
+On this machine it is **COM3**; every example below says COM3 and you should
+substitute yours.
+
+**The very first flash** — bootloader, partition table and app together — has
+to happen over USB, and on this machine `idf.py flash` cannot complete because
+Device Guard blocks the LittleFS image builder (see *Host unit tests* below for
+the whole story). So:
+
+```bash
+.uild.ps1 app
+```
+
+```bash
+.uild.ps1 -p COM3 bootloader-flash partition-table-flash app-flash
+```
+
+Then build and write the filesystem image separately:
+
+```bash
+build/littlefs_py_venv/Scripts/python.exe -m littlefs create build/webfs build/storage.bin --fs-size=0x200000 --name-max=64 --block-size=4096
+```
+
+```bash
+python -m esptool --chip esp32c5 -p COM3 write_flash 0x520000 build/storage.bin
+```
+
+`python` here must be the ESP-IDF one (`~/.espressif/python_env/idf5.5_py3.13_env/Scripts/python.exe`)
+or a system Python with `esptool` installed — the bare `python` on this machine
+has neither esptool nor pyserial.
+
+On a machine without Device Guard, none of that applies: `idf.py flash` does the
+lot.
 
 ## Activating the toolchain
 

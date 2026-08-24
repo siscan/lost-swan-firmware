@@ -106,6 +106,7 @@ CLAUDE.md
 README.md                      build/flash instructions, pinned versions, pin map
 docs/FIRMWARE_SPEC.md          the spec (source of truth for behaviour)
 docs/BRINGUP.md                bench checklists + results as they come in
+docs/OWNER.md                  living with the display: the owner's manual
 docs/MOTION_SYNC.md            motion ownership/atomics/critical-section contract
 docs/ref/                      README.md (mechanical v6), BOM.md, manifest_cols1234.json +
                                manifest_col5.json (the two v3 rings) — supplied by Nico
@@ -282,6 +283,13 @@ Rules that Phase 3 established and that later phases must keep:
 Motion changes must keep `docs/MOTION_SYNC.md` true (including the seqlock
 rule: no consumer reads two relaxed atomics as a pair outside
 axis_read_published) and the simulated-axis suite green; Linux CI is the
-reliability source of truth. Nothing has run on hardware yet — the board has
-not arrived; the gear ratio (85/33 vs the stale 68/26 prose) is settled by
-bench step 4, not by code.
+reliability source of truth.
+
+**What has and has not touched a drum.** Everything since 2026-08-23 runs on
+real silicon — the board is on the bench — but against **simulated drums**. No
+motor, driver or Hall sensor has ever been connected. So: the firmware is
+verified, the *mechanism* is not, and any number about the mechanism (the gear
+ratio 85/33 against the stale 68/26 prose, `hall_tol`, the jam/slip thresholds,
+`flaps_s_alarm`) is settled by a bench run, not by code and not by a simulated
+soak. `sim_drum.h` was written from the same assumptions as the classifier that
+reads it, so a clean simulated result proves the plumbing and nothing else.

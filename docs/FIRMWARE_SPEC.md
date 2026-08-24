@@ -31,12 +31,22 @@ Columns are physically grouped 3 + 2 with a band between (no colon column).
 | Motors | 5 × NEMA 17, 17HS4401-class, 1.8° (200 full steps/rev) | `VERIFY` step angle on the motors actually bought. |
 | Drivers | 5 × TMC2209 modules, **standalone (no UART)** | MS1 = MS2 = high → 1/16 microstep, internal 256 interpolation. `VERIFY` against the vendor's silkscreen/doc; a different default pull changes every motion constant. Vref set for ~1.1–1.2 A RMS. Standstill current reduction left enabled. |
 | Drive | 33T pinion on motor → 85T gear cut into spool disc rim | Ratio **85/33 = 2.5758:1**, not 2.6. `VERIFY` teeth counts against BUILD/README v6. |
-| Rotation | **One direction only** (ascending ring). Reverse is mechanically forbidden (flaps jam on the bezel lip). | **DIR is tied to a rail at the drivers** (no GPIO — the XIAO can't spare one; DJ Harrigan's build does the same). Which rail is decided in Phase 1 bench step 3. EN is a single ganged GPIO. |
+| Rotation | **One direction only** (the rings are *descending* since v3, §4: one forward flip decrements). Reverse is mechanically forbidden (flaps jam on the bezel lip). | **DIR is tied to a rail at the drivers** (no GPIO — the XIAO can't spare one; DJ Harrigan's build does the same). Which rail is decided in Phase 1 bench step 3. EN is a single ganged GPIO. |
 | Home sensor | 5 × A3144 digital Hall (TO-92), Ø6×3 N35 magnet at R52 on the idler disc, one per column | A3144 supply is 4.5–24 V → must be fed **5 V**; output is open-collector, pull it up to **3V3** (10 k) so the GPIO sees 3.3 V logic. `VERIFY` the hall JST carries 5 V. Output is active-LOW when the magnet is present (`VERIFY`). One operate edge per spool revolution. |
 | Audio | MAX98357A I2S mono amp + 40 mm 4 Ω 3 W speaker | 3 GPIOs (BCLK, LRCLK, DIN). Gain pin left at default 9 dB. `VERIFY` SD/shutdown pin handling on the module. No hardware volume → software gain. |
 | Power | 12 V 6 A PSU → drivers; 12→5 V buck → logic, halls, amp | All five spinning ≈ 4–5 A on 12 V. |
 | Status | Onboard LED on GPIO27 on either C5 board | XIAO: single yellow LED, active low → blink patterns. DevKitC-1: WS2812 RGB → colour-coded status. |
-| Button | One user button `[Q6]` | Wired in parallel with the onboard BOOT button (GPIO28, active low) on either C5 board. Costs no GPIO. Must not be held low at reset except to enter the bootloader. |
+| Button | One user button `[Q6]` — **NOT IMPLEMENTED, see below** | Wired in parallel with the onboard BOOT button (GPIO28, active low) on either C5 board. Costs no GPIO. Must not be held low at reset except to enter the bootloader. |
+
+> **The button is specified and does not exist.**  `PIN_BUTTON` is defined in
+> `hal/pins.h` and printed by the console's `pins` command, and that is the
+> whole of it: there is no GPIO input configuration and no handler anywhere in
+> `components/` or `main/`.  Q6 (§16) records it as answered and §10.2a lists
+> "the physical button" among the control paths, so three places imply a feature
+> nothing implements — found by a cold read of the documentation on 2026-08-24,
+> not by anyone using it.  Deciding whether to build it or drop it is Nico's;
+> until then this note is here so the next person does not spend an evening
+> wondering why their button does nothing.
 
 ### 2.0 Board decision — DevKitC-1-N8R8 (**arrived, verified 2026-08-23**)
 
@@ -907,6 +917,8 @@ set, which was implemented across Phases 3–5 and never written down here; the
 | `wifi.credentials` | `{ssid, pass}` | join a network; does **not** reboot, and keeps the portal up until the STA joins |
 | `wifi.provision` | `true` \| `false` | the captive portal, explicitly only |
 | `mqtt.config` | `{enabled, uri?, user?, pass?, base?, ha_prefix?}` | **absent field = keep**; present-and-empty = clear |
+| `motion.spin` | `{column, flaps_s?, seconds?}` | the Calibrate page's test spin; open loop, so the index becomes unknown |
+| `motion.enable` | `true` or `false` | EN, **ganged across all five drivers** (§2.2) — the recovery from an escalation that dropped it |
 | `ota.confirm` / `ota.rollback` | — | the §10.4 decision, by hand |
 
 **Deliberately not on the web UI**, and why — so their absence is a decision
@@ -1005,10 +1017,12 @@ drum may creep — `motion.en_idle_off` is false precisely because that has neve
 been measured.  The hold is transient, **never persisted**: a hold that survived
 a reboot would be maintenance's brick-loop shape all over again.
 
-Rollback covers a crash-reboot and a power cycle.  It does **not** cover a
-hang: `CONFIG_ESP_TASK_WDT_PANIC` is off, so a task-WDT trip prints and
-continues, and a first boot that hangs never resets and therefore never rolls
-back.
+Rollback covers a crash-reboot, a power cycle **and now a hang**:
+`CONFIG_ESP_TASK_WDT_PANIC` is **on** as of the Phase 4/5 work, so a task-WDT
+trip panics, resets, and the bootloader rolls back.  (This paragraph said the
+opposite, correctly, before the flag was turned on.)  The watched tasks are the
+1 kHz motion tick and the 20 Hz modes task, with a 30 s timeout; §17's
+2026-08-24 entry lists what is deliberately unwatched and why.
 
 ---
 
@@ -1069,9 +1083,17 @@ net.auth_pass            [Q7]
 
 Per column: `flips_total`, `revs`, `resync_minor`, `resync_major`, `faults`,
 `last_hall_err`, `hall_to_hall`. Global: heap, RSSI, uptime, reset reason,
-firmware version. Log ring buffer (last ~200 lines) readable from the UI; full
-log on the USB console. Task watchdog on the motion control task and the main
-loop.
+firmware version. Log ring buffer readable from the UI at `GET /api/log` —
+**8 KB of whole lines, which is 150–190 of them**, not the "~200" this section
+asked for: 200 lines at a realistic length is 18 KB of internal RAM, PSRAM is
+deliberately off and the board has ~76 KB free (§17, 2026-08-24). The response
+says how many lines fit and how many were evicted. A persistent **event
+journal** sits beside it at `GET /api/journal` — significant events only,
+across reboots. Full
+log on the USB console. Task watchdog on the motion control task and the **modes**
+task (not the main task, which self-deletes, and not httpd, which blocks on recv
+by design); the 50 kHz step ISR has its own liveness counter, because the
+watchdog cannot see it stop.  §17, 2026-08-24.
 
 ---
 
@@ -1101,7 +1123,8 @@ loop.
 ### 14.1 Phase 1 bench checklist (one module)
 1. Flash, open the USB console, `pins`.
 2. `hall` — wave the magnet past the sensor; confirm polarity and active level.
-3. `step 0 200` — confirm the drum turns in the **ascending** direction. If not,
+3. `step 0 200` — confirm the drum turns in the **descending** direction: one
+   forward flip must DECREMENT the displayed digit (the v3 rings, §4). If not,
    move that driver's DIR tie to the other rail. DIR is tied per driver, so
    this is a per-column fix; coil order on the JSTs does not need to match.
 4. `home 0`, then `revs 0 10` — record hall_to_hall; expect 8242 ± a few.
@@ -1172,7 +1195,7 @@ worth it. ESPHome is not planned (custom Terminal UI is the reason).
 | Q3 | Ring | Same characters on all drums; cols 4–5 use a different colour scheme; **order and placement still fluid** → ring is a runtime data file (§4). Manifest arrives via the ref zip. |
 | Q4 | Countdown | All defaults: HA direct start yes, cancel yes, cues at 4:00/1:00/0:00, zero choreography as §7.3 |
 | Q5 | Column fault | Park on blank, others continue |
-| Q6 | Button | Yes — GPIO28, press = Execute, hold = rehome |
+| Q6 | Button | Yes — GPIO28, press = Execute, hold = rehome. **The answer stands; the code was never written** (§2, 2026-08-24). |
 | Q7 | Web UI | No password on LAN; OTA via upload page |
 | Q8 | Audio | Quiet hours off; default volume 70 |
 | Q9 | Repo | GitHub from day one, MIT |

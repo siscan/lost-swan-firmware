@@ -10,6 +10,37 @@ GPTimer ISR, FreeRTOS task, spinlock, logging). The core cannot take locks by
 construction: it consumes a snapshot and returns the writes to apply. All
 synchronisation lives in the shell.
 
+## The tasks, and their priorities
+
+A newcomer picking a priority for a new task has to know these, and they existed
+only as comments in six different files.  Single core, so a higher number
+genuinely preempts.
+
+| task | priority | stack | watched? | why there |
+|---|---|---|---|---|
+| WiFi (IDF) | 23 | — | no | its own hard deadlines |
+| `swan_motion` — the 1 kHz control tick | **19** | 4096 | **yes** | above lwIP (18) so networking can never delay a control tick |
+| lwIP (IDF) | 18 | — | no | |
+| `swan_modes` — the 20 Hz mode tick | **5** | 8192 | **yes** | above the transports, below motion |
+| `swan_audio`, `swan_mqtt`, esp-mqtt, `swan_reboot` | 4 | 4096–8192 | no | all block on purpose |
+| httpd, `swan_dns` | 3 | 8192 / 3072 | no | httpd blocks on recv by design |
+| `swan_soak`, `swan_status`, console REPL | 2 | 4096 / 3072 / 4096 | no | drivers and cosmetics, not deadlines |
+| `swan_journal`, `swan_otachk` | 1 | 4096 / 3072 | no | a journal write is never the most important thing happening |
+| IDLE0 | 0 | 1536 | **yes** | the only coverage for "something above 0 is spinning" |
+
+**A new task belongs at 1–4 unless you can say why not.**  Anything at 6 or
+above silently preempts the modes task; anything at 20 or above delays the
+control tick.  Both watched tasks must feed the watchdog on every loop, and the
+timeout is 30 s.
+
+## Lock ordering, in one line
+
+`ModeManager::mu_` is the innermost lock that matters: the cue sink and the
+journal sink are both called **while it is held**, so nothing reachable from
+either may take `Context::dispatch_mu`, re-enter ModeManager, or block.  That
+rule has been broken twice (the cue sink deadlocked the modes task in Phase 5;
+the journal sink was written to it from the start because of that).
+
 ## Who owns what
 
 | data | owner (sole writer) | read by | mechanism |

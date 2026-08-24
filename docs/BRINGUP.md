@@ -4,12 +4,66 @@ Results go in this file as they come in. If a bench result contradicts the spec,
 the spec is wrong: fix `docs/FIRMWARE_SPEC.md` and append to its §17 decision log
 (CLAUDE.md).
 
+## Before you connect the first motor — read this
+
+A cold read of these documents on 2026-08-24 found three things a first-time
+bench operator would have had to guess. They are here rather than buried in a
+step because getting them wrong costs hardware.
+
+**1. The display homes all five columns automatically, ~100 ms after boot.**
+`app_main` asserts EN and calls `home(-1)` (main/app_main.cpp), so a drum
+connected to a powered board starts turning before you can type anything, for up
+to 1.2 revolutions per attempt and three attempts. **Put the board in
+maintenance before you attach the first drum:**
+
+```
+maint on
+```
+
+Maintenance survives a reboot and a boot in maintenance does not home and leaves
+EN released — which is exactly what you want while wiring. `maint off` re-arms
+and re-homes everything.
+
+**2. Which rail DIR is tied to is NOT recorded anywhere, and it is a coin
+flip.** Spec §2 says DIR is tied at each driver and bench step 3 says to move it
+to the other rail if the drum turns the wrong way — but nothing says which rail
+to start from, and the rings are **descending**, so "correct" means one forward
+flip *decrements* the digit. Decide it with the motor's coupler off the drum, or
+in maintenance with `step`, before the drum can jam against the bezel lip.
+**Record the answer here when you know it.**
+
+**3. `motion.hall_active_low` cannot be set from anywhere.** Step 2 tells you to
+set it if the magnet polarity reads inverted. It is a `MotionParams` field that
+is persisted and loaded but has no command on any surface — a gap found by the
+same cold read, listed in §17. Until it has a setter, changing it means editing
+`components/motion/include/motion/motion_types.h` and reflashing.
+
+Two more, less dangerous but confusing:
+
+- **Column numbering is 0-based on the console and 1-based in the web UI.**
+  `col 0` on the console is "column 1" on the Calibrate page. The firmware logs
+  0-based.
+- **`ring` on the console prints ring A only** (columns 1–4). Column 5 carries
+  its own table; read it from `GET /api/ring` or the Settings page.
+
+**One wired column and four unwired `real` columns will de-energize the
+display.** The four unwired ones fault on `no_hall`, and two or more columns in
+trouble drops EN for all five by design (§5.8) — including the one you are
+testing. Set the others to `sim` or `disabled` first:
+
+```
+col 1 disabled ; col 2 disabled ; col 3 disabled ; col 4 disabled
+```
+
 ## Verification status
 
-Phases 1-3.5 build and their host tests pass.  **The board arrived 2026-08-23
-and the firmware is flashed and booting**; nothing is wired to it yet, so the
-motion steps below still need the mechanics.  Steps 0-1 are done, and the
-unwired half of the fault path is verified.
+Phases 1–6 build and their host tests pass, and everything through Phase 6 has
+been exercised **on the board** — but against simulated drums. **No motor,
+driver or Hall sensor has ever been connected.** So every result below marked
+done is the firmware working; nothing here is evidence about the mechanism, and
+the numbers that describe the mechanism (the gear ratio, `hall_tol`, the
+jam/slip thresholds, the usable flap rate) are still open. Steps needing a motor
+are marked with an unticked box.
 
 | gate | status |
 |---|---|
