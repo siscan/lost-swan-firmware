@@ -131,6 +131,11 @@ std::string build_state(Context& ctx, int64_t utc_ms) {
         .kv("cues_total", au.cues_total)
         .end_obj();
 
+    // The live message as a space-separated token string: the HA text entity
+    // reads it back, and an entity with no readable state logs a rejection on
+    // every push.
+    w.kv("msg", ctx.modes.message_tokens());
+
     w.kv("time_valid", ctx.modes.time_valid());
     w.kv("wifi_glyph", ctx.modes.wifi_glyph_shown());
 
@@ -507,6 +512,23 @@ std::string handle_command(Context& ctx, std::string_view body, int64_t utc_ms, 
     static const json::Value kEmpty{};
     const json::Value& p = doc.get("payload") ? *doc.get("payload") : kEmpty;
 
+    if (ctx.modes.ota_hold()) {
+        // Everything that can START a move.  motion.maintenance is on the list
+        // because LEAVING maintenance re-homes all five columns - the single
+        // most motion any one command can cause, and it was the one omitted.
+        // The rest were listed but unreachable, because this check sat below
+        // their handlers; it is the first thing after the parse now.
+        for (const char* blocked : {"motion.rehome", "motion.spin", "motion.cal",
+                                    "motion.ramp", "motion.maintenance", "motion.column",
+                                    "display.frame", "preset.set", "mode.set",
+                                    "message.set", "countdown.execute", "countdown.start",
+                                    "countdown.reset", "countdown.set_target"}) {
+            if (c == blocked) {
+                return err_result("an update is being written; motion is held");
+            }
+        }
+    }
+
     // ---- modes ----
     if (c == "mode.set") {
         const std::string_view m = p.as_str();
@@ -555,11 +577,6 @@ std::string handle_command(Context& ctx, std::string_view body, int64_t utc_ms, 
     // flash-resident control task stalls on every sector erase, so a move
     // started now would step with nobody able to decelerate it or notice an
     // overdue Hall edge.  Refused HERE so every transport gets the same answer.
-    if (ctx.modes.ota_hold() &&
-        (c == "motion.rehome" || c == "motion.spin" || c == "display.frame" ||
-         c == "preset.set" || c == "mode.set" || c == "message.set")) {
-        return err_result("an update is being written; motion is held");
-    }
     if (c == "motion.rehome") {
         int col = -1;
         if (p.type == json::Type::Int) col = static_cast<int>(p.number);
@@ -713,6 +730,10 @@ std::string handle_command(Context& ctx, std::string_view body, int64_t utc_ms, 
             return err_result("need ssid");
         }
         const json::Value* pass = member(p, "pass");
+        if (ssid->as_str().size() > 32) return err_result("ssid too long (32 bytes max)");
+        if (pass != nullptr && pass->as_str().size() > 63) {
+            return err_result("password too long (63 bytes max)");
+        }
         const bool ok = ctx.wifi.set_credentials(
             ssid->as_str(), pass != nullptr ? pass->as_str() : std::string_view{});
         return ok ? ok_result() : err_result("could not save");
@@ -736,6 +757,15 @@ std::string handle_command(Context& ctx, std::string_view body, int64_t utc_ms, 
         // rather than a client that fails to connect for ever with a log line
         // nobody is watching.
         if (want && !broker_uri_valid(uri->as_str(), why)) return err_result(why);
+        // NVS strings are bounded and this partition is 24 KB.  Refused here
+        // with a reason rather than deep in the driver, and long before
+        // anything can fill the partition and trigger a boot-time erase.
+        for (const char* k : {"uri", "user", "pass", "base", "ha_prefix"}) {
+            const json::Value* v = member(p, k);
+            if (v != nullptr && v->type == json::Type::Str && v->as_str().size() > 127) {
+                return err_result("that value is too long (127 bytes max)");
+            }
+        }
         const json::Value* user = member(p, "user");
         const json::Value* pass = member(p, "pass");
         const json::Value* base = member(p, "base");

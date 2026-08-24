@@ -228,12 +228,36 @@ esp_err_t load_wifi(WifiConfig& c) {
     return ESP_OK;
 }
 
+// NVS strings are bounded, and this partition is 24 KB.  A value that is too
+// long makes nvs_set_str return an error, and every one of these used to be
+// wrapped in ESP_ERROR_CHECK - so one POST with a 4 KB SSID aborted the board.
+// Worse, filling the partition can make the next boot's init see
+// ESP_ERR_NVS_NO_FREE_PAGES and ERASE EVERYTHING, taking calibration, column
+// modes and the countdown deadline with it.
+//
+// Bounded here as the last line of defence; the API rejects them earlier with
+// a message a human can act on.
+constexpr size_t NVS_STR_MAX = 127;
+
+esp_err_t set_str_checked(nvs_handle_t h, const char* key, const std::string& v) {
+    if (v.size() > NVS_STR_MAX) return ESP_ERR_INVALID_SIZE;
+    return nvs_set_str(h, key, v.c_str());
+}
+
 esp_err_t save_wifi(const WifiConfig& c) {
     nvs_handle_t h;
     esp_err_t err = nvs_open(NS, NVS_READWRITE, &h);
     if (err != ESP_OK) return err;
-    ESP_ERROR_CHECK(nvs_set_str(h, K_WIFI_SSID, c.ssid.c_str()));
-    ESP_ERROR_CHECK(nvs_set_str(h, K_WIFI_PASS, c.pass.c_str()));
+    err = set_str_checked(h, K_WIFI_SSID, c.ssid);
+    if (err != ESP_OK) {
+        nvs_close(h);
+        return err;
+    }
+    err = set_str_checked(h, K_WIFI_PASS, c.pass);
+    if (err != ESP_OK) {
+        nvs_close(h);
+        return err;
+    }
     err = nvs_commit(h);
     nvs_close(h);
     return err;
@@ -262,11 +286,31 @@ esp_err_t save_mqtt(const MqttConfig& c) {
     esp_err_t err = nvs_open(NS, NVS_READWRITE, &h);
     if (err != ESP_OK) return err;
     ESP_ERROR_CHECK(nvs_set_u8(h, K_MQTT_EN, c.enabled ? 1 : 0));
-    ESP_ERROR_CHECK(nvs_set_str(h, K_MQTT_URI, c.uri.c_str()));
-    ESP_ERROR_CHECK(nvs_set_str(h, K_MQTT_USER, c.user.c_str()));
-    ESP_ERROR_CHECK(nvs_set_str(h, K_MQTT_PASS, c.pass.c_str()));
-    ESP_ERROR_CHECK(nvs_set_str(h, K_MQTT_BASE, c.base.c_str()));
-    ESP_ERROR_CHECK(nvs_set_str(h, K_MQTT_HAPFX, c.ha_prefix.c_str()));
+    err = set_str_checked(h, K_MQTT_URI, c.uri);
+    if (err != ESP_OK) {
+        nvs_close(h);
+        return err;
+    }
+    err = set_str_checked(h, K_MQTT_USER, c.user);
+    if (err != ESP_OK) {
+        nvs_close(h);
+        return err;
+    }
+    err = set_str_checked(h, K_MQTT_PASS, c.pass);
+    if (err != ESP_OK) {
+        nvs_close(h);
+        return err;
+    }
+    err = set_str_checked(h, K_MQTT_BASE, c.base);
+    if (err != ESP_OK) {
+        nvs_close(h);
+        return err;
+    }
+    err = set_str_checked(h, K_MQTT_HAPFX, c.ha_prefix);
+    if (err != ESP_OK) {
+        nvs_close(h);
+        return err;
+    }
     err = nvs_commit(h);
     nvs_close(h);
     return err;
@@ -359,8 +403,16 @@ esp_err_t save_app(const AppConfig& c) {
     ESP_ERROR_CHECK(nvs_set_i32(h, K_CD_SPIN, c.modes.spin_s));
     ESP_ERROR_CHECK(nvs_set_i32(h, K_CD_FAIL_TO, c.modes.failure_timeout_s));
     ESP_ERROR_CHECK(nvs_set_i32(h, K_CD_LOOP, c.modes.failure_loop_s));
-    ESP_ERROR_CHECK(nvs_set_str(h, K_TZ, c.tz.c_str()));
-    ESP_ERROR_CHECK(nvs_set_str(h, K_NTP, c.ntp.c_str()));
+    err = set_str_checked(h, K_TZ, c.tz);
+    if (err != ESP_OK) {
+        nvs_close(h);
+        return err;
+    }
+    err = set_str_checked(h, K_NTP, c.ntp);
+    if (err != ESP_OK) {
+        nvs_close(h);
+        return err;
+    }
 
     int32_t reveal[N_COLUMNS];
     for (int i = 0; i < N_COLUMNS; ++i) reveal[i] = c.modes.reveal[static_cast<size_t>(i)];
