@@ -85,7 +85,13 @@
       return fetch("/api/cmd", { method: "POST", body: text })
         .then((r) => r.json())
         .then((res) => {
-          if (res && res.ok === false) this.emit("result", { e: "result", id: body.id, res });
+          // Every result, not just the failures.  The /ws path emits both, and
+          // the presentation terminal hangs its success handling - the message,
+          // and clearing the keypad - off this event: with the socket down but
+          // HTTP alive, a correct set of Numbers started the countdown and left
+          // the digits on the pad with no feedback at all, so the operator's
+          // instinct was to press EXECUTE again and reset the run.
+          this.emit("result", { e: "result", id: body.id, res });
           return res;
         })
         .catch(() => {

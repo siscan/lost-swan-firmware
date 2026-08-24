@@ -17,7 +17,13 @@ const el = (tag, attrs, text) => {
 let ring = null;       // GET /api/ring
 let flap = null;       // the mirror
 let state = null;      // the last /ws state document
-let cfgDirty = false;  // a settings field is focused: do not overwrite it
+// Whether THIS element is the one being edited.  There used to be a
+// page-global `cfgDirty` latched by focus/blur listeners attached once in
+// wire(), which had two faults: a single focused checkbox froze the whole
+// Settings render, and any control built later - the reveal pickers, the
+// per-column mode selects - was never in that query and so was never
+// protected at all.  Asking the element is both narrower and complete.
+const editing = (node) => document.activeElement === node;
 let wear = null;       // GET /api/wear, refetched when an input to it changes
 let wearKey = "";      // the (h24, live_s) the current table was computed for
 
@@ -97,7 +103,7 @@ function onState(s) {
 
   renderDiag(s);
   renderCal(s);
-  if (!cfgDirty) renderSettings(s);
+  renderSettings(s);
 
   $("ramp-state").textContent = s.cal.ramp_active
       ? "walking column " + (s.cal.ramp_col + 1)
@@ -325,35 +331,40 @@ const SLIDERS = [
 ];
 
 function renderSettings(s) {
-  $("set-h24").checked = s.cfg.h24;
-  if (document.activeElement !== $("set-tz")) $("set-tz").value = s.cfg.tz;
-  if (document.activeElement !== $("set-gran")) $("set-gran").value = s.cfg.granularity_min;
-  $("set-secmode").value = s.cfg.seconds_mode;
-  if (document.activeElement !== $("set-live")) $("set-live").value = s.cfg.seconds_live_s;
-  $("set-zero").value = s.cfg.zero_hold_s;
-  $("set-spin").value = s.cfg.spin_s;
-  $("set-ftimeout").value = s.cfg.failure_timeout_s;
-  $("set-cdland").checked = s.cfg.cd_land_on_tick;
-  $("set-clockland").checked = s.cfg.clock_land_on_tick;
-  $("set-dwell").value = s.cfg.msg_dwell_s;
+  // Every field guarded the same way: the one being edited is left alone, the
+  // rest track the device.  Uniform on purpose - the old mixture of guarded and
+  // unguarded fields is why a page-global latch was needed to cover the gaps.
+  const setVal = (id, v) => { const n = $(id); if (!editing(n)) n.value = v; };
+  const setChk = (id, v) => { const n = $(id); if (!editing(n)) n.checked = v; };
+  setChk("set-h24", s.cfg.h24);
+  setVal("set-tz", s.cfg.tz);
+  setVal("set-gran", s.cfg.granularity_min);
+  setVal("set-secmode", s.cfg.seconds_mode);
+  setVal("set-live", s.cfg.seconds_live_s);
+  setVal("set-zero", s.cfg.zero_hold_s);
+  setVal("set-spin", s.cfg.spin_s);
+  setVal("set-ftimeout", s.cfg.failure_timeout_s);
+  setChk("set-cdland", s.cfg.cd_land_on_tick);
+  setChk("set-clockland", s.cfg.clock_land_on_tick);
+  setVal("set-dwell", s.cfg.msg_dwell_s);
   loadWear(s.cfg, false).then(() => renderWear(s.cfg));
 
   SLIDERS.forEach(([slider, out, key]) => {
     const node = $(slider);
-    if (document.activeElement !== node) node.value = s.cfg[key];
+    if (!editing(node)) node.value = s.cfg[key];
     $(out).textContent = node.value;
   });
 
   const sel = document.querySelectorAll(".reveal-sel");
   s.cfg.reveal.forEach((name, i) => {
-    if (sel[i] && document.activeElement !== sel[i]) sel[i].value = name === null ? "" : name;
+    if (sel[i] && !editing(sel[i])) sel[i].value = name === null ? "" : name;
   });
 
   $("ring-info").textContent = "loaded from " + s.ring.source + " · " +
       s.ring.slots + " slots per drum";
 
   renderColumnModes(s);
-  $("set-maint").checked = !!(s.motion && s.motion.maintenance);
+  setChk("set-maint", !!(s.motion && s.motion.maintenance));
   $("maint-hint").textContent = s.motion && s.motion.maintenance
       ? "suspended — nothing is scheduled and nothing re-homes"
       : "";
@@ -387,7 +398,7 @@ function renderColumnModes(s) {
   for (let i = 0; i < N_COLS; ++i) {
     const sel = $("col-mode-" + i);
     const c = s.cols[i];
-    if (document.activeElement !== sel) sel.value = c.mode;
+    if (!editing(sel)) sel.value = c.mode;
     // Only the "sim" option is gated by the build: greying out the whole
     // control would hide which of the three is unavailable and why.
     const opt = sel.querySelector('option[value="sim"]');
@@ -547,12 +558,6 @@ function wire() {
   $("btn-cols-sim").onclick = () => send("motion.column", { all: true, mode: "sim" });
   $("set-maint").onchange = (e) => send("motion.maintenance", e.target.checked);
 
-  // Do not clobber a field while it is being typed into.
-  document.querySelectorAll("#page-settings input, #page-settings select").forEach((n) => {
-    n.addEventListener("focus", () => { cfgDirty = true; });
-    n.addEventListener("blur", () => { cfgDirty = false; });
-  });
-
   $("btn-ring-upload").onclick = () => {
     const f = $("ring-file").files[0];
     if (!f) { toast("choose a ring.json first", false); return; }
@@ -592,9 +597,14 @@ SwanFlap.loadGlyphs("glyphs.svg").then((ok) => {
   if (ok && flap) flap.refresh();
 });
 
-loadRing().then(() => {
-  wire();
-  bus.connect();
-}).catch(() => {
-  toast("could not load /api/ring", false);
+// The controls and the socket do NOT depend on the ring document.  They used
+// to: everything was chained off loadRing(), so one failed fetch - and that
+// route is served by the single httpd task an OTA upload occupies for up to
+// 120 s - left the panel with dead nav tabs, no WebSocket, and a toast that
+// cleared itself after 2.6 s.  The presentation terminal already got this
+// right, which is how the asymmetry was found.
+wire();
+bus.connect();
+loadRing().catch(() => {
+  toast("could not load /api/ring — pickers unavailable, controls still work", false);
 });
