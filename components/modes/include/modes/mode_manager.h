@@ -135,6 +135,14 @@ public:
     // exactly what dropping EN is supposed to stop.
     void set_drivers_enabled(bool on);
 
+    // One-shot: true exactly once after the reveal frame is CONFIRMED on every
+    // column.  Read by the modes task AFTER tick() returns, so the announcement
+    // (a /ws frame, an MQTT publish and a journal line) happens outside this
+    // object's lock - the same shape as the mode-change event, and for the same
+    // reason the cue sink deadlocked once: nothing called from inside mu_ may
+    // block or re-enter.
+    bool take_reveal_landed();
+
     bool set_tz(std::string_view posix_tz);  // false = parse rejected, kept old
     // The NTP server, owned here for the same reason tz is: it is written on
     // the HTTP task and read on the modes task, and a bare std::string across
@@ -274,6 +282,8 @@ private:
     std::string ntp_ = "pool.ntp.org";
     JournalFn journal_;
     std::atomic<bool> drivers_{true};
+    bool reveal_landed_ = false;     // this run's reveal has been confirmed
+    bool reveal_announce_ = false;   // ... and not yet taken by the modes task
     // Called with mu_ held; see the contract on JournalFn.
     void note_locked(journal::Event::Kind k, const char* detail, uint32_t seq = 0,
                      Origin by = Origin::Unknown, int column = -1);

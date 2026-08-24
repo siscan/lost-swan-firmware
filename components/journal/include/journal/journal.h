@@ -42,6 +42,12 @@ struct Event {
         ModeChange,
         Maintenance,
         ColumnMode,
+        // The reveal frame is CONFIRMED - every column Idle on the index the
+        // reveal asked for.  Not "the reveal was commanded": after the alarm
+        // spin the columns leave open loop with the index unknown and converge,
+        // and only the firmware can see the last one arrive.  It is the beat the
+        // whole failure sequence lands on.
+        Reveal,
     };
 
     Kind kind = Kind::Boot;
@@ -99,6 +105,7 @@ bool note_countdown(Event::Kind k, int64_t utc_s, uint32_t seq, const char* who,
                     const char* numbers);
 bool note_fault(int64_t utc_s, int column, const char* cause);
 bool note_recover(int64_t utc_s, int column, int attempts);
+bool note_reveal(int64_t utc_s, uint32_t seq);
 bool note_mode(int64_t utc_s, const char* mode);
 
 // Newest last, at most `max_lines`.  0 means the DEFAULT, not "all": this is

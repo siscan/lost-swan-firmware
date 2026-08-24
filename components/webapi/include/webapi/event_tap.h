@@ -97,5 +97,27 @@ inline std::string mode_event(Mode m) {
     return w.take();
 }
 
+// THE REVEAL LANDED - every column confirmed on the reveal frame after the
+// alarm spin.  A CROSS-REPO CONTRACT as of 2026-08-24: the terminal prop keys
+// its SYSTEM_FAILURE beat off this, and it goes to BOTH /ws and swan/event.
+//
+// Two shapes now share swan/event and a consumer tells them apart by which key
+// is present: a command RESULT carries "cmd" (and "res"), an announcement
+// carries "e".  This is the first announcement; it is deliberately spelled the
+// same way as the /ws vocabulary ("go", "spin", "cue", "mode") so one switch
+// serves both transports.
+//
+// `seq` is the countdown's, so a peer can tell which run landed - the same
+// number swan/countdown carries.
+inline std::string reveal_event(uint32_t seq, int64_t utc_s) {
+    json::Writer w;
+    w.obj()
+        .kv("e", "reveal")
+        .kv("seq", static_cast<int64_t>(seq))
+        .kv("t", utc_s)
+        .end_obj();
+    return w.take();
+}
+
 }  // namespace api
 }  // namespace swan

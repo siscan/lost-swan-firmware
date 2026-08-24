@@ -260,6 +260,14 @@ bool note_recover(int64_t utc_s, int column, int attempts) {
     return record(e);
 }
 
+bool note_reveal(int64_t utc_s, uint32_t seq) {
+    Event e{};
+    e.kind = Event::Kind::Reveal;
+    e.utc_s = utc_s;
+    e.seq = seq;      // the countdown this reveal belongs to
+    return record(e);
+}
+
 bool note_mode(int64_t utc_s, const char* mode) {
     Event e{};
     e.kind = Event::Kind::ModeChange;

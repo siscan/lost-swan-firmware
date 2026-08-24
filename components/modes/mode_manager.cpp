@@ -501,6 +501,12 @@ void ModeManager::enter_reveal_silently() {
     cue_zero_ = true;      // the cue fired (or should have) at the real zero
     spin_started_ = true;  // ditto the spin
     cd_shown_ = SHOWN_NONE;  // forces the reveal frame to render
+    // The cues do NOT replay (spec 17: they belong to the real zero moment) but
+    // the reveal announcement is not a cue - it is a statement that the display
+    // IS showing the reveal, which is true here and is what a peer waking up
+    // beside it needs to know.  Re-armed, so the landing is announced once the
+    // columns actually get there.
+    reveal_landed_ = false;
 }
 
 Frame ModeManager::reveal_frame() const {
@@ -645,12 +651,24 @@ void ModeManager::tick_countdown(int64_t utc_ms) {
     if (cd_.phase == CdPhase::Spin && since_zero >= hold_ms + spin_ms) {
         cd_.phase = CdPhase::Reveal;
         cd_shown_ = SHOWN_NONE;
+        reveal_landed_ = false;
         persist();
     }
     if (cd_.phase == CdPhase::Reveal) {
         if (cd_shown_ != SHOWN_REVEAL) {
             cd_shown_ = SHOWN_REVEAL;
             issue(reveal_frame(), utc_ms);  // convergence lands it post-spin
+        }
+        // THE BEAT THE FAILURE SEQUENCE LANDS ON.  Issuing the reveal is not
+        // showing it: the columns leave the alarm spin open-loop with the index
+        // unknown, and converge over up to a full wrap.  Only the firmware can
+        // see the last one arrive, which is why this is announced rather than
+        // estimated by a peer.  FrameScheduler::settled() is exactly the
+        // predicate - every non-excluded column Idle on its desired index - and
+        // until now it had no caller outside the tests.
+        if (!reveal_landed_ && sched_.settled()) {
+            reveal_landed_ = true;
+            reveal_announce_ = true;   // taken by the modes task, outside the lock
         }
         // No auto-return unless configured (spec 7.3).
         if (cfg_.failure_timeout_s > 0 &&
@@ -903,6 +921,14 @@ void ModeManager::set_ntp(std::string_view server) {
     const std::lock_guard<std::mutex> lock(mu_);
     const Enter witness(*this);
     ntp_ = std::string(server);
+}
+
+bool ModeManager::take_reveal_landed() {
+    const std::lock_guard<std::mutex> lock(mu_);
+    const Enter witness(*this);
+    const bool v = reveal_announce_;
+    reveal_announce_ = false;
+    return v;
 }
 
 void ModeManager::set_drivers_enabled(bool on) {

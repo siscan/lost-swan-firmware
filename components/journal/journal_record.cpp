@@ -29,6 +29,7 @@ constexpr KindName kNames[] = {
     {Event::Kind::ModeChange, "mode"},
     {Event::Kind::Maintenance, "maint"},
     {Event::Kind::ColumnMode, "column"},
+    {Event::Kind::Reveal, "reveal"},
 };
 }  // namespace
 
