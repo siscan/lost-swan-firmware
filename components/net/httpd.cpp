@@ -401,7 +401,20 @@ esp_err_t state_handler(httpd_req_t* req) {
 
 esp_err_t ring_handler(httpd_req_t* req) {
     const RingSet ring = g_ctx->ring.snapshot();  // pinned for the response
-    return send_json(req, api::build_ring_doc(ring));
+    // CHUNKED, one column at a time.  The whole document is ~20 KB and the JSON
+    // writer grows by doubling, so building it in one string wants a ~32 KB
+    // contiguous block - and after a ring upload the largest free block was
+    // measured at 30,720 B on this board, which aborts (exceptions are off, so
+    // a failed allocation is abort()).  Reproduced on hardware: upload, then
+    // GET /api/ring, then reset=panic.  Each piece here is under 5 KB.
+    httpd_resp_set_type(req, "application/json");
+    for (int i = 0; i < api::ring_doc_pieces(); ++i) {
+        const std::string piece = api::build_ring_doc_piece(ring, i);
+        const esp_err_t err =
+            httpd_resp_send_chunk(req, piece.data(), static_cast<ssize_t>(piece.size()));
+        if (err != ESP_OK) return err;
+    }
+    return httpd_resp_send_chunk(req, nullptr, 0);
 }
 
 // Measured, not tabulated (spec 7.1): a whole day and a whole run walked

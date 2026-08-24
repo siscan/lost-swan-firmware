@@ -79,6 +79,10 @@ public:
 
     const std::string& str() const { return out_; }
     std::string take() { return std::move(out_); }
+    // The buffer as it stands, WITHOUT closing anything.  For emitting one
+    // document in pieces: the caller is responsible for the brackets, and the
+    // result is only well formed once every piece has been concatenated.
+    std::string take_open() { return std::move(out_); }
 
 private:
     std::string out_;

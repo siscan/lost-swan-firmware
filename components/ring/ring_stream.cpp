@@ -39,9 +39,15 @@ public:
             schemes_depth_ = depth_;
             raw_.clear();
             first_.clear();
+            after_key_ = false;      // the '{' below opens the value itself
+            schemes_overflowed_ = false;
             pending_ = Key::None;
         }
-        if (in_schemes_) { raw_.push_back('{'); first_.push_back(true); return true; }
+        if (in_schemes_) {
+            if (room()) { sep(); raw_.push_back('{'); }
+            first_.push_back(true);
+            return true;
+        }
         // A column's index is its POSITION in the array, counted here - not
         // "the first key I saw inside it".  columns:[{},{},{},{},{ring:...}]
         // is legal and normal (only column 5 carries its own ring), and
@@ -86,7 +92,11 @@ public:
 
     bool on_array_begin() override {
         ++depth_;
-        if (in_schemes_) { raw_.push_back('['); first_.push_back(true); return true; }
+        if (in_schemes_) {
+            if (room()) { sep(); raw_.push_back('['); }
+            first_.push_back(true);
+            return true;
+        }
         if (pending_ == Key::Slots && state_ == St::Idle) {
             state_ = St::SlotsArray;
             slots_depth_ = depth_;
@@ -130,11 +140,12 @@ public:
 
     bool on_key(std::string_view k) override {
         if (in_schemes_) {
+            if (!room()) return true;
             sep();
             raw_.push_back('"');
             raw_.append(k);
             raw_.append("\":");
-            first_.back() = false;
+            after_key_ = true;
             return true;
         }
         if (k == "slots" && depth_ == 1) pending_ = Key::Slots;
@@ -152,11 +163,11 @@ public:
 
     bool on_string(std::string_view v) override {
         if (in_schemes_) {
+            if (!room()) return true;
             sep();
             raw_.push_back('"');
             raw_.append(v);
             raw_.push_back('"');
-            first_.back() = false;
             return true;
         }
         switch (pending_) {
@@ -182,11 +193,17 @@ public:
 
     bool on_number(double v) override {
         if (in_schemes_) {
+            if (!room()) return true;
             sep();
-            char b[32];
-            std::snprintf(b, sizeof b, "%g", v);
-            raw_.append(b);
-            first_.back() = false;
+            // %.17g round-trips a double exactly; %g does not, and a non-finite
+            // value would have emitted `inf`, which is not JSON.
+            char b[40];
+            if (v != v || v > 1e308 || v < -1e308) {
+                raw_.append("null");
+            } else {
+                std::snprintf(b, sizeof b, "%.17g", v);
+                raw_.append(b);
+            }
             return true;
         }
         if (pending_ == Key::SlotI) slot_index_seen_ = static_cast<int>(v);
@@ -196,9 +213,10 @@ public:
 
     bool on_bool(bool v) override {
         if (in_schemes_) {
-            sep();
-            raw_.append(v ? "true" : "false");
-            first_.back() = false;
+            if (room()) {
+                sep();
+                raw_.append(v ? "true" : "false");
+            }
         }
         pending_ = Key::None;
         return true;
@@ -206,9 +224,10 @@ public:
 
     bool on_null() override {
         if (in_schemes_) {
-            sep();
-            raw_.append("null");
-            first_.back() = false;
+            if (room()) {
+                sep();
+                raw_.append("null");
+            }
         }
         pending_ = Key::None;
         return true;
@@ -231,10 +250,30 @@ private:
         return false;
     }
 
+    // A comma goes before a KEY, or before an array element - never before the
+    // value that follows a colon.  Getting that wrong produced
+    // {"default":,"#181818"} : syntactically invalid JSON, served to the
+    // browser as the ring's colour schemes, which is a page that does not load.
     void sep() {
+        if (after_key_) {          // this value belongs to the key just written
+            after_key_ = false;
+            return;
+        }
         if (!first_.empty() && !first_.back()) raw_.push_back(',');
         if (!first_.empty()) first_.back() = false;
-        if (raw_.size() > SCHEMES_MAX) raw_.resize(SCHEMES_MAX);   // capped, never grows unbounded
+    }
+
+    // Bounded, and NOT by truncating mid-token: a half-written string is worse
+    // than no schemes at all, because it is invalid JSON rather than an absent
+    // field.  Past the cap the capture is abandoned and the compiled defaults
+    // stand.
+    bool room() {
+        if (raw_.size() <= SCHEMES_MAX) return true;
+        if (!schemes_overflowed_) {
+            schemes_overflowed_ = true;
+            raw_.clear();
+        }
+        return false;
     }
 
     bool finish_table(std::shared_ptr<const RingTable>& dest, const std::string& what) {
@@ -268,6 +307,8 @@ private:
     std::array<std::string, N_COLUMNS> scheme_{};
 
     bool in_schemes_ = false;
+    bool after_key_ = false;
+    bool schemes_overflowed_ = false;
     int schemes_depth_ = 0;
     std::string raw_;
     std::vector<bool> first_;

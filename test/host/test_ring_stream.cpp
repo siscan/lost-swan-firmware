@@ -9,6 +9,8 @@
 #include <string>
 
 #include "check.h"
+#include "ring/json_lite.h"
+#include "ring/json_write.h"
 #include "ring/json_stream.h"
 #include "ring/ring_runtime.h"
 
@@ -126,6 +128,19 @@ void test_streaming_and_dom_agree_on_the_real_ring() {
     // render columns 4-5 in the wrong scheme after every upload.
     CHECK(!str.schemes_json().empty());
     CHECK_EQ(str.schemes_json().empty(), dom.schemes_json().empty());
+    // It must be VALID JSON, and it must mean the same thing.  Re-serialising
+    // it from events put the comma after the colon - {"default":,"#181818"} -
+    // which the whole control panel then failed to parse.  Comparing to the DOM
+    // path's copy is the assertion that catches that class outright.
+    {
+        json::Value a, b;
+        CHECK(json::parse(str.schemes_json(), a, nullptr));
+        CHECK(json::parse(dom.schemes_json(), b, nullptr));
+        json::Writer wa, wb;
+        json::serialize_into(a, wa);
+        json::serialize_into(b, wb);
+        CHECK_STREQ(wa.take().c_str(), wb.take().c_str());
+    }
     for (int c = 0; c < N_COLUMNS; ++c) {
         CHECK_STREQ(str.scheme(c).c_str(), dom.scheme(c).c_str());
     }

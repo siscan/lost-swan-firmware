@@ -292,6 +292,14 @@ std::string build_state(Context& ctx, int64_t utc_ms);
 // the 1 Hz payload.
 std::string build_ring_doc(const RingSet& ring);
 
+// The same document, in pieces: piece 0 is the header, 1..N_COLUMNS are the
+// columns, N_COLUMNS+1 is the tail.  The whole thing is ~20 KB and the Writer
+// grows by doubling, so building it in one string wants a ~32 KB CONTIGUOUS
+// block - and after a ring upload the largest free block was measured at
+// 30,720 B, which aborts the board.  Every piece here is under 5 KB.
+int ring_doc_pieces();
+std::string build_ring_doc_piece(const RingSet& ring, int piece);
+
 // Flap wear, measured by walking the REAL renderers over a whole day and a
 // whole countdown run (spec 7.1 wear table, 7.3).  Every valid granularity and
 // all three seconds modes in one document: the Settings page needs an exact

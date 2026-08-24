@@ -257,43 +257,65 @@ std::string build_state(Context& ctx, int64_t utc_ms) {
 // ---------------------------------------------------------------------------
 // Ring document for the pickers
 // ---------------------------------------------------------------------------
-std::string build_ring_doc(const RingSet& ring) {
-    Writer w;
+// One column of the ring document.  Split out so the route can send the whole
+// thing in pieces: at ~20 KB with a doubling Writer, building it in one string
+// needs a ~32 KB contiguous block, and after a ring upload the largest free
+// block was measured at 30,720 B - which aborts the board, because a failed
+// allocation with exceptions off is abort().  Reproduced on hardware.
+namespace {
+void write_column(Writer& w, const RingSet& ring, int c) {
+    const RingTable& t = ring.col(c);
     w.obj();
-    w.kv("source", ring.loaded_from_json() ? "ring.json" : "compiled");
-    w.kv("slot_count", ring.col(0).slot_count());
-    // Presentation, straight through: the mirror should look like the wall,
-    // and columns 4-5 carry the inverted drums.
-    w.kv_raw("schemes", ring.schemes_json().empty() ? "{}" : ring.schemes_json());
-    w.key("columns").arr();
-    for (int c = 0; c < N_COLUMNS; ++c) {
-        const RingTable& t = ring.col(c);
-        w.obj();
-        w.kv("slots", t.slot_count());
-        w.kv("scheme", ring.scheme(c));
-        w.kv("descending", t.is_descending());
-        // Every slot, so the Calibrate walk can show the expected character
-        // beside each stop (spec 4).
-        w.key("ring").arr();
-        for (int i = 0; i < t.slot_count(); ++i) {
-            w.obj().kv("i", i).kv("id", t.slot(i).id).kv("label", t.slot(i).label)
-                .kv("cat", ring_category_name(t.slot(i).cat)).end_obj();
+    w.kv("slots", t.slot_count());
+    w.kv("scheme", ring.scheme(c));
+    w.kv("descending", t.is_descending());
+    // Every slot, so the Calibrate walk can show the expected character
+    // beside each stop (spec 4).
+    w.key("ring").arr();
+    for (int i = 0; i < t.slot_count(); ++i) {
+        w.obj().kv("i", i).kv("id", t.slot(i).id).kv("label", t.slot(i).label)
+            .kv("cat", ring_category_name(t.slot(i).cat)).end_obj();
+    }
+    w.end_arr();
+    // Just the glyphs, for the reveal picker: a column may only be offered
+    // what its own ring carries, and column 5's set differs.
+    w.key("glyphs").arr();
+    for (int i = 0; i < t.slot_count(); ++i) {
+        if (t.slot(i).cat == RingCategory::Glyph) {
+            w.obj().kv("id", t.slot(i).id).kv("label", t.slot(i).label).end_obj();
         }
-        w.end_arr();
-        // Just the glyphs, for the reveal picker: a column may only be offered
-        // what its own ring carries, and column 5's set differs.
-        w.key("glyphs").arr();
-        for (int i = 0; i < t.slot_count(); ++i) {
-            if (t.slot(i).cat == RingCategory::Glyph) {
-                w.obj().kv("id", t.slot(i).id).kv("label", t.slot(i).label).end_obj();
-            }
-        }
-        w.end_arr();
-        w.end_obj();
     }
     w.end_arr();
     w.end_obj();
-    return w.take();
+}
+}  // namespace
+
+int ring_doc_pieces() { return N_COLUMNS + 2; }
+
+std::string build_ring_doc_piece(const RingSet& ring, int piece) {
+    Writer w;
+    if (piece == 0) {
+        // The header, opened but not closed - the pieces concatenate into one
+        // document, so the JSON is only well formed once they all arrive.
+        w.obj();
+        w.kv("source", ring.loaded_from_json() ? "ring.json" : "compiled");
+        w.kv("slot_count", ring.col(0).slot_count());
+        w.kv_raw("schemes", ring.schemes_json().empty() ? "{}" : ring.schemes_json());
+        w.key("columns").arr();
+        return w.take_open();
+    }
+    if (piece == N_COLUMNS + 1) return "]}";
+    std::string out = piece > 1 ? "," : "";
+    write_column(w, ring, piece - 1);
+    return out + w.take_open();
+}
+
+std::string build_ring_doc(const RingSet& ring) {
+    // Kept for the host tests and the dev server, which have a real heap.  The
+    // firmware's route sends the pieces instead.
+    std::string out;
+    for (int i = 0; i < ring_doc_pieces(); ++i) out += build_ring_doc_piece(ring, i);
+    return out;
 }
 
 // ---------------------------------------------------------------------------
