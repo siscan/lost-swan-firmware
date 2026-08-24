@@ -183,6 +183,10 @@ api::MqttStatus IdfMqttAdmin::mqtt_status() {
     s.uri = c.uri;
     s.base = c.base;
     s.dropped = mqtt_dropped();
+    const api::PropPresence pp = mqtt_prop();
+    s.prop_seen = pp.seen;
+    s.prop_online = pp.online;
+    s.prop_fw = pp.fw;
     return s;   // note: the password is deliberately absent
 }
 

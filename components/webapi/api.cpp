@@ -130,6 +130,22 @@ std::string build_state(Context& ctx, int64_t utc_ms) {
         .kv("dropped", static_cast<int64_t>(mq.dropped))
         .end_obj();
 
+    // The terminal prop, a PEER rather than a part of this display (spec 10.3).
+    // Read-only: it publishes swan/prop/terminal retained, we subscribe, and
+    // nothing here can write it.
+    //
+    // Emitted HERE, between "mqtt" and "sys", because that is inside the change
+    // window: both the /ws push and the MQTT state publish compare the slice
+    // from "mode" up to ,"sys": (mqtt_bridge.cpp display_slice).  A key after
+    // "sys" would be published only on the 30 s heartbeat, so a prop coming
+    // online could take half a minute to appear on a page - which reads as the
+    // subscription being broken.
+    w.key("prop").obj()
+        .kv("seen", mq.prop_seen)
+        .kv("online", mq.prop_online)
+        .kv("fw", mq.prop_fw)
+        .end_obj();
+
     w.key("prov").obj()
         .kv("portal", ctx.wifi.portal_running())
         .kv("ssid", ctx.wifi.portal_ssid())

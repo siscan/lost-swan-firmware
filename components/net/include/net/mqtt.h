@@ -14,6 +14,8 @@
 #include <cstdint>
 #include <string>
 
+#include "webapi/mqtt_bridge.h"
+
 #include "esp_err.h"
 #include "webapi/api.h"
 
@@ -46,6 +48,11 @@ void mqtt_publish(const std::string& topic_leaf, const std::string& payload, boo
 // Without this, a reboot from the UI leaves the display looking online to
 // Home Assistant until the keepalive expires.
 void mqtt_go_offline();
+
+// The terminal prop's presence as last heard on swan/prop/terminal.  Read-only
+// - this display never publishes that topic.  Returns a copy under the
+// transport lock; `seen` is false until a document has arrived this session.
+api::PropPresence mqtt_prop();
 
 bool mqtt_connected();
 bool mqtt_enabled();

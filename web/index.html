@@ -47,6 +47,7 @@
   <p class="hint">Enter the Numbers, then EXECUTE. Correct entry sets the deadline
      108:00 from now — start or mid-run reset, exactly as the show.</p>
   <div class="row">
+    <span class="caret">&gt;:</span>
     <input id="numbers" placeholder="4 8 15 16 23 42" autocomplete="off" spellcheck="false">
   </div>
   <div class="row">
@@ -379,6 +380,7 @@
 
   <h2>MQTT and Home Assistant</h2>
   <div class="row"><span class="hint" id="mqtt-status">—</span></div>
+  <div class="row"><span class="hint" id="prop-status">&mdash;</span></div>
   <div class="row" data-form="mqtt">
     <label><input id="set-mqtt-en" type="checkbox"> enabled</label>
   </div>
@@ -411,6 +413,11 @@
   <div class="row">
     <button id="btn-mqtt-save" class="primary">SAVE MQTT SETTINGS</button>
   </div>
+  <p class="hint">The <b>terminal prop</b> is a peer, not a part of this display:
+     it publishes its own presence on <code>swan/prop/terminal</code> (retained,
+     with a last will) and this display only reads it. Nothing here can turn the
+     prop on or off, and the prop is never required &mdash; the display is a
+     complete standalone clock without one.</p>
   <p class="hint"><b>Anyone who can publish to your broker can drive this
      display</b> &mdash; every command this page can send, including reboot,
      maintenance and the OTA controls. That is deliberate (spec &sect;10.3): MQTT

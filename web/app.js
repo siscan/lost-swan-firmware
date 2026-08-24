@@ -257,6 +257,13 @@ function renderDiag(s) {
     ["heap", s.sys.heap + " B  (largest block " + s.sys.heap_largest + ")"],
     ["image", s.sys.version + " · " + (s.sys.ota_partition || "?") +
               (s.sys.ota_pending ? " · PENDING VERIFICATION" : "")],
+    // The terminal prop, a separate machine on the same broker.  "never seen"
+    // and "told us it is offline" are different facts and the second one means
+    // the prop was there and went away.
+    ["terminal prop", !(s.prop && s.prop.seen)
+                          ? "never seen on swan/prop/terminal"
+                          : (s.prop.online ? "online" + (s.prop.fw ? " · fw " + s.prop.fw : "")
+                                           : "OFFLINE (last will received)")],
     ["mqtt", !mq.enabled ? "off"
              : (mq.connected ? "connected · " + mq.base : "enabled, NOT connected") +
                (mq.dropped ? " · " + mq.dropped + " dropped" : "")],
@@ -555,6 +562,12 @@ function renderNetwork(s) {
 
   // The one readout that says whether the canonical external API is actually
   // working.  "enabled" is a setting; "connected" is a fact.
+  const prop = s.prop || {};
+  $("prop-status").textContent = !mq.enabled
+      ? "—"
+      : (!prop.seen ? "no terminal prop has published swan/prop/terminal"
+                    : (prop.online ? "terminal prop online" + (prop.fw ? " · fw " + prop.fw : "")
+                                   : "terminal prop OFFLINE"));
   $("mqtt-status").textContent = !mq.enabled
       ? "off"
       : (mq.connected ? "connected to " + mq.uri + " as " + mq.base

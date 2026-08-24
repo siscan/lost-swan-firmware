@@ -175,6 +175,15 @@ struct MqttStatus {
     std::string user;
     std::string ha_prefix = "homeassistant";
     uint32_t dropped = 0;
+
+    // The terminal prop's own presence, read off swan/prop/terminal (spec
+    // 10.3).  READ-ONLY: this display never publishes that topic.  `prop_seen`
+    // separates "the prop has told us it is offline" from "we have never heard
+    // from a prop at all" - a distinction a single bool would lose, and the one
+    // a person looking at Diagnostics actually wants.
+    bool prop_seen = false;
+    bool prop_online = false;
+    std::string prop_fw;
 };
 
 // Audio (spec 9).  An interface, so the host dev server and the tests can

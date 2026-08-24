@@ -32,6 +32,28 @@ inline constexpr const char* TOPIC_COUNTDOWN = "countdown";
 inline constexpr const char* TOPIC_EVENT = "event";
 inline constexpr const char* TOPIC_AVAILABILITY = "availability";
 inline constexpr const char* TOPIC_CMD_WILDCARD = "cmd/#";
+
+// The terminal prop's presence, PUBLISHED BY THE PROP and read-only here
+// (spec 10.3, 2026-08-24).  Retained, QoS 1: birth {"online":true,"fw":"..."},
+// last will {"online":false}.  This display never writes it - a peer's
+// liveness is the peer's to state, and writing it here would let the display
+// contradict a prop that is standing right there.
+inline constexpr const char* TOPIC_PROP_TERMINAL = "prop/terminal";
+
+// What the prop's document is allowed to say.  Bounded because it arrives from
+// another machine: the state payload carries `fw` verbatim to a browser.
+inline constexpr size_t PROP_FW_MAX = 31;
+
+struct PropPresence {
+    bool seen = false;      // a document has arrived this session
+    bool online = false;
+    char fw[PROP_FW_MAX + 1] = {};
+};
+
+// Parse one swan/prop/terminal payload.  Returns false - and leaves `out`
+// untouched - for anything that is not an object with a boolean "online".
+// Deliberately strict: an unparseable presence claim is no claim at all.
+bool parse_prop_presence(std::string_view payload, PropPresence& out);
 inline constexpr const char* PAYLOAD_ONLINE = "online";
 inline constexpr const char* PAYLOAD_OFFLINE = "offline";
 

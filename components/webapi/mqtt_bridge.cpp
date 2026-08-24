@@ -164,5 +164,38 @@ bool broker_uri_valid(std::string_view uri, std::string& why) {
     return true;
 }
 
+// Read-only: the prop states its own liveness and we believe the flag, but
+// nothing else.  A payload from another machine reaches a browser verbatim, so
+// `fw` is length-bounded here rather than at the far end, and the node budget
+// is the untrusted one.
+bool parse_prop_presence(std::string_view payload, PropPresence& out) {
+    json::Value v;
+    if (!json::parse(payload, v, nullptr)) return false;
+    if (v.type != json::Type::Object) return false;
+    const json::Value* on = v.get("online");
+    if (on == nullptr || on->type != json::Type::Bool) return false;
+
+    PropPresence p;
+    p.seen = true;
+    p.online = on->boolean;
+    if (const json::Value* fw = v.get("fw")) {
+        // A non-string fw is ignored rather than rejected: the liveness flag is
+        // the part that matters and a version string is decoration.
+        if (fw->type == json::Type::Str) {
+            const std::string_view sv = fw->as_str();
+            const size_t n = sv.size() < PROP_FW_MAX ? sv.size() : PROP_FW_MAX;
+            for (size_t i = 0; i < n; ++i) {
+                // Printable ASCII only - this goes into a JSON document and
+                // then into a browser.
+                const char c = sv[i];
+                p.fw[i] = (c >= 0x20 && c < 0x7F) ? c : '?';
+            }
+            p.fw[n] = '\0';
+        }
+    }
+    out = p;
+    return true;
+}
+
 }  // namespace api
 }  // namespace swan

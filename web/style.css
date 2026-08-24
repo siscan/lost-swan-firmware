@@ -284,6 +284,17 @@ th { color: var(--dim); font-weight: normal; }
 td.num { text-align: right; font-variant-numeric: tabular-nums; }
 
 /* --- terminal --------------------------------------------------------- */
+/* The show's screens and the terminal prop both prompt with ">:", so this page
+   does too (decision 2026-08-24).  It is a cross-repo detail, not a flourish:
+   three surfaces render the same prompt and a person looking between them
+   should not be able to tell which is which. */
+.caret {
+  color: var(--dim, #7a7a7a);
+  font-size: 22px;
+  letter-spacing: 0.15em;
+  user-select: none;
+}
+
 #numbers {
   font-size: 22px;
   letter-spacing: 0.3em;

@@ -55,6 +55,7 @@ struct InMsg {
     char payload[IN_MAX_PAYLOAD];
     uint16_t topic_len;
     uint16_t payload_len;
+    bool prop;      // the peer-presence topic, not a command
 };
 
 struct OutMsg {
@@ -69,7 +70,8 @@ esp_mqtt_client_handle_t g_client = nullptr;
 QueueHandle_t g_in = nullptr;
 TaskHandle_t g_task = nullptr;
 
-std::mutex g_mu;                       // guards g_out / g_cfg / g_base
+std::mutex g_mu;                       // guards g_out / g_cfg / g_base / g_prop
+api::PropPresence g_prop;              // written only by the transport task
 std::deque<OutMsg> g_out;
 size_t g_out_bytes = 0;
 config::MqttConfig g_cfg;
@@ -94,6 +96,17 @@ std::string topic_for(const std::string& leaf) {
     return g_base + leaf;
 }
 
+// Exact-match one inbound topic against a base-relative leaf.  esp-mqtt's topic
+// is NOT NUL-terminated, which is why this compares by length rather than
+// strcmp.  Called from the client's event handler, so it takes g_mu only for
+// the base string - the same lock topic_for takes, held just as briefly.
+bool topic_is(const esp_mqtt_event_handle_t e, const char* leaf) {
+    if (e->topic == nullptr || e->topic_len <= 0) return false;
+    const std::string want = topic_for(leaf);
+    return want.size() == static_cast<size_t>(e->topic_len) &&
+           std::memcmp(e->topic, want.data(), want.size()) == 0;
+}
+
 // ---------------------------------------------------------------------------
 // The esp-mqtt event handler.
 //
@@ -112,6 +125,11 @@ void on_mqtt_event(void*, esp_event_base_t, int32_t id, void* data) {
             // the broker forgets our subscriptions across a reconnect.
             const std::string sub = topic_for(api::TOPIC_CMD_WILDCARD);
             esp_mqtt_client_subscribe(g_client, sub.c_str(), 1);
+            // The terminal prop's presence (spec 10.3).  Read-only: we never
+            // publish this topic, and it is NOT a command topic, so it takes
+            // the second path through the retain gate below.
+            const std::string psub = topic_for(api::TOPIC_PROP_TERMINAL);
+            esp_mqtt_client_subscribe(g_client, psub.c_str(), 1);
             g_announce.store(true, std::memory_order_relaxed);
             kick();   // the task re-asserts availability and the retained set
             break;
@@ -131,11 +149,19 @@ void on_mqtt_event(void*, esp_event_base_t, int32_t id, void* data) {
                          e->total_data_len);
                 break;
             }
+            // Whether this is the prop's presence topic, decided BEFORE the
+            // retain gate.  That gate exists to refuse retained COMMANDS, and
+            // it was topic-blind - which would have eaten the prop's birth
+            // message, because a presence document is retained BY DESIGN: that
+            // is how a display that boots later learns the prop is already
+            // there.  The command refusal is unchanged for command topics.
+            const bool is_prop = topic_is(e, api::TOPIC_PROP_TERMINAL);
+
             // A RETAINED command is refused, always.  The broker would replay
             // it on every reconnect and every reboot, so a retained
             // countdown.execute is a countdown that starts itself in an empty
             // room - the same shape as the finished-countdown replay bug.
-            if (e->retain) {
+            if (e->retain && !is_prop) {
                 ESP_LOGW(TAG, "refusing a RETAINED command on %.*s - publish it without the "
                               "retain flag, or clear it with an empty retained message",
                          e->topic_len, e->topic);
@@ -148,6 +174,7 @@ void on_mqtt_event(void*, esp_event_base_t, int32_t id, void* data) {
                 break;
             }
             InMsg m{};
+            m.prop = is_prop;
             std::memcpy(m.topic, e->topic, static_cast<size_t>(e->topic_len));
             m.topic_len = static_cast<uint16_t>(e->topic_len);
             if (e->data_len > 0) {
@@ -324,6 +351,25 @@ void drain_outbound() {
 void handle_inbound(const InMsg& m) {
     const std::string_view topic(m.topic, m.topic_len);
     const std::string_view payload(m.payload, m.payload_len);
+
+    // The terminal prop's presence.  Parsed HERE, on the transport task, not in
+    // the client's event handler: parsing allocates, and that handler holds the
+    // client's API lock.  It is not a command and never reaches the dispatcher.
+    if (m.prop) {
+        api::PropPresence pp;
+        if (!api::parse_prop_presence(payload, pp)) {
+            ESP_LOGW(TAG, "ignoring an unparseable prop presence document (%d bytes)",
+                     static_cast<int>(payload.size()));
+            return;
+        }
+        {
+            const std::lock_guard<std::mutex> lock(g_mu);
+            g_prop = pp;
+        }
+        ESP_LOGI(TAG, "terminal prop %s%s%s", pp.online ? "ONLINE" : "offline",
+                 pp.fw[0] != '\0' ? " fw " : "", pp.fw);
+        return;
+    }
     std::string base;
     {
         const std::lock_guard<std::mutex> lock(g_mu);
@@ -481,6 +527,11 @@ void mqtt_go_offline() {
     // dispatch_mu the whole time.
     esp_mqtt_client_stop(client);
     g_connected.store(false, std::memory_order_relaxed);
+}
+
+api::PropPresence mqtt_prop() {
+    const std::lock_guard<std::mutex> lock(g_mu);
+    return g_prop;
 }
 
 bool mqtt_connected() { return g_connected.load(std::memory_order_relaxed); }

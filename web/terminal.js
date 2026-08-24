@@ -353,12 +353,19 @@ function onState(s) {
   // about what the wall is doing.
   h24 = !!(s.cfg && s.cfg.h24);
 
+  // CROSS-REPO CONTRACT (2026-08-24).  "SYSTEM FAILURE" is exactly fourteen
+  // characters - six, a single space, seven - with NO trailing space, and the
+  // separate terminal prop took this literal from this file.  Phase 7's
+  // protocol mode floods the same string.  Three surfaces now print it; if it
+  // changes here it changes in another repository too, so it is not a string to
+  // tidy.  The flood cadence that goes with it is defined in FIRMWARE_SPEC 7.3.
+  const SYSTEM_FAILURE = "SYSTEM FAILURE";
   const sub = {
     idle: "SYSTEM STANDBY",
     running: "ENTER THE NUMBERS TO RESET",
-    zero: "SYSTEM FAILURE",
-    spin: "SYSTEM FAILURE",
-    reveal: "SYSTEM FAILURE",
+    zero: SYSTEM_FAILURE,
+    spin: SYSTEM_FAILURE,
+    reveal: SYSTEM_FAILURE,
   }[s.cd.phase] || s.cd.phase.toUpperCase();
   $("sub").textContent = s.mode === "countdown" ? sub : s.mode.toUpperCase() + " MODE";
 
