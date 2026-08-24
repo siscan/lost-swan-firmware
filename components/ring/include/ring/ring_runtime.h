@@ -83,6 +83,10 @@ private:
 
 // The per-column view.  Calibration offsets live in NVS, independent of this,
 // so a table swap never invalidates calibration.
+// Category name -> enum, shared by both loaders (the DOM one and the
+// streaming one) so they cannot disagree about what a category is.
+bool category_from(std::string_view s, RingCategory& out);
+
 class RingSet {
 public:
     // Ring A on cols 1-4, ring B on col 5, from the generated tables.
@@ -108,6 +112,17 @@ public:
     // ring: all columns need blank, '?' and digits 0-9; column 1 needs AM/PM;
     // the centre column needs the WiFi glyph.  Fails loudly at load.
     bool validate_roles(std::string* err) const;
+
+    // The streaming loader (ring_stream.cpp).  Same result as load_json, same
+    // validation, but the document is consumed as tokenizer events rather than
+    // built into a DOM first - which is what keeps a hostile upload from
+    // reaching the allocator at all.  See json_stream.h.
+    bool load_json_streaming(std::string_view text, std::string* err);
+    // Used only by that loader, to hand over what it built.
+    void adopt_streamed(std::shared_ptr<const RingTable> shared,
+                        const std::array<std::shared_ptr<const RingTable>, N_COLUMNS>& per,
+                        const std::string& schemes_json,
+                        const std::array<std::string, N_COLUMNS>& schemes);
 
     bool loaded_from_json() const { return from_json_; }
 

@@ -16,11 +16,20 @@ bool RingStager::stage(std::string_view body, std::string* err) {
         return false;
     }
 
-    // Validate into a throwaway set.  load_json parses, enforces the 50-slot
-    // physical size, and runs the per-column role assertion; on any failure it
-    // leaves the candidate on the compiled fallback and returns false.
+    // Validate into a throwaway set, through the STREAMING loader: it enforces
+    // the same 50-slot physical size and the same per-column role assertion,
+    // and on any failure it leaves the candidate on the compiled fallback -
+    // but it never builds a document.
+    //
+    // That last part is the whole reason this path is different from the
+    // command path.  A json::Value is ~64 bytes against a 2-byte minimum
+    // token, so the DOM parser's node cap (700, against a real ring.json's
+    // 535) was the only thing standing between an upload and an allocation
+    // failure - and with exceptions off, an allocation failure is abort(),
+    // which is a reboot.  The streaming loader's memory does not depend on the
+    // document at all, so the cap stops being load-bearing.
     auto candidate = std::make_unique<RingSet>();
-    if (!candidate->load_json(body, err)) return false;
+    if (!candidate->load_json_streaming(body, err)) return false;
 
     const std::lock_guard<std::mutex> lock(mu_);
     staged_ = std::move(candidate);

@@ -4,6 +4,18 @@
 #include "ring/json_write.h"
 
 namespace swan {
+
+// Shared by BOTH loaders - the DOM one and the streaming one - so they
+// cannot disagree about what a category is.
+bool category_from(std::string_view s, RingCategory& out) {
+    if (s == "blank") out = RingCategory::Blank;
+    else if (s == "digit") out = RingCategory::Digit;
+    else if (s == "ampm") out = RingCategory::AmPm;
+    else if (s == "glyph") out = RingCategory::Glyph;
+    else if (s == "wifi") out = RingCategory::Wifi;
+    else return false;
+    return true;
+}
 namespace {
 
 char lower(char c) { return (c >= 'A' && c <= 'Z') ? static_cast<char>(c - 'A' + 'a') : c; }
@@ -16,15 +28,6 @@ bool ieq(std::string_view a, std::string_view b) {
     return true;
 }
 
-bool category_from(std::string_view s, RingCategory& out) {
-    if (s == "blank") out = RingCategory::Blank;
-    else if (s == "digit") out = RingCategory::Digit;
-    else if (s == "ampm") out = RingCategory::AmPm;
-    else if (s == "glyph") out = RingCategory::Glyph;
-    else if (s == "wifi") out = RingCategory::Wifi;
-    else return false;
-    return true;
-}
 
 // The drum turns one way, so "nearest" means nearest going forward.
 int nearest_forward(const std::vector<int>& slots, int from, int count) {
@@ -312,6 +315,21 @@ int RingSet::index_for_role(int column, Role r, int digit, int from, bool* diag)
     if (diag != nullptr) *diag = true;
     const int blank = t.index_for_role(Role::Blank, 0, from);
     return blank >= 0 ? blank : 0;
+}
+
+void RingSet::adopt_streamed(std::shared_ptr<const RingTable> shared,
+                             const std::array<std::shared_ptr<const RingTable>, N_COLUMNS>& per,
+                             const std::string& schemes_json,
+                             const std::array<std::string, N_COLUMNS>& schemes) {
+    shared_ = std::move(shared);
+    per_col_ = per;
+    from_json_ = true;
+    // Presentation: absent blocks keep the compiled defaults, exactly as the
+    // DOM path does - a ring without colours still turns.
+    if (!schemes_json.empty()) schemes_json_ = schemes_json;
+    for (std::size_t i = 0; i < N_COLUMNS; ++i) {
+        if (!schemes[i].empty()) scheme_[i] = schemes[i];
+    }
 }
 
 bool RingSet::validate_roles(std::string* err) const {

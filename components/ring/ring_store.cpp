@@ -60,7 +60,17 @@ esp_err_t init() {
 
     const esp_err_t err = esp_vfs_littlefs_register(&conf);
 
-    if (unwatched) esp_task_wdt_add(idle);
+    if (unwatched) {
+        // Checked: the idle subscription is the ONLY coverage for "something
+        // above priority 0 is spinning and starving everything below it", so
+        // failing to restore it would silently remove a whole class of
+        // detection - and it would be restored-looking in every other way.
+        const esp_err_t re = esp_task_wdt_add(idle);
+        if (re != ESP_OK) {
+            ESP_LOGE(TAG, "*** the idle task is no longer watched (%s) - a spinning task will "
+                          "no longer be caught ***", esp_err_to_name(re));
+        }
+    }
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "littlefs mount failed (%s); compiled ring table active",
                  esp_err_to_name(err));
