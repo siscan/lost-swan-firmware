@@ -43,9 +43,10 @@ jobs:
       # node parses all four in under a second.
       - name: Web scripts parse
         run: |
-          for f in web/*.js; do node --check "$f" || exit 1; done
-          echo "parsed: $(ls web/*.js | tr '
-' ' ')"
+          for f in web/*.js; do
+            echo "checking $f"
+            node --check "$f" || exit 1
+          done
 
       - name: Mirror widget (node, faked DOM, virtual clock)
         run: node test/host/test_flap.js
