@@ -67,12 +67,12 @@ struct MemStore final : CountdownStore {
 struct DevMqtt final : api::MqttAdmin {
     api::MqttStatus st;
     api::MqttStatus mqtt_status() override { return st; }
-    bool mqtt_configure(bool enabled, std::string_view uri, std::string_view,
-                        std::string_view, std::string_view base, std::string_view) override {
-        st.enabled = enabled;
-        st.uri = std::string(uri);
-        if (!base.empty()) st.base = std::string(base);
-        std::printf("mqtt.config enabled=%d uri=%s\n", enabled ? 1 : 0, st.uri.c_str());
+    bool mqtt_configure(const api::MqttAdmin::MqttSettings& in) override {
+        st.enabled = in.enabled;
+        if (in.uri) st.uri = std::string(*in.uri);
+        if (in.base) st.base = std::string(*in.base);
+        std::printf("mqtt.config enabled=%d uri=%s\n", in.enabled ? 1 : 0,
+                    st.uri.c_str());
         return true;
     }
 };
