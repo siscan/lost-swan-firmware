@@ -95,6 +95,11 @@ private:
     bool done_ = false;
     int uni_ = 0;
     uint32_t uni_val_ = 0;
+    // A pending high surrogate, waiting for its \uDC00-\uDFFF partner.  JSON
+    // spells a codepoint above the BMP as a PAIR; encoding each half on its own
+    // produces CESU-8, which is not valid UTF-8 and would go straight into a
+    // ring slot id and back out of /api/ring as mojibake.
+    uint32_t high_surrogate_ = 0;
     std::string err_;
 };
 

@@ -221,6 +221,78 @@ void test_a_flood_costs_nothing() {
     CHECK_EQ(s.col(0).slot_count(), RING_SLOT_COUNT);
 }
 
+
+// A surrogate PAIR is one codepoint and must come out as one 4-byte UTF-8
+// sequence; half a pair is not a character at all.  Encoding each half
+// separately produces CESU-8, which is not valid UTF-8 - and it would land in a
+// ring slot id and come back out of /api/ring as mojibake in a browser.
+struct Collector final : json::StreamHandler {
+    std::vector<std::string> strings;
+    bool on_string(std::string_view v) override { strings.emplace_back(v); return true; }
+};
+
+void test_surrogate_pairs_and_lone_halves() {
+    Collector c;
+    json::StreamParser p(c);
+    CHECK(p.feed(R"({"a":"\ud83d\ude00"})"));
+    CHECK(p.finish());
+    CHECK_EQ(c.strings.size(), 1u);
+    // U+1F600, the four bytes F0 9F 98 80.
+    CHECK(c.strings[0] == std::string("\xF0\x9F\x98\x80"));
+
+    const char* bad[] = {
+        R"({"a":"\ud83d"})",        // a high half, then the string ends
+        R"({"a":"\ude00"})",         // a low half with nothing before it
+        R"({"a":"\ud83d\n"})",        // a high half followed by a plain escape
+        R"({"a":"\ud83dA"})",       // a high half followed by an ordinary character
+    };
+    for (const char* b : bad) {
+        Counter cc;
+        const bool ok = parse_all(b, cc, 5);
+        if (ok) std::printf("  accepted a broken surrogate: %s" "\n", b);
+        CHECK(!ok);
+    }
+}
+
+// Keys are matched at an exact DEPTH as well as an exact state.  The format
+// skips anything unrecognised by depth, so an unrecognised object nested inside
+// a column could otherwise carry a "ring" key and be read as that column's
+// table - and one nested inside a slot could overwrite the slot's own id.
+void test_a_nested_key_is_not_the_real_one() {
+    const std::string doc = read_file(g_argv1 != nullptr ? g_argv1 : "data/ring.json");
+    if (doc.empty()) { std::printf("  SKIPPED: no ring.json" "\n"); return; }
+
+    RingSet plain;
+    CHECK(plain.load_json_streaming(doc, nullptr));
+    const std::string want = plain.col(4).slot(0).id;
+
+    // The SAME document, with the load-bearing key names planted one level
+    // deeper inside column 1 - an object the format is entitled to skip.  It is
+    // inserted rather than appended so the column positions do not move: the
+    // question is whether "ring" at the wrong depth is read as a ring, not
+    // whether an extra column shifts anything.
+    std::string doc2 = doc;
+    const std::string needle = "\"columns\": [";
+    std::size_t at = doc2.find(needle);
+    if (at == std::string::npos) at = doc2.find("\"columns\":[");
+    CHECK(at != std::string::npos);
+    const std::size_t brace = doc2.find('{', at);
+    CHECK(brace != std::string::npos);
+    doc2.insert(brace + 1,
+                "\"meta\":{\"ring\":[{\"i\":0,\"id\":\"WRONG\",\"cat\":\"glyph\"}],"
+                "\"scheme\":\"nonsense\",\"slots\":[]},");
+
+    RingSet nested;
+    std::string err;
+    const bool ok = nested.load_json_streaming(doc2, &err);
+    if (!ok) std::printf("  rejected: %s" "\n", err.c_str());
+    CHECK(ok);
+    // The junk went to column 1, which must be untouched, and nothing became a
+    // 1-slot table.
+    CHECK_EQ(nested.col(0).slot_count(), RING_SLOT_COUNT);
+    CHECK(nested.col(4).slot(0).id == want);
+}
+
 }  // namespace
 
 void run_tests() {
@@ -229,4 +301,6 @@ void run_tests() {
     test_streaming_and_dom_agree_on_the_real_ring();
     test_streaming_rejects_the_same_documents_the_dom_does();
     test_a_flood_costs_nothing();
+    test_surrogate_pairs_and_lone_halves();
+    test_a_nested_key_is_not_the_real_one();
 }

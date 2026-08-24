@@ -148,15 +148,24 @@ public:
             after_key_ = true;
             return true;
         }
+        // EVERY key is matched at an exact depth as well as an exact state.
+        // Matching by name alone meant an unrecognised object nested inside a
+        // column - which the format explicitly allows, since anything
+        // unrecognised is skipped - could carry a "ring" or a "slots" key and
+        // be read as that column's table, and a nested object inside a slot
+        // could overwrite the slot's own id or cat with its own.  The skip rule
+        // is by depth; the key rule has to be too, or the two disagree.
+        const bool in_column = state_ == St::Columns && depth_ == columns_depth_ + 1;
+        const bool in_slot = collecting() && depth_ == slots_depth_ + 1;
         if (k == "slots" && depth_ == 1) pending_ = Key::Slots;
         else if (k == "columns" && depth_ == 1) pending_ = Key::Columns;
         else if (k == "schemes" && depth_ == 1) pending_ = Key::Schemes;
-        else if ((k == "ring" || k == "slots") && state_ == St::Columns) pending_ = Key::ColumnRing;
-        else if (k == "scheme" && state_ == St::Columns) pending_ = Key::ColumnScheme;
-        else if (k == "i") pending_ = Key::SlotI;
-        else if (k == "id") pending_ = Key::SlotId;
-        else if (k == "label") pending_ = Key::SlotLabel;
-        else if (k == "cat") pending_ = Key::SlotCat;
+        else if ((k == "ring" || k == "slots") && in_column) pending_ = Key::ColumnRing;
+        else if (k == "scheme" && in_column) pending_ = Key::ColumnScheme;
+        else if (k == "i" && in_slot) pending_ = Key::SlotI;
+        else if (k == "id" && in_slot) pending_ = Key::SlotId;
+        else if (k == "label" && in_slot) pending_ = Key::SlotLabel;
+        else if (k == "cat" && in_slot) pending_ = Key::SlotCat;
         else pending_ = Key::None;
         return true;
     }
