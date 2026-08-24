@@ -809,7 +809,8 @@ configurable.
 - At zero (Q4, defaults): show 000:00; after `countdown.zero_hold_s` (default
   **3**) all five columns spin continuously at alarm speed for
   `countdown.spin_s` (default **6**), then land on the **reveal frame** (five
-  glyphs, `countdown.reveal[5]`, config — TBD by Nico, currently unset). Audio
+  glyphs, `countdown.reveal[5]` — **the canon five since 2026-08-24: staff,
+  spiral, obelisk, bird, branch**, §11). Audio
   loops for at most `countdown.failure_loop_s` (default **60**). The display
   stays on the reveal until the mode is changed or the Numbers are entered
   again (which restarts at 108:00). No auto-return to clock unless
@@ -836,7 +837,13 @@ configurable.
   index unknown, and the frame scheduler scores an unknown index as a full
   49-flip wrap — ~3.3 s at the default 15 flaps/s, and as little as one flip
   when the reveal is near where the spin stopped. Only the firmware can see the
-  last column arrive. When it does, `swan/event` and `/ws` both carry
+  last column arrive. **Measured on the board**: 0.146 s and 1.695 s with the
+  reveal unset (all blanks, one flip away), and **2.45–2.48 s across three runs
+  with the canon five** — a whole failure beat, zero to confirmed, of **11.45–
+  11.52 s**. On simulated drums the spin stops in the same place every time, so
+  the tight spread is the model, not a guarantee; on real drums it will vary,
+  which is the argument for announcing the landing rather than estimating it.
+  When it does, `swan/event` and `/ws` both carry
 
   ```json
   {"e":"reveal","seq":7,"t":1787541500}
@@ -1211,9 +1218,36 @@ countdown.seconds_live_s default 240 (0..6480).  Seconds are frozen on 00 above
                          this and tick below it.  240 is the 4-minute cue, so
                          the display waking and the warning sound coincide.
                          NVS key cd_live_s
-countdown.reveal[5]      ring indices, unset until Nico picks.  NOTE: an index
-                         means a different character on col 5, whose ring
-                         differs — set these by NAME when the web UI lands
+countdown.reveal[5]      THE CANON FIVE, default since 2026-08-24:
+                           staff  spiral  obelisk  bird  branch
+                         columns 1 to 5, the glyphs the Swan's screen lands
+                         on at zero.  Source: Lostpedia, the Swan station
+                         countdown timer / hieroglyphs.
+
+                         Stored as ring indices (an index is all
+                         reveal_frame can use) but NEVER written as one: the
+                         same index is a different character on col 5, whose
+                         ring differs.  The default is a list of NAMES
+                         (ModesConfig::REVEAL_CANON) resolved against
+                         whichever ring loaded, at boot, and only when NVS
+                         carries no reveal - five deliberate blanks is a
+                         legal choice and is not overwritten every reboot.
+                         On the shipped rings that resolves to A37 A36 A35
+                         A34 and B35; note col 5 is 35 and NOT ring A's 33,
+                         which is what resolving by name buys.
+                         NVS key cd_reveal (blob of 5 x int32)
+
+                         VERIFIED AGAINST THE MANIFESTS, because the sheet
+                         carries near-siblings and every one of the five is
+                         `art_source: DJ original SVG (on-screen canon)`:
+                           staff   not `hook`  (curved hook, master #13)
+                           branch  not `fork`  (forked branch, master #14)
+                           obelisk not `boundloop` or `vloop`
+                         Neither rejected sibling is even on col 5's reduced
+                         ring; `branch` is, which is the one that had to be
+                         true.  `test_modes.cpp` pins all of it and fails
+                         with "column 5 cannot render fork" if the wrong
+                         branch is chosen
 countdown.land_on_tick   default true
 clock.land_on_tick       default false
 countdown.zero_hold_s    default 3

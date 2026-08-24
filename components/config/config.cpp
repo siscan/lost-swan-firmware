@@ -235,6 +235,7 @@ esp_err_t load_app(AppConfig& c) {
         for (int i = 0; i < N_COLUMNS; ++i) {
             c.modes.reveal[static_cast<size_t>(i)] = reveal[i];
         }
+        c.reveal_stored = true;
     }
 
     nvs_close(h);

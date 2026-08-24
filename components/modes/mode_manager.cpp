@@ -680,6 +680,15 @@ void ModeManager::tick_countdown(int64_t utc_ms) {
     }
 }
 
+std::array<int, N_COLUMNS> canon_reveal_slots(const RingSet& ring) {
+    std::array<int, N_COLUMNS> out{};
+    for (int i = 0; i < N_COLUMNS; ++i) {
+        out[static_cast<size_t>(i)] =
+            ring.col(i).index_for_token(ModesConfig::REVEAL_CANON[static_cast<size_t>(i)]);
+    }
+    return out;
+}
+
 void ModeManager::persist() { store_.save(cd_); }
 
 void ModeManager::issue(const Frame& f, int64_t utc_ms, int64_t land_at_ms) {

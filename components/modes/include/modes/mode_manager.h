@@ -102,11 +102,34 @@ struct ModesConfig {
     // somebody comes home.
     int failure_loop_s = 60;         // countdown.failure_loop_s, NVS cd_loop_s
     int32_t alarm_flaps_s = 25;        // motion.flaps_s_alarm
+    // The canon reveal, from the show's screen at zero: staff, spiral, obelisk,
+    // bird, branch, in column order 1->5.  NAMES, not indices, because the same
+    // index is a different character on column 5 (spec 4) - these are resolved
+    // against whichever ring is loaded, so they survive a ring upload.
+    // Source: Lostpedia, "Countdown timer" / the Swan station hieroglyphs.
+    //
+    // Every one is `art_source: DJ original SVG (on-screen canon)` in both
+    // manifests, which is what separates them from their near-siblings: `staff`
+    // from `hook` (curved hook, master #13) and `branch` from `fork` (forked
+    // branch, master #14).  Neither sibling is on column 5's reduced ring;
+    // `branch` is, at slot 35, which is the one that had to be true.
+    static constexpr const char* REVEAL_CANON[N_COLUMNS] = {"staff", "spiral", "obelisk",
+                                                            "bird", "branch"};
+
     // countdown.reveal[5]: ring indices; -1 = unset -> blank (Nico has not
     // picked the glyphs yet - decision log).  NOTE: an index means a
     // different character on column 5, whose ring differs - see spec 11.
     std::array<int, N_COLUMNS> reveal{-1, -1, -1, -1, -1};
 };
+
+// Resolve REVEAL_CANON against a loaded ring, by NAME.  Returns the slot index
+// per column, or -1 for a column whose ring cannot render its canon glyph -
+// blank rather than wrong, and the caller says so loudly.
+//
+// Pure and host-tested because it is the SHIPPED DEFAULT: it runs once at boot
+// on a board with no stored reveal, which is exactly the path nobody exercises
+// again after the first power-on.
+std::array<int, N_COLUMNS> canon_reveal_slots(const RingSet& ring);
 
 class ModeManager {
 public:

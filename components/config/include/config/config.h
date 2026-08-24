@@ -23,6 +23,14 @@ struct AppConfig {
     ModesConfig modes;                          // clock.h24, msg.dwell_s, countdown.*
     std::string tz = "PST8PDT,M3.2.0,M11.1.0";  // time.tz [Q2: default US Pacific]
     std::string ntp = "pool.ntp.org";           // time.ntp
+
+    // Did NVS actually carry a countdown.reveal?  Output only; save_app ignores
+    // it.  The distinction matters because the shipped default is the canon
+    // five (ModeManager::REVEAL_CANON) resolved by NAME at boot, and "the key
+    // is absent" has to be told apart from "somebody deliberately chose five
+    // blanks" - which is a legal configuration and must not be overwritten
+    // every reboot.
+    bool reveal_stored = false;
 };
 
 // WiFi STA credentials (spec 11 wifi.ssid / wifi.pass).  Kept separate from

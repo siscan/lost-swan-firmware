@@ -911,6 +911,31 @@ mqtt mqtt://<dev-machine>:1883                    # on the console
       real glyphs it can be up to a full 49-flip wrap (~3.3 s at 15 flaps/s).
       That range is exactly why the beat is announced rather than estimated.
 
+### 30b. The canon reveal frame — **DONE 2026-08-24**
+
+`countdown.reveal` was the last unset config value. The five are staff, spiral,
+obelisk, bird, branch, columns 1 to 5 (spec §11, Lostpedia).
+
+- [x] **Verified against the manifests before setting anything.** All five are
+      `art_source: DJ original SVG (on-screen canon)` in BOTH rings, which is
+      what separates them from the near-siblings the sheet also carries:
+      `staff` from `hook` (curved hook, master #13), `branch` from `fork`
+      (forked branch, master #14), `obelisk` from `boundloop` and `vloop`.
+      Neither rejected sibling is on column 5's reduced ring at all.
+- [x] **Column 5 carries `branch`**, at ring B slot 35 — the one thing that had
+      to be true, and the reason to check before setting rather than after.
+- [x] Set by NAME through the dispatcher and persisted:
+      `cfg.reveal = ['staff','spiral','obelisk','bird','branch']`.
+- [x] **`preset.set reveal` renders it**: `idx = [37, 36, 35, 34, 35]`,
+      `face = [staff, spiral, obelisk, bird, branch]`. Note column 5 is **35**,
+      not ring A's 33 — the by-name resolution earning its keep.
+- [x] **The countdown-zero landing renders the same frame**, `[37,36,35,34,35]`.
+- [x] **Convergence re-measured with five real glyphs**: 2.479 / 2.454 / 2.480 s
+      from the reveal phase to all five confirmed, against 0.146 s and 1.695 s
+      when the frame was blanks. Whole failure beat, zero to confirmed:
+      **11.45–11.52 s**. The tight spread is the simulated drum stopping in the
+      same place every run; a real one will not.
+
 ### 31. The terminal prop's presence — **DONE 2026-08-24 (simulated peer)**
 
 `swan/prop/terminal`, published by the prop, read-only here.

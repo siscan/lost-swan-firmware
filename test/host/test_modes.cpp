@@ -718,6 +718,48 @@ void test_maintenance_suspends_everything() {
 // convergence pass runs every tick, so "stop everything" lasted 50 ms and the
 // axes carried on stepping into dead drivers, completing moves and publishing
 // faces the drums never reached.
+// THE SHIPPED DEFAULT (spec 11).  The canon five from the show's screen at
+// zero, resolved BY NAME against whichever ring is loaded - so it follows a ring
+// upload instead of pointing at whatever now sits at a hard-coded slot.  This
+// runs once, at the first boot of a board with empty NVS, which is precisely the
+// path nobody ever exercises again.
+void test_the_canon_reveal_resolves_on_both_rings() {
+    Rig r;
+    const RingSet& ring = r.ring;
+    const std::array<int, N_COLUMNS> slots = canon_reveal_slots(ring);
+
+    // Every column resolves - column 5's reduced ring carries `branch`, which is
+    // the one that had to be true.
+    for (int i = 0; i < N_COLUMNS; ++i) {
+        if (slots[static_cast<size_t>(i)] < 0) {
+            std::printf("  column %d cannot render %s\n", i + 1,
+                        ModesConfig::REVEAL_CANON[static_cast<size_t>(i)]);
+        }
+        CHECK(slots[static_cast<size_t>(i)] >= 0);
+        // ... and the slot it picked really is that glyph.
+        CHECK(ring.col(i).slot(slots[static_cast<size_t>(i)]).id ==
+              std::string(ModesConfig::REVEAL_CANON[static_cast<size_t>(i)]));
+    }
+
+    // The order is the show's, columns 1 to 5.
+    const char* want[] = {"staff", "spiral", "obelisk", "bird", "branch"};
+    for (int i = 0; i < N_COLUMNS; ++i) {
+        CHECK(std::string(ModesConfig::REVEAL_CANON[static_cast<size_t>(i)]) == want[i]);
+    }
+
+    // Column 5 is on a DIFFERENT ring, so its index must differ from column 4's
+    // for the same-named glyph would be a coincidence - the point of resolving
+    // by name rather than copying an index across.
+    const int c4_bird = ring.col(3).index_for_token("bird");
+    const int c5_bird = ring.col(4).index_for_token("bird");
+    CHECK(c4_bird >= 0 && c5_bird >= 0);
+    CHECK(c4_bird != c5_bird);
+
+    // The near-siblings the manifests carry are NOT what we picked.
+    CHECK(std::string(ModesConfig::REVEAL_CANON[4]) != "fork");
+    CHECK(std::string(ModesConfig::REVEAL_CANON[0]) != "hook");
+}
+
 void test_en_down_stops_the_frame_layer() {
     Rig r;
     r.configure(cfg_minutely());
@@ -904,6 +946,7 @@ void run_tests() {
     test_time_step_preserves_message_dwell();
     test_mode_set_message_requires_message();
     test_maintenance_suspends_everything();
+    test_the_canon_reveal_resolves_on_both_rings();
     test_en_down_stops_the_frame_layer();
     test_maintenance_survives_and_blocks_countdown();
     test_excluded_columns_leave_a_hole();

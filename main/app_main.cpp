@@ -335,6 +335,39 @@ extern "C" void app_main() {
 
     swan::ring_store::init();  // never fails the boot; worst case compiled table
 
+    // THE CANON REVEAL, resolved by NAME against whichever ring just loaded.
+    // Spec 11: the five glyphs the show's screen lands on at zero - staff,
+    // spiral, obelisk, bird, branch, columns 1 to 5.  Stored as indices (an
+    // index is all `reveal_frame` can use) but never WRITTEN as one, because
+    // the same index is a different character on column 5; resolving the names
+    // here means the shipped default follows a ring upload instead of pointing
+    // at whatever now sits at that slot.
+    //
+    // Only when NVS carried nothing.  Five deliberate blanks is a legal choice
+    // and must not be overwritten on every boot.
+    if (!g_app.reveal_stored) {
+        const std::array<int, swan::N_COLUMNS> slots =
+            swan::canon_reveal_slots(swan::ring_store::get());
+        for (int i = 0; i < swan::N_COLUMNS; ++i) {
+            const char* name = swan::ModesConfig::REVEAL_CANON[i];
+            const int idx = slots[static_cast<size_t>(i)];
+            if (idx < 0) {
+                // Loud, and blank rather than wrong: a ring that cannot render
+                // the canon glyph for a column is a fact worth seeing at boot.
+                ESP_LOGW(TAG, "reveal: column %d's ring has no '%s'; that column stays blank",
+                         i + 1, name);
+                continue;
+            }
+            g_app.modes.reveal[static_cast<size_t>(i)] = idx;
+        }
+        ESP_LOGI(TAG, "reveal: canon default %s %s %s %s %s -> slots %d %d %d %d %d",
+                 swan::ModesConfig::REVEAL_CANON[0], swan::ModesConfig::REVEAL_CANON[1],
+                 swan::ModesConfig::REVEAL_CANON[2], swan::ModesConfig::REVEAL_CANON[3],
+                 swan::ModesConfig::REVEAL_CANON[4], g_app.modes.reveal[0],
+                 g_app.modes.reveal[1], g_app.modes.reveal[2], g_app.modes.reveal[3],
+                 g_app.modes.reveal[4]);
+    }
+
     // Per-column mode and maintenance (spec 5.9), before motion starts, so a
     // simulated or disabled column is never briefly driven for real.  A fresh
     // NVS yields all-real, not-in-maintenance, by ColumnConfig's defaults.
