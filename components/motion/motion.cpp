@@ -498,6 +498,7 @@ esp_err_t home(int col) {
     r.kind = ReqKind::Home;
 
     if (col < 0) {
+        int posted = 0;
         for (int i = 0; i < N_COLUMNS; ++i) {
             // A disabled column is never homed - not at boot, not on a
             // re-home-all.  It is excused deliberately, so it must not quietly
@@ -505,8 +506,10 @@ esp_err_t home(int col) {
             if (g_cols.mode[static_cast<size_t>(i)] == ColumnMode::Disabled) continue;
             r.delay_ticks = 1 + i * HOME_STAGGER_MS;  // control ticks == ms
             post(i, r);
+            ++posted;
         }
-        return ESP_OK;
+        // With every column disabled this posted nothing, and used to say ok.
+        return posted > 0 ? ESP_OK : ESP_ERR_INVALID_STATE;
     }
     if (!valid_col(col)) return ESP_ERR_INVALID_ARG;
     if (g_cols.mode[static_cast<size_t>(col)] == ColumnMode::Disabled) {
@@ -536,6 +539,14 @@ esp_err_t go(int col, int index) {
 esp_err_t step_open_loop(int col, int64_t usteps, int32_t flaps_s) {
     if (!valid_col(col) || usteps < 0 || flaps_s <= 0) return ESP_ERR_INVALID_ARG;
     if (g_ctl[col].state.load(RLX) == AxisState::Homing) return ESP_ERR_INVALID_STATE;
+    // A disabled column is excused from everything (spec 5.9) - home() has
+    // always said so and this did not, so `spin` on a disabled column was
+    // accepted, ran the DDA for its full duration and left the axis reporting a
+    // position for a drum nobody is driving.  The frame layer then skips it, so
+    // nothing ever corrects the lie.
+    if (g_cols.mode[static_cast<size_t>(col)] == ColumnMode::Disabled) {
+        return ESP_ERR_INVALID_STATE;
+    }
 
     // Remember that this was the alarm-speed whirl: a fault during it drops EN.
     g_fast_spin[col] = flaps_s >= g_params.flaps_s_alarm;
@@ -570,7 +581,24 @@ esp_err_t set_cal(int col, int32_t usteps) {
 
 esp_err_t adjust_cal(int col, int32_t delta) {
     if (!valid_col(col)) return ESP_ERR_INVALID_ARG;
-    return set_cal(col, g_ctl[col].cal_offset.load(RLX) + delta);
+    const esp_err_t err = set_cal(col, g_ctl[col].cal_offset.load(RLX) + delta);
+    if (err != ESP_OK) return err;
+
+    // Re-seek the index the column is already showing, so the nudge MOVES the
+    // drum.  This lives here rather than in each caller because it did not:
+    // the CLI re-seeked and the web path did not, so the Calibrate page's
+    // +-1/+-10 buttons changed a number and left the card exactly where it was
+    // - on the one page whose entire purpose is "nudge until the blank card
+    // hangs flat against the bezel lip".  A caller cannot be trusted to
+    // remember; adjusting the offset IS a move.
+    //
+    // ESP_ERR_INVALID_STATE is returned deliberately when the column has no
+    // home reference: the offset HAS been applied, but nothing can move until
+    // the column is homed, and the caller must be able to say so rather than
+    // report a nudge that did nothing.
+    const AxisPublished a = axis_read_published(g_ctl[col]);
+    if (!ring_index_valid(a.index)) return ESP_ERR_INVALID_STATE;
+    return go(col, a.index);
 }
 
 void info(int col, AxisInfo& out) {

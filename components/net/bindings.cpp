@@ -60,8 +60,13 @@ void IdfMotionAdmin::set_params(const MotionParams& p) { motion::set_params(p); 
 
 bool IdfMotionAdmin::home(int col) { return motion::home(col) == ESP_OK; }
 
-bool IdfMotionAdmin::adjust_cal(int col, int32_t delta) {
-    return motion::adjust_cal(col, delta) == ESP_OK;
+api::MotionAdmin::CalOutcome IdfMotionAdmin::adjust_cal(int col, int32_t delta) {
+    const esp_err_t err = motion::adjust_cal(col, delta);
+    if (err == ESP_OK) return CalOutcome::Moved;
+    // The offset was applied; there is simply no home reference to re-seek
+    // against, so nothing moved and the caller has to say so.
+    if (err == ESP_ERR_INVALID_STATE) return CalOutcome::NotHomed;
+    return CalOutcome::BadColumn;
 }
 
 bool IdfMotionAdmin::spin_open_loop(int col, int32_t flaps_s, int seconds) {
@@ -164,18 +169,17 @@ api::MqttStatus IdfMqttAdmin::mqtt_status() {
     return s;   // note: the password is deliberately absent
 }
 
-bool IdfMqttAdmin::mqtt_configure(bool enabled, std::string_view uri, std::string_view user,
-                                  std::string_view pass, std::string_view base,
-                                  std::string_view ha_prefix) {
+bool IdfMqttAdmin::mqtt_configure(const api::MqttAdmin::MqttSettings& in) {
     config::MqttConfig c = mqtt_cached();
-    c.enabled = enabled;
-    c.uri = std::string(uri);
-    c.user = std::string(user);
-    // An empty password KEEPS the stored one, so the Settings page can send the
-    // form back without having been shown the secret it is about to resave.
-    if (!pass.empty()) c.pass = std::string(pass);
-    if (!base.empty()) c.base = std::string(base);
-    if (!ha_prefix.empty()) c.ha_prefix = std::string(ha_prefix);
+    c.enabled = in.enabled;
+    // Absent keeps, present replaces - including present-and-empty, which
+    // clears.  Overwriting unconditionally is what wiped the credentials on
+    // any partial update.
+    if (in.uri) c.uri = std::string(*in.uri);
+    if (in.user) c.user = std::string(*in.user);
+    if (in.pass) c.pass = std::string(*in.pass);
+    if (in.base) c.base = std::string(*in.base);
+    if (in.ha_prefix) c.ha_prefix = std::string(*in.ha_prefix);
     if (config::save_mqtt(c) != ESP_OK) return false;
     {
         const std::lock_guard<std::mutex> lock(g_mqtt_cache_mu);

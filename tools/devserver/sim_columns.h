@@ -153,13 +153,20 @@ public:
     }
     bool sim_available() const override { return true; }
 
-    bool adjust_cal(int i, int32_t delta) override {
-        if (!valid(i)) return false;
+    // Re-seeks, exactly as motion::adjust_cal does on target.  If this did not,
+    // the dev server would be the one place where the Calibrate page's nudge
+    // appears to work - which is the wrong way round for the surface the UI is
+    // developed against.
+    api::MotionAdmin::CalOutcome adjust_cal(int i, int32_t delta) override {
+        if (!valid(i)) return CalOutcome::BadColumn;
         std::atomic<int32_t>& c = ax_[static_cast<size_t>(i)].ctl.cal_offset;
         const int32_t next = normalize_cal(c.load(std::memory_order_relaxed) + delta);
         c.store(next, std::memory_order_relaxed);
         p_.cal[i] = next;
-        return true;
+        const AxisPublished pub = axis_read_published(ax_[static_cast<size_t>(i)].ctl);
+        if (!ring_index_valid(pub.index)) return CalOutcome::NotHomed;
+        ax_[static_cast<size_t>(i)].post_go(pub.index);
+        return CalOutcome::Moved;
     }
 
 private:

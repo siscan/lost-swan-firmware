@@ -13,6 +13,7 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -36,7 +37,19 @@ public:
     // Live apply, no persistence - the UI sliders use this.
     virtual void set_params(const MotionParams& p) = 0;
     virtual bool home(int col) = 0;  // col < 0 = all
-    virtual bool adjust_cal(int col, int32_t delta) = 0;
+
+    // A calibration nudge is a MOVE, not a number: adjust_cal re-seeks the
+    // index the column is showing so the card actually shifts (spec 5.6, "nudge
+    // until the blank card hangs flat").  The three outcomes are distinguished
+    // because two of them used to be reported as plain success - the web path
+    // returned ok while the drum stood still, on the one page whose controls
+    // exist to move it.
+    enum class CalOutcome {
+        Moved,      // offset applied and the axis accepted a re-seek
+        NotHomed,   // offset applied, but the column has no home reference yet
+        BadColumn,  // nothing happened
+    };
+    virtual CalOutcome adjust_cal(int col, int32_t delta) = 0;
     // Bench test spin (spec 10.2 Calibrate, spec 13 `spin`).  Open loop: the
     // displayed index becomes unknown until the active mode moves the column
     // back to the current frame.
@@ -187,9 +200,23 @@ public:
     virtual MqttStatus mqtt_status() = 0;
     // Persist and ask the transport to re-apply.  The password is write-only
     // from the API's point of view: it is never reported back.
-    virtual bool mqtt_configure(bool enabled, std::string_view uri, std::string_view user,
-                                std::string_view pass, std::string_view base,
-                                std::string_view ha_prefix) = 0;
+    //
+    // Every field is OPTIONAL and absent means KEEP.  It has to: the state
+    // document deliberately never exposes the password, so a Settings form
+    // cannot round-trip it - and when these were plain string_views, a partial
+    // update ("just change the base topic") silently cleared the broker
+    // username and password.  Verified on hardware: user `swanuser` became
+    // `(none)` after a config that never mentioned it.  Present-and-empty
+    // still means CLEAR, so an anonymous broker is expressible.
+    struct MqttSettings {
+        bool enabled = false;
+        std::optional<std::string_view> uri;
+        std::optional<std::string_view> user;
+        std::optional<std::string_view> pass;
+        std::optional<std::string_view> base;
+        std::optional<std::string_view> ha_prefix;
+    };
+    virtual bool mqtt_configure(const MqttSettings& s) = 0;
 };
 
 struct Context {

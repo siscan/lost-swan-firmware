@@ -272,13 +272,15 @@ int cmd_cal(int argc, char** argv) {
     long d;
     if (!parse_col(argv[1], col, false) || !parse_long(argv[2], d)) return 1;
 
-    motion::adjust_cal(col, static_cast<int32_t>(d));
+    // The re-seek that makes the nudge visible lives in motion::adjust_cal
+    // now, so this path and the web path cannot drift apart again - they
+    // did, and the web one was the one that silently did nothing.
+    const esp_err_t err = motion::adjust_cal(col, static_cast<int32_t>(d));
     AxisInfo a;
     motion::info(col, a);
-    std::printf("col %d cal_offset = %ld usteps\n", col, static_cast<long>(a.cal_offset));
-
-    // Re-seek the same index so the nudge is visible immediately.
-    if (ring_index_valid(a.index)) motion::go(col, a.index);
+    std::printf("col %d cal_offset = %ld usteps%s\n", col,
+                static_cast<long>(a.cal_offset),
+                err == ESP_ERR_INVALID_STATE ? "  (not homed - nothing moved)" : "");
     return 0;
 }
 

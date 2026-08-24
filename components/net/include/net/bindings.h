@@ -19,7 +19,7 @@ public:
     MotionParams params() override;
     void set_params(const MotionParams& p) override;
     bool home(int col) override;
-    bool adjust_cal(int col, int32_t delta) override;
+    api::MotionAdmin::CalOutcome adjust_cal(int col, int32_t delta) override;
     bool spin_open_loop(int col, int32_t flaps_s, int seconds) override;
     ColumnConfig columns() override;
     bool set_columns(const ColumnConfig& c) override;
@@ -48,9 +48,7 @@ public:
 class IdfMqttAdmin final : public api::MqttAdmin {
 public:
     api::MqttStatus mqtt_status() override;
-    bool mqtt_configure(bool enabled, std::string_view uri, std::string_view user,
-                        std::string_view pass, std::string_view base,
-                        std::string_view ha_prefix) override;
+    bool mqtt_configure(const api::MqttAdmin::MqttSettings& s) override;
 };
 
 class IdfAudioAdmin final : public api::AudioAdmin {
