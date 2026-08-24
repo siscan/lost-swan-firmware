@@ -675,6 +675,24 @@ std::string handle_command(Context& ctx, std::string_view body, int64_t utc_ms, 
         }
     }
 
+    // EN down is the same promise as maintenance, arrived at from the other
+    // direction: escalation released it (spec 5.8) and nothing above the axis
+    // layer can move a drum until somebody puts it back.  Without this the
+    // dispatcher answered `ok` to a preset the display could not possibly show,
+    // and pulsed STEP into de-energised drivers - the identical defect the
+    // maintenance gate above exists for.  Manual driving is NOT blocked:
+    // motion.enable is how you recover, and the rest of the Calibrate page is
+    // how you look first.
+    if (!ctx.motion.enabled() && !ctx.modes.maintenance()) {
+        for (const char* blocked : {"mode.set", "message.set", "preset.set", "display.frame",
+                                    "motion.rehome", "motion.spin", "motion.ramp"}) {
+            if (c == blocked) {
+                return err_result("the motors are de-energized - energize them first "
+                                  "(Calibrate, or `en 1`)");
+            }
+        }
+    }
+
     return dispatch_after_gates(ctx, ring, c, p, utc_ms, by);
 }
 

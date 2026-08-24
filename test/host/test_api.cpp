@@ -1175,6 +1175,30 @@ void test_maintenance_refuses_display_commands_but_not_manual_ones() {
     CHECK(is_ok(r.cmd(R"({"cmd":"mode.set","payload":"clock"})")));
 }
 
+// EN down is maintenance arrived at from the other direction: escalation
+// released it and no drum can move until somebody puts it back.  The dispatcher
+// answered ok to a preset the display could not possibly show, and pulsed STEP
+// into de-energised drivers - the identical defect the maintenance gate exists
+// for.
+void test_en_down_refuses_display_commands() {
+    Rig r;
+    CHECK(is_ok(r.cmd(R"({"cmd":"motion.enable","payload":false})")));
+
+    for (const char* body : {R"({"cmd":"mode.set","payload":"clock"})",
+                             R"({"cmd":"preset.set","payload":"qmarks"})",
+                             R"({"cmd":"display.frame","payload":{"indices":[1,1,1,1,1]}})",
+                             R"({"cmd":"motion.rehome","payload":{}})",
+                             R"({"cmd":"motion.spin","payload":{"column":0,"seconds":1}})"}) {
+        const std::string res = r.cmd(body);
+        CHECK(!is_ok(res));
+        CHECK(err_of(res).find("de-energized") != std::string::npos);
+    }
+
+    // The way out is not blocked, and everything works again afterwards.
+    CHECK(is_ok(r.cmd(R"({"cmd":"motion.enable","payload":true})")));
+    CHECK(is_ok(r.cmd(R"({"cmd":"preset.set","payload":"qmarks"})")));
+}
+
 // A disabled column is excused from everything (spec 5.9).  spin accepted one
 // anyway and ran its full duration against a drum nobody drives, and rehome-all
 // with every column disabled posted nothing and said ok.
@@ -1209,5 +1233,6 @@ void run_tests() {
     test_a_nudge_moves_the_column_or_says_why_not();
     test_mqtt_partial_update_keeps_what_it_does_not_mention();
     test_maintenance_refuses_display_commands_but_not_manual_ones();
+    test_en_down_refuses_display_commands();
     test_disabled_columns_are_refused_not_pretended();
 }
