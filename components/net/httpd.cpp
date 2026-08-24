@@ -30,6 +30,9 @@ constexpr const char* TAG = "httpd";
 constexpr const char* FS_ROOT = "/fs";        // the LittleFS mount (ring_store)
 constexpr size_t CHUNK = 2048;                // static-file streaming chunk
 constexpr size_t MAX_BODY = api::RING_UPLOAD_MAX;
+// A command document, with room to spare: the biggest one the UI sends is a
+// five-token message.set at ~200 bytes.
+constexpr size_t WS_FRAME_MAX = 2048;
 
 httpd_handle_t g_server = nullptr;
 api::Context* g_ctx = nullptr;
@@ -345,6 +348,17 @@ constexpr int BODY_MAX_TIMEOUTS = 1;
 esp_err_t read_body(httpd_req_t* req, std::string& out, size_t limit = MAX_BODY) {
     const size_t len = req->content_len;
     if (len > limit) return ESP_ERR_INVALID_SIZE;
+    // With exceptions off (CONFIG_COMPILER_CXX_EXCEPTIONS=n) a failed allocation
+    // is abort(), i.e. a remote reboot - the same mechanism the JSON node cap
+    // exists to prevent, one layer earlier.  The audio route guarded itself;
+    // every other route allocated the whole announced body unguarded.  Ask for
+    // headroom rather than the exact size: the parse that follows needs room too.
+    const size_t need = len + 4096;
+    if (len > 0 && heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) < need) {
+        ESP_LOGW(TAG, "refusing a %u-byte body: largest free block is %u", (unsigned)len,
+                 (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+        return ESP_ERR_NO_MEM;
+    }
     out.resize(len);
     size_t got = 0;
     const int64_t deadline = now_ms() + BODY_DEADLINE_MS;
@@ -406,7 +420,11 @@ esp_err_t cmd_handler(httpd_req_t* req) {
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "bad body");
         return ESP_OK;
     }
-    return send_json(req, api::handle_command(*g_ctx, body, now_ms()));
+    // Origin::Ui, not the default Unknown.  Spec 7.3 has no master and expects
+    // a peer to tell its own decision from somebody else's, which it cannot do
+    // if every browser-set deadline is published as set_by "unknown" - and it
+    // was, on both browser paths, while MQTT named itself correctly.
+    return send_json(req, api::handle_command(*g_ctx, body, now_ms(), Origin::Ui));
 }
 
 // The upload is validated on THIS task into a staging table; the running table
@@ -498,7 +516,16 @@ esp_err_t ws_handler(httpd_req_t* req) {
     frame.type = HTTPD_WS_TYPE_TEXT;
     esp_err_t err = httpd_ws_recv_frame(req, &frame, 0);
     if (err != ESP_OK) return err;
-    if (frame.len > MAX_BODY) return ESP_ERR_INVALID_SIZE;
+    // A /ws frame carries a command document - tens of bytes, not kilobytes.
+    // It used to share the ring upload's 24 KB cap, so any browser could ask the
+    // single httpd task for a 24 KB allocation, and a failed one is abort().
+    // The largest legitimate command is a five-token message.set at well under
+    // 512 bytes.
+    if (frame.len > WS_FRAME_MAX) {
+        ESP_LOGW(TAG, "ws frame of %u bytes refused (max %u)", (unsigned)frame.len,
+                 (unsigned)WS_FRAME_MAX);
+        return ESP_ERR_INVALID_SIZE;
+    }
 
     // Only fetch a payload when there IS one.  With len == 0 the second call
     // re-enters the header path and issues a blocking recv for the next frame's
@@ -521,7 +548,7 @@ esp_err_t ws_handler(httpd_req_t* req) {
     }
     if (frame.type != HTTPD_WS_TYPE_TEXT) return ESP_OK;
 
-    const std::string res = api::handle_command(*g_ctx, buf, now_ms());
+    const std::string res = api::handle_command(*g_ctx, buf, now_ms(), Origin::Ui);
 
     // Echo the caller's id so a page can match request to result.
     int64_t id = 0;

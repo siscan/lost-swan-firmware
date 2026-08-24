@@ -11,6 +11,22 @@ namespace swan {
 namespace config {
 namespace {
 
+// A failed NVS write must not abort.  Every one of these sits behind a network
+// command - clock.format, the countdown settings, motion.cal save, mqtt.config,
+// audio.volume, motion.column - and an abort on a wall-mounted display is a
+// reboot, not a diagnostic.  The callers all map a non-OK return to a rejected
+// command already; they were simply never given the chance.
+#define NVS_SET(expr)                                                     \
+    do {                                                                  \
+        const esp_err_t e_ = (expr);                                      \
+        if (e_ != ESP_OK) {                                               \
+            ESP_LOGE(TAG, "%s: %s", #expr, esp_err_to_name(e_));          \
+            nvs_close(h);                                                 \
+            return e_;                                                    \
+        }                                                                 \
+    } while (0)
+
+
 constexpr const char* TAG = "config";
 constexpr const char* NS = "swan";
 
@@ -104,7 +120,15 @@ esp_err_t init() {
     esp_err_t err = nvs_flash_init();
     if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_LOGW(TAG, "nvs partition unusable (%s); erasing", esp_err_to_name(err));
-        ESP_ERROR_CHECK((g_nvs_was_erased.store(true, std::memory_order_relaxed), nvs_flash_erase()));
+        g_nvs_was_erased.store(true, std::memory_order_relaxed);
+        // Report rather than abort: app_main already treats a failed config
+        // init as "boot on the defaults and say so loudly", which is a working
+        // display, and an abort here is a boot loop on a full partition.
+        const esp_err_t eerr = nvs_flash_erase();
+        if (eerr != ESP_OK) {
+            ESP_LOGE(TAG, "nvs erase failed: %s", esp_err_to_name(eerr));
+            return eerr;
+        }
         err = nvs_flash_init();
     }
     return err;
@@ -144,14 +168,14 @@ esp_err_t save(const MotionParams& p) {
 
     // The step ISR is IRAM-safe and its data is in DRAM, so the flash-cache
     // stall these writes cause does not drop steps (spec 5.2).
-    ESP_ERROR_CHECK(nvs_set_i32(h, K_FS_NORM, p.flaps_s_normal));
-    ESP_ERROR_CHECK(nvs_set_i32(h, K_FS_ALRM, p.flaps_s_alarm));
-    ESP_ERROR_CHECK(nvs_set_i32(h, K_FS_HOME, p.flaps_s_home));
-    ESP_ERROR_CHECK(nvs_set_i32(h, K_ACCEL, p.accel));
-    ESP_ERROR_CHECK(nvs_set_i32(h, K_HALL_TOL, p.hall_tol));
-    ESP_ERROR_CHECK(nvs_set_u8(h, K_EN_IDLE, p.en_idle_off ? 1 : 0));
-    ESP_ERROR_CHECK(nvs_set_u8(h, K_HALL_LO, p.hall_active_low ? 1 : 0));
-    ESP_ERROR_CHECK(nvs_set_blob(h, K_CAL, p.cal, sizeof(p.cal)));
+    NVS_SET(nvs_set_i32(h, K_FS_NORM, p.flaps_s_normal));
+    NVS_SET(nvs_set_i32(h, K_FS_ALRM, p.flaps_s_alarm));
+    NVS_SET(nvs_set_i32(h, K_FS_HOME, p.flaps_s_home));
+    NVS_SET(nvs_set_i32(h, K_ACCEL, p.accel));
+    NVS_SET(nvs_set_i32(h, K_HALL_TOL, p.hall_tol));
+    NVS_SET(nvs_set_u8(h, K_EN_IDLE, p.en_idle_off ? 1 : 0));
+    NVS_SET(nvs_set_u8(h, K_HALL_LO, p.hall_active_low ? 1 : 0));
+    NVS_SET(nvs_set_blob(h, K_CAL, p.cal, sizeof(p.cal)));
 
     err = nvs_commit(h);
     nvs_close(h);
@@ -285,7 +309,7 @@ esp_err_t save_mqtt(const MqttConfig& c) {
     nvs_handle_t h;
     esp_err_t err = nvs_open(NS, NVS_READWRITE, &h);
     if (err != ESP_OK) return err;
-    ESP_ERROR_CHECK(nvs_set_u8(h, K_MQTT_EN, c.enabled ? 1 : 0));
+    NVS_SET(nvs_set_u8(h, K_MQTT_EN, c.enabled ? 1 : 0));
     err = set_str_checked(h, K_MQTT_URI, c.uri);
     if (err != ESP_OK) {
         nvs_close(h);
@@ -335,10 +359,10 @@ esp_err_t save_audio(const AudioConfig& c) {
     nvs_handle_t h;
     esp_err_t err = nvs_open(NS, NVS_READWRITE, &h);
     if (err != ESP_OK) return err;
-    ESP_ERROR_CHECK(nvs_set_i32(h, K_AUD_VOL, c.volume));
-    ESP_ERROR_CHECK(nvs_set_u8(h, K_AUD_MUTE, c.mute ? 1 : 0));
-    ESP_ERROR_CHECK(nvs_set_i32(h, K_AUD_QS, c.quiet_start_min));
-    ESP_ERROR_CHECK(nvs_set_i32(h, K_AUD_QE, c.quiet_end_min));
+    NVS_SET(nvs_set_i32(h, K_AUD_VOL, c.volume));
+    NVS_SET(nvs_set_u8(h, K_AUD_MUTE, c.mute ? 1 : 0));
+    NVS_SET(nvs_set_i32(h, K_AUD_QS, c.quiet_start_min));
+    NVS_SET(nvs_set_i32(h, K_AUD_QE, c.quiet_end_min));
     err = nvs_commit(h);
     nvs_close(h);
     return err;
@@ -376,8 +400,8 @@ esp_err_t save_columns(const ColumnConfig& c) {
     for (int i = 0; i < N_COLUMNS; ++i) {
         modes[i] = static_cast<uint8_t>(c.mode[static_cast<size_t>(i)]);
     }
-    ESP_ERROR_CHECK(nvs_set_blob(h, K_COL_MODE, modes, sizeof(modes)));
-    ESP_ERROR_CHECK(nvs_set_u8(h, K_MAINT, c.maintenance ? 1 : 0));
+    NVS_SET(nvs_set_blob(h, K_COL_MODE, modes, sizeof(modes)));
+    NVS_SET(nvs_set_u8(h, K_MAINT, c.maintenance ? 1 : 0));
     err = nvs_commit(h);
     nvs_close(h);
     return err;
@@ -388,21 +412,21 @@ esp_err_t save_app(const AppConfig& c) {
     esp_err_t err = nvs_open(NS, NVS_READWRITE, &h);
     if (err != ESP_OK) return err;
 
-    ESP_ERROR_CHECK(nvs_set_u8(h, K_H24, c.modes.h24 ? 1 : 0));
-    ESP_ERROR_CHECK(nvs_set_u8(h, K_CLK_LOT, c.modes.clock_land_on_tick ? 1 : 0));
-    ESP_ERROR_CHECK(nvs_set_u8(h, K_CD_LOT, c.modes.cd_land_on_tick ? 1 : 0));
-    ESP_ERROR_CHECK(nvs_set_i32(h, K_GRAN, c.modes.granularity_min));
-    ESP_ERROR_CHECK(nvs_set_i32(h, K_MSG_DWELL, c.modes.msg_dwell_s));
-    ESP_ERROR_CHECK(nvs_set_i32(
+    NVS_SET(nvs_set_u8(h, K_H24, c.modes.h24 ? 1 : 0));
+    NVS_SET(nvs_set_u8(h, K_CLK_LOT, c.modes.clock_land_on_tick ? 1 : 0));
+    NVS_SET(nvs_set_u8(h, K_CD_LOT, c.modes.cd_land_on_tick ? 1 : 0));
+    NVS_SET(nvs_set_i32(h, K_GRAN, c.modes.granularity_min));
+    NVS_SET(nvs_set_i32(h, K_MSG_DWELL, c.modes.msg_dwell_s));
+    NVS_SET(nvs_set_i32(
         h, K_SECMODE,
         c.modes.seconds_mode == SecondsMode::Minutes ? 0
         : c.modes.seconds_mode == SecondsMode::Tens  ? 1
                                                      : 2));
-    ESP_ERROR_CHECK(nvs_set_i32(h, K_CD_LIVE, c.modes.seconds_live_s));
-    ESP_ERROR_CHECK(nvs_set_i32(h, K_CD_HOLD, c.modes.zero_hold_s));
-    ESP_ERROR_CHECK(nvs_set_i32(h, K_CD_SPIN, c.modes.spin_s));
-    ESP_ERROR_CHECK(nvs_set_i32(h, K_CD_FAIL_TO, c.modes.failure_timeout_s));
-    ESP_ERROR_CHECK(nvs_set_i32(h, K_CD_LOOP, c.modes.failure_loop_s));
+    NVS_SET(nvs_set_i32(h, K_CD_LIVE, c.modes.seconds_live_s));
+    NVS_SET(nvs_set_i32(h, K_CD_HOLD, c.modes.zero_hold_s));
+    NVS_SET(nvs_set_i32(h, K_CD_SPIN, c.modes.spin_s));
+    NVS_SET(nvs_set_i32(h, K_CD_FAIL_TO, c.modes.failure_timeout_s));
+    NVS_SET(nvs_set_i32(h, K_CD_LOOP, c.modes.failure_loop_s));
     err = set_str_checked(h, K_TZ, c.tz);
     if (err != ESP_OK) {
         nvs_close(h);
@@ -416,7 +440,7 @@ esp_err_t save_app(const AppConfig& c) {
 
     int32_t reveal[N_COLUMNS];
     for (int i = 0; i < N_COLUMNS; ++i) reveal[i] = c.modes.reveal[static_cast<size_t>(i)];
-    ESP_ERROR_CHECK(nvs_set_blob(h, K_CD_REVEAL, reveal, sizeof(reveal)));
+    NVS_SET(nvs_set_blob(h, K_CD_REVEAL, reveal, sizeof(reveal)));
 
     err = nvs_commit(h);
     nvs_close(h);
@@ -478,7 +502,11 @@ esp_err_t erase_all() {
     nvs_handle_t h;
     esp_err_t err = nvs_open(NS, NVS_READWRITE, &h);
     if (err != ESP_OK) return err;
-    ESP_ERROR_CHECK(nvs_erase_all(h));
+    err = nvs_erase_all(h);
+    if (err != ESP_OK) {
+        nvs_close(h);
+        return err;
+    }
     err = nvs_commit(h);
     nvs_close(h);
     ESP_LOGW(TAG, "config erased; defaults apply on next boot");

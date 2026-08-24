@@ -279,12 +279,22 @@ extern "C" void app_main() {
         ESP_LOGE(TAG, "ota watcher failed to start");
     }
 
-    ESP_ERROR_CHECK(swan::config::init());
-    swan::g_config_init_ok.store(true, std::memory_order_relaxed);
+    // Not ESP_ERROR_CHECK.  These read NVS namespaces that network commands
+    // write, and every one of these structs is already constructed with the
+    // spec defaults - so a partition that will not open is a display running on
+    // defaults with a loud log line, not a board that refuses to boot.  The
+    // OTA confirm criterion reads g_config_init_ok, which is exactly the
+    // distinction it needs.
+    const esp_err_t cfg_err = swan::config::init();
+    if (cfg_err != ESP_OK) {
+        ESP_LOGE(TAG, "*** config init failed (%s) - running on the spec defaults; "
+                      "settings will not persist ***", esp_err_to_name(cfg_err));
+    }
+    swan::g_config_init_ok.store(cfg_err == ESP_OK, std::memory_order_relaxed);
 
     swan::MotionParams mp;  // spec defaults
-    ESP_ERROR_CHECK(swan::config::load(mp));
-    ESP_ERROR_CHECK(swan::config::load_app(g_app));
+    if (swan::config::load(mp) != ESP_OK) ESP_LOGW(TAG, "motion params: defaults");
+    if (swan::config::load_app(g_app) != ESP_OK) ESP_LOGW(TAG, "app config: defaults");
     g_app.modes.alarm_flaps_s = mp.flaps_s_alarm;
 
     swan::ring_store::init();  // never fails the boot; worst case compiled table
@@ -293,7 +303,9 @@ extern "C" void app_main() {
     // simulated or disabled column is never briefly driven for real.  A fresh
     // NVS yields all-real, not-in-maintenance, by ColumnConfig's defaults.
     swan::ColumnConfig cols;
-    ESP_ERROR_CHECK(swan::config::load_columns(cols));
+    // Defaults are all-real and not-in-maintenance (static_assert'd), so a
+    // failed read cannot silently produce a simulated column.
+    if (swan::config::load_columns(cols) != ESP_OK) ESP_LOGW(TAG, "column modes: defaults");
     mp.maintenance = cols.maintenance;
 
     // Audio (spec 9).  Before motion, so a cue at boot is not the first thing

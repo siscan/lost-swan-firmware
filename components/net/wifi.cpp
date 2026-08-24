@@ -53,7 +53,16 @@ void schedule_retry() {
                         : static_cast<int>(sizeof kBackoffMs / sizeof kBackoffMs[0]) - 1;
     ++g_attempt;
     esp_timer_stop(g_retry);
-    ESP_ERROR_CHECK(esp_timer_start_once(g_retry, static_cast<uint64_t>(kBackoffMs[idx]) * 1000));
+    // Log and drop.  This is driven by radio conditions anyone in range can
+    // create; skipping one backoff step is strictly better than rebooting a
+    // wall clock because a timer was already armed.
+    const esp_err_t err =
+        esp_timer_start_once(g_retry, static_cast<uint64_t>(kBackoffMs[idx]) * 1000);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "retry timer not armed (%s); the next disconnect will re-arm it",
+                 esp_err_to_name(err));
+        return;
+    }
     ESP_LOGW(TAG, "reconnecting in %d ms (attempt %d)", kBackoffMs[idx], g_attempt);
 }
 
@@ -114,9 +123,29 @@ esp_err_t start_sta(const config::WifiConfig& cfg) {
     // some props live on one.
     wc.sta.threshold.authmode = cfg.pass.empty() ? WIFI_AUTH_OPEN : WIFI_AUTH_WPA2_PSK;
 
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wc));
-    const esp_err_t err = esp_wifi_start();
+    // NOT unconditionally STA: this runs from the captive portal, over the
+    // portal's own access point.  Forcing STA-only here dropped that AP and
+    // undid the lockout fix eight lines above in set_credentials - the comment
+    // there was true and this line made it false.  provision_stop_on_join takes
+    // the AP down at the only moment that proves the credentials were right.
+    const wifi_mode_t want = provisioning() ? WIFI_MODE_APSTA : WIFI_MODE_STA;
+    esp_err_t err = esp_wifi_set_mode(want);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "set_mode failed: %s", esp_err_to_name(err));
+        return err;
+    }
+    // And NOT ESP_ERROR_CHECK: esp_wifi_set_config documents ESP_ERR_WIFI_PASSWORD
+    // and ESP_ERR_WIFI_STATE ("still connecting"), both reachable from a
+    // wifi.credentials command - and because save_wifi has already committed by
+    // then, an abort here reboots into net::init, which calls this with the same
+    // stored credentials and aborts again.  One command, a permanent boot loop,
+    // recoverable only with a serial cable.
+    err = esp_wifi_set_config(WIFI_IF_STA, &wc);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "set_config failed: %s", esp_err_to_name(err));
+        return err;
+    }
+    err = esp_wifi_start();
     if (err != ESP_OK) return err;
     g_started = true;
     {
@@ -139,17 +168,23 @@ const char* wifi_state_name(WifiState s) {
     return "?";
 }
 
+// Nothing in here aborts.  app_main tests this return value and logs "wifi init
+// failed; running standalone" - which was dead code while every step inside
+// aborted first, so the spec 10.0 promise that the display is complete without
+// a network was not actually implemented.
+#define SWAN_TRY(expr)                                                            do {                                                                              const esp_err_t e_ = (expr);                                                  if (e_ != ESP_OK) {                                                               ESP_LOGE(TAG, "%s failed: %s", #expr, esp_err_to_name(e_));                   return e_;                                                                }                                                                         } while (0)
+
 esp_err_t init() {
-    ESP_ERROR_CHECK(esp_netif_init());
-    ESP_ERROR_CHECK(esp_event_loop_create_default());
+    SWAN_TRY(esp_netif_init());
+    SWAN_TRY(esp_event_loop_create_default());
     g_netif = esp_netif_create_default_wifi_sta();
 
     const wifi_init_config_t ic = WIFI_INIT_CONFIG_DEFAULT();
-    ESP_ERROR_CHECK(esp_wifi_init(&ic));
-    ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID,
-                                                        &on_wifi_event, nullptr, nullptr));
-    ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP,
-                                                        &on_got_ip, nullptr, nullptr));
+    SWAN_TRY(esp_wifi_init(&ic));
+    SWAN_TRY(esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID,
+                                                 &on_wifi_event, nullptr, nullptr));
+    SWAN_TRY(esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP,
+                                                 &on_got_ip, nullptr, nullptr));
 
     const esp_timer_create_args_t targs = {
         .callback = &retry_cb,
@@ -158,10 +193,17 @@ esp_err_t init() {
         .name = "wifi_retry",
         .skip_unhandled_events = true,
     };
-    ESP_ERROR_CHECK(esp_timer_create(&targs, &g_retry));
+    SWAN_TRY(esp_timer_create(&targs, &g_retry));
 
     config::WifiConfig cfg;
-    ESP_ERROR_CHECK(config::load_wifi(cfg));
+    // A damaged or full NVS is not a reason to refuse to be a clock.
+    const esp_err_t cerr = config::load_wifi(cfg);
+    if (cerr != ESP_OK) {
+        ESP_LOGE(TAG, "could not read stored credentials (%s); running standalone",
+                 esp_err_to_name(cerr));
+        set_state(WifiState::Disabled);
+        return ESP_OK;
+    }
     if (!cfg.configured()) {
         // Standalone is a supported state, not an error (spec 10.0): the
         // display runs, SNTP never syncs, and the centre column shows the
@@ -171,7 +213,17 @@ esp_err_t init() {
         return ESP_OK;
     }
     ESP_LOGI(TAG, "connecting to '%s'", cfg.ssid.c_str());
-    return start_sta(cfg);
+    const esp_err_t serr = start_sta(cfg);
+    if (serr != ESP_OK) {
+        // Stored credentials the radio refuses must not brick the boot: that is
+        // the loop that made the abort at set_config so dangerous, since the
+        // command that stored them has already returned.
+        ESP_LOGE(TAG, "could not start the station with the stored credentials (%s); "
+                      "running standalone - set them again with `wifi <ssid> <pass>`",
+                 esp_err_to_name(serr));
+        set_state(WifiState::Failed);
+    }
+    return ESP_OK;
 }
 
 esp_err_t set_credentials(const std::string& ssid, const std::string& pass) {
@@ -217,9 +269,10 @@ WifiStatus status() {
 esp_err_t mdns_start(const char* hostname, const char* instance) {
     esp_err_t err = mdns_init();
     if (err != ESP_OK) return err;
-    ESP_ERROR_CHECK(mdns_hostname_set(hostname));
-    ESP_ERROR_CHECK(mdns_instance_name_set(instance));
-    ESP_ERROR_CHECK(mdns_service_add(nullptr, "_http", "_tcp", 80, nullptr, 0));
+    // A display nobody can find at lost.local is still a display; it has an IP.
+    SWAN_TRY(mdns_hostname_set(hostname));
+    SWAN_TRY(mdns_instance_name_set(instance));
+    SWAN_TRY(mdns_service_add(nullptr, "_http", "_tcp", 80, nullptr, 0));
     ESP_LOGI(TAG, "mdns: http://%s.local/", hostname);
     return ESP_OK;
 }
