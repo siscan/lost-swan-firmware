@@ -42,6 +42,23 @@ it tries three times, so a genuinely broken one shows amber for around half a
 minute before the light goes red — during which the display looks idle and is
 actually searching.
 
+## The button on the case
+
+**A short press enters the Numbers for you** — it starts the 108-minute
+countdown, or resets a running one to 108:00, exactly as typing them would.
+**Hold it for two seconds** and every column re-homes; the drums start moving
+while your thumb is still down, which is how you know it took.
+
+During maintenance the button does nothing at all, on purpose.
+
+**One thing to know, and it is a hardware fact rather than a choice.** The
+button is wired to the same pin the board uses to decide how to start up. If you
+are holding it while the display powers on or restarts, the board may come up in
+its firmware-loading mode instead: powered, silent, off the network, looking
+dead. Let go and power-cycle it and everything is fine — nothing is lost. The
+display also deliberately ignores a button that is already held when it starts,
+so a stuck or leaned-on button cannot set anything off by itself.
+
 ## The pages
 
 **Terminal** — the Numbers and EXECUTE, and the time remaining.
@@ -96,6 +113,17 @@ unpowered and nothing knows where they are.
 motors are released. It survives a reboot on purpose, so pulling the power
 mid-repair cannot restart a countdown on top of your hands. Leaving maintenance
 re-homes everything, because the drums have been moved by hand.
+
+## The terminal prop
+
+If you have built the separate Swan terminal — the Pi with the CRT — it announces
+itself to the display over MQTT, and **Diagnostics tells you whether it is
+there**: *online*, *OFFLINE*, or *never seen*. The last two are different facts.
+*Never seen* means no terminal has ever spoken on this broker; *OFFLINE* means
+one was there and has gone, which is worth looking into.
+
+The display only listens. It cannot turn the prop on or off, and it does not
+need one — everything works without it.
 
 ## MQTT and Home Assistant
 

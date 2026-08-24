@@ -709,7 +709,8 @@ test can tell which fired without looking at the console.
       playable.  Do it once **while that cue is playing** — LittleFS will not
       rename over an open fd, so the upload has to stop the player first.
 - [ ] Run a countdown to zero and watch the choreography: cue at 4:00, at 1:00,
-      the alarm at zero, `ZERO_HOLD_S` then the spin, then the reveal frame.
+      the alarm at zero, `countdown.zero_hold_s` then the spin, then the reveal
+      frame, then the `reveal` event when the last column confirms it.
 
 ### 25b. The Update page (spec §10.2, §10.4) — **DONE 2026-08-24**
 
@@ -831,6 +832,111 @@ stats
       `GET /api/journal` gains `{"e":"recover","col":2,"d":"after 1"}`.  That
       line was unreachable until today — the retry counter is cleared at the
       hall edge, several hundred milliseconds before the event that carries it.
+
+### 30. Zero and failure semantics, verified not redesigned — **DONE 2026-08-24**
+
+Asked for by the terminal prop's integration pass: confirm what the display
+already does at zero, on hardware, rather than assume it. Five simulated
+columns, MQTT against `tools/mqtt_broker.py`, deadlines armed 12 s out with
+`countdown.set_target`.
+
+```bash
+python tools/mqtt_broker.py                       # on the dev machine
+```
+```
+mqtt mqtt://<dev-machine>:1883                    # on the console
+```
+
+- [x] **`countdown.failure_timeout_s` defaults to 0 and at that default the
+      reveal holds indefinitely.** Read off the board: `failure_timeout_s = 0`,
+      and the display sat in `reveal` until something else moved it. The key is
+      kept, not removed.
+- [x] **The phase timings are exact against the DEVICE's clock**, measured by
+      polling `/api/state` rather than by watching MQTT:
+
+      ```
+      phase -> running  at target-10.912 s
+      phase -> zero     at target+0.065 s
+      phase -> spin     at target+3.039 s     (zero_hold_s = 3)
+      phase -> reveal   at target+9.035 s     (spin_s = 6)
+      all five settled  at target+9.176 s
+      ```
+
+      **Worth knowing, because it cost me an hour:** the same run measured
+      through MQTT reads the zero->spin gap as **2.30-2.40 s**, not 3.00. That
+      is publish skew on the retained `swan/countdown` topic, not a firmware
+      timing error — the choreography is driven by absolute arithmetic from the
+      deadline and is exact. A peer that schedules off `target` + the timing
+      keys (which is what the prop does) is unaffected; a peer that timed off
+      the arrival of the `zero` publish would be wrong by up to ~0.7 s.
+- [x] **Every phase transition publishes retained `swan/countdown`**, including
+      the ones that matter for recovery:
+
+      ```
+      PUB  swan/countdown  [R] q1 {"state":"running","target":1787607365,"set_by":"ui","seq":4}
+      PUB  swan/countdown  [R] q1 {"state":"zero",...}
+      PUB  swan/countdown  [R] q1 {"state":"spin",...}
+      PUB  swan/countdown  [R] q1 {"state":"reveal",...}
+      ```
+- [x] **`countdown.execute` from the reveal state is ACCEPTED as a fresh
+      108:00**, not rejected: `{"ok":true}`, phase `running`, remaining 6477 s
+      two seconds later, and `seq` advanced 1 -> 2. The new retained deadline
+      publishes immediately, which is what pulls a peer out of SYSTEM FAILURE.
+- [x] **`swan/event` carries a command result only for MQTT-origin commands.**
+      Measured both ways in one window: a `clock.format` over HTTP produced
+      nothing on `swan/event`; the identical command over `swan/cmd/` produced
+      `{"cmd":"clock.format","res":{"ok":true}}`. So the prop's own execute gets
+      its result, and an execute from the web UI or the physical button does
+      not — the retained `swan/countdown` is what carries that case, and it
+      publishes for every origin. Recorded because it looks like a bug from one
+      side and is a deliberate asymmetry from the other.
+- [x] **The `reveal` announcement.** `{"e":"reveal","seq":N,"t":...}` on both
+      `swan/event` and `/ws` when the last column confirms the reveal frame,
+      plus one `reveal` line in the journal.
+- [ ] **With a real column**, the reveal convergence again. It landed in
+      **0.146 s** here because `countdown.reveal` is unset, so the reveal frame
+      is all blanks and blank is one flip from where the spin stopped. With five
+      real glyphs it can be up to a full 49-flip wrap (~3.3 s at 15 flaps/s).
+      That range is exactly why the beat is announced rather than estimated.
+
+### 31. The terminal prop's presence — **DONE 2026-08-24 (simulated peer)**
+
+`swan/prop/terminal`, published by the prop, read-only here.
+
+```bash
+python <scratchpad>/mqtt_peer.py <broker> prop 1.0.0 30
+```
+
+- [x] A retained birth `{"online":true,"fw":"1.0.0"}` is **obeyed**, and this is
+      the subtle one: the inbound path refuses retained messages, because a
+      retained `swan/cmd/...` is a countdown that starts itself in an empty
+      room. That gate was topic-blind and would have eaten the prop's birth
+      message — a presence document is retained BY DESIGN, which is how a
+      display that boots later learns the prop is already there. The refusal is
+      now scoped to command topics.
+- [x] The last will `{"online":false}` arrives when the peer drops without a
+      DISCONNECT, and Diagnostics reads `terminal prop: OFFLINE (last will
+      received)`.
+- [x] Never having seen a prop reads differently from having seen one go away —
+      `never seen on swan/prop/terminal` against `OFFLINE`.
+- [x] A malformed document is ignored whole and the previous presence stands.
+
+### 32. The physical button (spec §2.5, Q6) — **DONE 2026-08-24**
+
+- [x] A short press executes the Numbers: `swan/countdown` shows
+      `"set_by":"button"`, and the journal line reads
+      `{"e":"execute","by":"button","d":"4 8 15 16 23 42"}`.
+- [x] A hold of two seconds re-homes all five, once, and the release afterwards
+      does nothing.
+- [x] In maintenance the button is ignored entirely, with one log line.
+- [x] **Held at startup: nothing happens until it is released**, and the boot
+      log says so. This is the strapping-pin rule (§2.5) and it is the one
+      behaviour that cannot be discovered safely on a wall-mounted display.
+- [ ] **On the real enclosure**, with the external button in parallel with BOOT
+      and a long loom. Watch for: a press that lands in the bootloader instead
+      (release and power-cycle), and false triggers from loom pickup — the
+      internal pull-up is enabled, but a metre of unshielded wire next to five
+      stepper motors is a different proposition from a pad on a dev board.
 
 ### 28. Power loss (spec 15 phase 6) — **DONE 2026-08-24**
 
