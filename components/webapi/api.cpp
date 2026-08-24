@@ -116,6 +116,21 @@ std::string build_state(Context& ctx, int64_t utc_ms) {
         .kv("configured", ctx.wifi.have_credentials())
         .end_obj();
 
+    const AudioState au = ctx.audio.audio_state();
+    w.key("audio").obj()
+        .kv("volume", au.volume)
+        .kv("mute", au.mute)
+        .kv("quiet_start_min", au.quiet_start_min)
+        .kv("quiet_end_min", au.quiet_end_min)
+        .kv("playing", au.playing)
+        .kv("cue", au.cue)
+        // How many cue files are actually present: a missing WAV is a cue that
+        // will silently not fire, and "the alarm did nothing" is a bad thing to
+        // discover at zero.
+        .kv("cues_present", au.cues_present)
+        .kv("cues_total", au.cues_total)
+        .end_obj();
+
     w.kv("time_valid", ctx.modes.time_valid());
     w.kv("wifi_glyph", ctx.modes.wifi_glyph_shown());
 
@@ -655,9 +670,42 @@ std::string handle_command(Context& ctx, std::string_view body, int64_t utc_ms, 
         return ctx.ring_upload.stage(b->as_str(), &err) ? ok_result() : err_result(err);
     }
 
-    // ---- later phases ----
-    if (c == "audio.volume" || c == "audio.mute" || c == "audio.play") {
-        return err_result("audio arrives in phase 5");
+    if (c == "audio.volume" || c == "audio.mute" || c == "audio.quiet") {
+        const AudioState a = ctx.audio.audio_state();
+        int vol = a.volume, qs = a.quiet_start_min, qe = a.quiet_end_min;
+        bool mute = a.mute;
+        if (c == "audio.volume") {
+            int v = 0;
+            if (p.type == json::Type::Int) v = static_cast<int>(p.number);
+            else if (!as_int_field(p, "value", v)) return err_result("need a value 0-100");
+            if (v < 0 || v > 100) return err_result("volume must be 0-100");
+            vol = v;
+        } else if (c == "audio.mute") {
+            mute = p.type == json::Type::Bool ? p.boolean
+                                              : (p.get("on") != nullptr && p.get("on")->boolean);
+        } else {
+            // Both bounds equal means OFF, which is the [Q8] default and has to
+            // stay expressible rather than becoming a 24-hour quiet period.
+            if (!as_int_field(p, "start_min", qs) || !as_int_field(p, "end_min", qe)) {
+                return err_result("need start_min and end_min");
+            }
+            if (qs < 0 || qs > 1439 || qe < 0 || qe > 1439) {
+                return err_result("minutes must be 0-1439");
+            }
+        }
+        return ctx.audio.audio_set(vol, mute, qs, qe) ? ok_result() : err_result("could not apply");
+    }
+    if (c == "audio.play") {
+        const std::string_view name = p.type == json::Type::Str
+                                          ? p.as_str()
+                                          : (p.get("cue") != nullptr ? p.get("cue")->as_str()
+                                                                     : std::string_view{});
+        if (name.empty()) return err_result("need a cue name");
+        return ctx.audio.audio_play(name) ? ok_result()
+                                          : err_result("no such cue, or no file for it");
+    }
+    if (c == "audio.stop") {
+        return ctx.audio.audio_stop() ? ok_result() : err_result("could not stop");
     }
     if (c == "wifi.credentials") {
         const json::Value* ssid = member(p, "ssid");

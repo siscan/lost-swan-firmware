@@ -85,7 +85,11 @@ struct ModesConfig {
     bool cd_land_on_tick = true;       // countdown.land_on_tick
     int zero_hold_s = 3;               // countdown.zero_hold_s
     int spin_s = 6;                    // countdown.spin_s
-    int failure_timeout_s = 0;         // countdown.failure_timeout_s
+    int failure_timeout_s = 0;
+    // countdown.failure_loop_s (spec 11): the alarm loops, bounded.
+    // Unbounded would mean a display in an empty house screaming until
+    // somebody comes home.
+    int failure_loop_s = 60;         // countdown.failure_timeout_s
     int32_t alarm_flaps_s = 25;        // motion.flaps_s_alarm
     // countdown.reveal[5]: ring indices; -1 = unset -> blank (Nico has not
     // picked the glyphs yet - decision log).  NOTE: an index means a
@@ -204,6 +208,10 @@ public:
     int64_t cd_target() const;
     // Both halves of "whoever set it last wins" belong on the wire together.
     uint32_t cd_seq() const;
+    // Local wall-clock time, for quiet hours (spec 9).  Through here rather
+    // than through the tz engine directly, so it is taken under the same
+    // lock as everything else the modes task owns.
+    LocalTime local_now() const;
     Origin cd_set_by() const;
     bool wifi_glyph_shown() const;
     bool time_valid() const;

@@ -40,6 +40,8 @@ constexpr const char* NS = "swan";
 // mqtt.enabled / .host / .user / .pass / .base
 //                              mq_en / mq_uri / mq_user / mq_pass / mq_base
 // mqtt.ha_prefix               mq_hapfx
+// audio.volume / .mute / .quiet_start / .quiet_end
+//                              a_vol / a_mute / a_qs / a_qe
 // column.mode[5]               col_mode     (blob of 5 x uint8)
 // column.maintenance           maint
 // wifi.ssid                    w_ssid
@@ -77,6 +79,11 @@ constexpr const char* K_MQTT_USER = "mq_user";
 constexpr const char* K_MQTT_PASS = "mq_pass";
 constexpr const char* K_MQTT_BASE = "mq_base";
 constexpr const char* K_MQTT_HAPFX = "mq_hapfx";
+constexpr const char* K_CD_LOOP = "cd_loop_s";
+constexpr const char* K_AUD_VOL = "a_vol";
+constexpr const char* K_AUD_MUTE = "a_mute";
+constexpr const char* K_AUD_QS = "a_qs";
+constexpr const char* K_AUD_QE = "a_qe";
 constexpr const char* K_WIFI_SSID = "w_ssid";
 constexpr const char* K_WIFI_PASS = "w_pass";
 
@@ -194,6 +201,7 @@ esp_err_t load_app(AppConfig& c) {
     get_int(K_CD_HOLD, &c.modes.zero_hold_s);
     get_int(K_CD_SPIN, &c.modes.spin_s);
     get_int(K_CD_FAIL_TO, &c.modes.failure_timeout_s);
+    get_int(K_CD_LOOP, &c.modes.failure_loop_s);
     get_str(h, K_TZ, &c.tz);
     get_str(h, K_NTP, &c.ntp);
 
@@ -264,6 +272,34 @@ esp_err_t save_mqtt(const MqttConfig& c) {
     return err;
 }
 
+esp_err_t load_audio(AudioConfig& c) {
+    nvs_handle_t h;
+    const esp_err_t err = nvs_open(NS, NVS_READONLY, &h);
+    if (err == ESP_ERR_NVS_NOT_FOUND) return ESP_OK;   // fresh NVS: spec defaults
+    if (err != ESP_OK) return err;
+    int32_t v = 0;
+    uint8_t m = 0;
+    if (nvs_get_i32(h, K_AUD_VOL, &v) == ESP_OK) c.volume = v;
+    if (nvs_get_u8(h, K_AUD_MUTE, &m) == ESP_OK) c.mute = m != 0;
+    if (nvs_get_i32(h, K_AUD_QS, &v) == ESP_OK) c.quiet_start_min = v;
+    if (nvs_get_i32(h, K_AUD_QE, &v) == ESP_OK) c.quiet_end_min = v;
+    nvs_close(h);
+    return ESP_OK;
+}
+
+esp_err_t save_audio(const AudioConfig& c) {
+    nvs_handle_t h;
+    esp_err_t err = nvs_open(NS, NVS_READWRITE, &h);
+    if (err != ESP_OK) return err;
+    ESP_ERROR_CHECK(nvs_set_i32(h, K_AUD_VOL, c.volume));
+    ESP_ERROR_CHECK(nvs_set_u8(h, K_AUD_MUTE, c.mute ? 1 : 0));
+    ESP_ERROR_CHECK(nvs_set_i32(h, K_AUD_QS, c.quiet_start_min));
+    ESP_ERROR_CHECK(nvs_set_i32(h, K_AUD_QE, c.quiet_end_min));
+    err = nvs_commit(h);
+    nvs_close(h);
+    return err;
+}
+
 esp_err_t load_columns(ColumnConfig& c) {
     nvs_handle_t h;
     const esp_err_t err = nvs_open(NS, NVS_READONLY, &h);
@@ -322,6 +358,7 @@ esp_err_t save_app(const AppConfig& c) {
     ESP_ERROR_CHECK(nvs_set_i32(h, K_CD_HOLD, c.modes.zero_hold_s));
     ESP_ERROR_CHECK(nvs_set_i32(h, K_CD_SPIN, c.modes.spin_s));
     ESP_ERROR_CHECK(nvs_set_i32(h, K_CD_FAIL_TO, c.modes.failure_timeout_s));
+    ESP_ERROR_CHECK(nvs_set_i32(h, K_CD_LOOP, c.modes.failure_loop_s));
     ESP_ERROR_CHECK(nvs_set_str(h, K_TZ, c.tz.c_str()));
     ESP_ERROR_CHECK(nvs_set_str(h, K_NTP, c.ntp.c_str()));
 

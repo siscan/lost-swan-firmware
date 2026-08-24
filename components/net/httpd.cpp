@@ -2,9 +2,11 @@
 
 #include "net/mqtt.h"
 #include "net/ota.h"
+#include "audio/player.h"
 #include "net/provision.h"
 #include "webapi/portal.h"
 
+#include <sys/stat.h>
 #include <sys/time.h>
 #include <unistd.h>
 
@@ -525,6 +527,84 @@ esp_err_t ws_handler(httpd_req_t* req) {
     return httpd_ws_send_frame(req, &reply);
 }
 
+// A cue WAV, uploaded from Settings -> Audio (spec 9).  Exactly the ring
+// upload's shape and for exactly its reason: validated in full, written to a
+// temp path, and renamed over the old one ONLY once it parses.  A truncated or
+// malformed upload therefore leaves the previous cue playable rather than
+// replacing the alarm with silence.
+//
+// The assets ship as synthesized placeholders; Nico's Swan recordings replace
+// them this way, with no reflash.
+constexpr size_t AUDIO_UPLOAD_MAX = 192 * 1024;
+
+esp_err_t audio_upload_handler(httpd_req_t* req) {
+    // /api/audio/<cue>
+    const char* name = std::strrchr(req->uri, '/');
+    audio::CueId cue{};
+    if (name == nullptr || !audio::cue_id_from_name(name + 1, cue)) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "unknown cue");
+        return ESP_OK;
+    }
+    if (req->content_len == 0 || req->content_len > AUDIO_UPLOAD_MAX) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "wav too large or empty");
+        return ESP_OK;
+    }
+    // One contiguous block, because the parser needs the chunk table and the
+    // rename has to be all-or-nothing.  Refuse rather than fragment the heap
+    // to the point where the ring upload or an OTA cannot run afterwards.
+    if (heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) < req->content_len + 24576) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "not enough contiguous heap");
+        return ESP_OK;
+    }
+
+    std::string body;
+    const esp_err_t rerr = read_body(req, body);
+    if (rerr != ESP_OK) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "upload interrupted");
+        return ESP_OK;
+    }
+    const audio::WavInfo w =
+        audio::wav_parse(reinterpret_cast<const uint8_t*>(body.data()), body.size());
+    if (!w.ok) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                            w.err != nullptr ? w.err : "not a usable WAV");
+        return ESP_OK;
+    }
+
+    ::mkdir("/fs/audio", 0777);
+    const std::string dest = audio::cue_path(cue);
+    const std::string tmp = dest + ".tmp";
+    std::FILE* f = std::fopen(tmp.c_str(), "wb");
+    if (f == nullptr) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "cannot write");
+        return ESP_OK;
+    }
+    const size_t wrote = std::fwrite(body.data(), 1, body.size(), f);
+    std::fclose(f);
+    if (wrote != body.size()) {
+        std::remove(tmp.c_str());
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "short write; nothing replaced");
+        return ESP_OK;
+    }
+    // LittleFS rename REPLACES atomically - the ring upload learned that the
+    // hard way, by removing the target first and losing the table to a
+    // brownout in the window.
+    if (std::rename(tmp.c_str(), dest.c_str()) != 0) {
+        std::remove(tmp.c_str());
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "rename failed");
+        return ESP_OK;
+    }
+    audio::rescan();
+    ESP_LOGI(TAG, "%s replaced: %lu Hz, %lu bytes of audio", audio::cue_id_name(cue),
+             static_cast<unsigned long>(w.sample_rate), static_cast<unsigned long>(w.data_bytes));
+
+    json::Writer jw;
+    jw.obj().kv("ok", true).kv("cue", audio::cue_id_name(cue))
+        .kv("rate", static_cast<int64_t>(w.sample_rate))
+        .kv("bytes", static_cast<int64_t>(w.data_bytes)).end_obj();
+    return send_json(req, jw.take());
+}
+
 void on_socket_close(httpd_handle_t, int fd) {
     ws_remove(fd);
     {
@@ -614,6 +694,7 @@ esp_err_t httpd_start(api::Context& ctx) {
         {"/api/wear", HTTP_GET, wear_handler, nullptr, false, false, nullptr},
         {"/api/cmd", HTTP_POST, cmd_handler, nullptr, false, false, nullptr},
         {"/api/ring/upload", HTTP_POST, ring_upload_handler, nullptr, false, false, nullptr},
+        {"/api/audio/*", HTTP_POST, audio_upload_handler, nullptr, false, false, nullptr},
         {"/*", HTTP_GET, static_handler, nullptr, false, false, nullptr},
     };
     // BEFORE the loop, deliberately.  esp_http_server checks handlers in

@@ -92,6 +92,20 @@ struct DevWifi final : api::WifiAdmin {
     bool have_credentials() override { return !ssid.empty(); }
 };
 
+struct DevAudio final : api::AudioAdmin {
+    api::AudioState st;
+    api::AudioState audio_state() override { return st; }
+    bool audio_set(int v, bool m, int qs, int qe) override {
+        st.volume = v; st.mute = m; st.quiet_start_min = qs; st.quiet_end_min = qe;
+        return true;
+    }
+    bool audio_play(std::string_view cue) override {
+        std::printf("[dev] audio.play %.*s\n", static_cast<int>(cue.size()), cue.data());
+        return true;
+    }
+    bool audio_stop() override { return true; }
+};
+
 struct DevOps final : api::SystemOps {
     std::atomic<int> reboots{0};
     bool reboot() override {
@@ -282,8 +296,9 @@ int main(int argc, char** argv) {
     DevOps ops;
     DevMqtt mqtt;
     DevWifi wifi;
+    DevAudio audio;
     // The stager is BOTH the pinned ring source and the upload sink.
-    api::Context ctx{modes, stager, sim, cfg_sink, sysinfo, stager, ops, mqtt, wifi, {}};
+    api::Context ctx{modes, stager, sim, cfg_sink, sysinfo, stager, ops, mqtt, wifi, audio, {}};
 
     sysinfo.s.wifi_state = "connected";
     sysinfo.s.ssid = "host-dev-server";

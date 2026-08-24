@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <cstring>
 
+#include "audio/player.h"
 #include "config/config.h"
 #include "esp_check.h"
 #include "esp_console.h"
@@ -477,6 +478,61 @@ int cmd_ring(int argc, char** argv) {
 // synced, so cd.target reads 0 for the first seconds after any reboot even
 // when the deadline is perfectly intact - and reading the display too early
 // reports a correct rollback as a lost deadline.  `persist` needs no clock.
+int cmd_audio(int argc, char** argv) {
+    audio::AudioSettings s = audio::settings();
+    if (argc == 1 || std::strcmp(argv[1], "status") == 0) {
+        const audio::Status st = audio::status();
+        std::printf("volume : %d%s\n", s.volume, s.mute ? "  (MUTED)" : "");
+        std::printf("quiet  : %s\n",
+                    s.quiet_start_min == s.quiet_end_min ? "off"
+                                                         : "on");
+        std::printf("playing: %s\n", st.playing ? st.cue.c_str() : "-");
+        for (size_t i = 0; i < audio::CUE_COUNT; ++i) {
+            std::printf("  %-16s %s\n", audio::cue_id_name(static_cast<audio::CueId>(i)),
+                        st.have[i] ? "present" : "MISSING");
+        }
+        std::printf("underruns: %lu\n", static_cast<unsigned long>(st.underruns));
+        return 0;
+    }
+    if (std::strcmp(argv[1], "play") == 0 && argc >= 3) {
+        audio::CueId id{};
+        if (!audio::cue_id_from_name(argv[2], id)) {
+            std::printf("unknown cue\n");
+            return 1;
+        }
+        // -1: bypass quiet hours.  Somebody at the console is testing the
+        // speaker, and silence would look like a broken amp.
+        audio::play(id, -1);
+        return 0;
+    }
+    if (std::strcmp(argv[1], "stop") == 0) {
+        audio::stop();
+        return 0;
+    }
+    if (std::strcmp(argv[1], "vol") == 0 && argc >= 3) {
+        s.volume = std::atoi(argv[2]);
+        if (s.volume < 0 || s.volume > 100) {
+            std::printf("volume must be 0-100\n");
+            return 1;
+        }
+    } else if (std::strcmp(argv[1], "mute") == 0) {
+        s.mute = argc < 3 || std::atoi(argv[2]) != 0;
+    } else {
+        std::printf("usage: audio status | audio play <cue> | audio stop | "
+                    "audio vol <0-100> | audio mute [0|1]\n");
+        return 1;
+    }
+    audio::set_settings(s);
+    config::AudioConfig c;
+    c.volume = s.volume;
+    c.mute = s.mute;
+    c.quiet_start_min = s.quiet_start_min;
+    c.quiet_end_min = s.quiet_end_min;
+    const esp_err_t err = config::save_audio(c);
+    std::printf("%s\n", err == ESP_OK ? "saved" : esp_err_to_name(err));
+    return err == ESP_OK ? 0 : 1;
+}
+
 int cmd_persist(int, char**) {
     swan::ColumnConfig cols;
     config::load_columns(cols);
@@ -786,6 +842,8 @@ esp_err_t start() {
     reg("wifi", "wifi <ssid> <pass> | wifi status | wifi clear", cmd_wifi);
     reg("mqtt", "mqtt <uri> [user] [pass] | mqtt status | mqtt off | mqtt base <topic>",
         cmd_mqtt);
+    reg("audio", "audio status | play <cue> | stop | vol <0-100> | mute [0|1]",
+        cmd_audio);
     reg("persist", "persist - what NVS actually holds (needs no clock)", cmd_persist);
     reg("ota", "ota status | ota confirm | ota rollback", cmd_ota);
     reg("col", "col [<0-4>|all real|sim|disabled] - per-column mode", cmd_col);

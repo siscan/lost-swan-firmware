@@ -2,6 +2,7 @@
 
 #include "net/mqtt.h"
 #include "net/ota.h"
+#include "audio/player.h"
 #include "net/provision.h"
 
 #include "esp_app_desc.h"
@@ -169,6 +170,54 @@ bool IdfSystemOps::ota_rollback() {
     return swan::net::ota_rollback_and_reboot() == ESP_OK;
 }
 bool IdfSystemOps::ota_pending_verify() { return swan::net::ota_pending_verify(); }
+
+api::AudioState IdfAudioAdmin::audio_state() {
+    const audio::AudioSettings s = audio::settings();
+    const audio::Status st = audio::status();
+    api::AudioState a;
+    a.volume = s.volume;
+    a.mute = s.mute;
+    a.quiet_start_min = s.quiet_start_min;
+    a.quiet_end_min = s.quiet_end_min;
+    a.playing = st.playing;
+    a.cue = st.cue;
+    a.cues_total = static_cast<int>(audio::CUE_COUNT);
+    for (bool h : st.have) a.cues_present += h ? 1 : 0;
+    return a;
+}
+
+bool IdfAudioAdmin::audio_set(int volume, bool mute, int qs, int qe) {
+    audio::AudioSettings s = audio::settings();
+    s.volume = volume;
+    s.mute = mute;
+    s.quiet_start_min = qs;
+    s.quiet_end_min = qe;
+    audio::set_settings(s);
+    config::AudioConfig c;
+    c.volume = volume;
+    c.mute = mute;
+    c.quiet_start_min = qs;
+    c.quiet_end_min = qe;
+    return config::save_audio(c) == ESP_OK;
+}
+
+bool IdfAudioAdmin::audio_play(std::string_view cue) {
+    audio::CueId id{};
+    if (!audio::cue_id_from_name(cue, id)) return false;
+    const audio::Status st = audio::status();
+    // Refuse a cue with no file rather than reporting success and playing
+    // nothing: "the alarm did nothing" is a bad thing to discover at zero.
+    if (!st.have[static_cast<size_t>(id)]) return false;
+    // -1: play regardless of quiet hours.  An explicit audio.play is somebody
+    // testing the speaker, and silencing that would look like a broken amp.
+    audio::play(id, -1);
+    return true;
+}
+
+bool IdfAudioAdmin::audio_stop() {
+    audio::stop();
+    return true;
+}
 
 bool IdfWifiAdmin::set_credentials(std::string_view ssid, std::string_view pass) {
     return net::set_credentials(std::string(ssid).c_str(), std::string(pass).c_str()) == ESP_OK;

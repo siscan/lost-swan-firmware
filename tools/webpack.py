@@ -39,6 +39,15 @@ NEVER_COMPRESS = [
     (ROOT / "data" / "ring.json", "ring.json"),  # the runtime ring table (spec 4)
 ]
 
+# The cue WAVs (spec 9).  Also read by the firmware, also never compressed -
+# the player streams them from LittleFS in 2 KB reads and cannot inflate a gzip
+# stream.  They are already PCM, so gzip would save little anyway.
+#
+# These are SYNTHESIZED PLACEHOLDERS (tools/gen_audio.py), shipped so the whole
+# cue pipeline works before Nico's Swan recordings exist, and replaceable from
+# Settings -> Audio without a reflash - exactly like ring.json.
+AUDIO_DIR = ROOT / "audio"
+
 # Skipped: the simulator page is a development tool that opens from disk and
 # ships nothing to the device.  Its trace file alone is bigger than the UI.
 SKIP_DIRS = {"sim"}
@@ -47,6 +56,9 @@ SKIP_DIRS = {"sim"}
 def gather():
     """[(source path, name in the image, compress?)], sorted for a stable report."""
     out = []
+    if AUDIO_DIR.is_dir():
+        for wav in sorted(AUDIO_DIR.glob("*.wav")):
+            out.append((wav, "audio/" + wav.name, False))
     for base, prefix in SOURCES:
         if not base.is_dir():
             continue

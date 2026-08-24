@@ -11,6 +11,7 @@
 #include "check.h"
 #include "fake_port.h"
 #include "ring/json_lite.h"
+#include "audio/wav.h"
 #include "webapi/api.h"
 #include "webapi/ring_upload.h"
 
@@ -163,6 +164,30 @@ struct FakeWifi : api::WifiAdmin {
     bool have_credentials() override { return !ssid.empty(); }
 };
 
+struct FakeAudio : api::AudioAdmin {
+    api::AudioState st;
+    int plays = 0;
+    std::string last_cue;
+    bool has_files = true;
+    api::AudioState audio_state() override { return st; }
+    bool audio_set(int v, bool m, int qs, int qe) override {
+        st.volume = v;
+        st.mute = m;
+        st.quiet_start_min = qs;
+        st.quiet_end_min = qe;
+        return true;
+    }
+    bool audio_play(std::string_view cue) override {
+        swan::audio::CueId id{};
+        if (!swan::audio::cue_id_from_name(cue, id)) return false;
+        if (!has_files) return false;
+        ++plays;
+        last_cue = std::string(cue);
+        return true;
+    }
+    bool audio_stop() override { return true; }
+};
+
 struct Rig {
     RingSet ring = RingSet::compiled_fallback();
     FakePort port;
@@ -177,8 +202,9 @@ struct Rig {
     FakeOps ops;
     FakeMqtt mqtt;
     FakeWifi wifi;
+    FakeAudio audio;
     api::RingStager stager{ring};
-    api::Context ctx{mm, stager, motion, cfg, sys, stager, ops, mqtt, wifi, {}};
+    api::Context ctx{mm, stager, motion, cfg, sys, stager, ops, mqtt, wifi, audio, {}};
 
     Rig() {
         mm.set_config(ModesConfig{});

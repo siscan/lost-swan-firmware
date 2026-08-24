@@ -140,6 +140,12 @@ int64_t ModeManager::cd_target() const {
     const Enter witness(*this);
     return cd_.target_utc;
 }
+LocalTime ModeManager::local_now() const {
+    const std::lock_guard<std::mutex> lock(mu_);
+    const Enter witness(*this);
+    return tz_.to_local(time_.now_utc());
+}
+
 uint32_t ModeManager::cd_seq() const {
     const std::lock_guard<std::mutex> lock(mu_);
     const Enter witness(*this);

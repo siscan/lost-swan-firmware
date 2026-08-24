@@ -53,6 +53,14 @@ public:
                         std::string_view ha_prefix) override;
 };
 
+class IdfAudioAdmin final : public api::AudioAdmin {
+public:
+    api::AudioState audio_state() override;
+    bool audio_set(int volume, bool mute, int quiet_start_min, int quiet_end_min) override;
+    bool audio_play(std::string_view cue) override;
+    bool audio_stop() override;
+};
+
 class IdfWifiAdmin final : public api::WifiAdmin {
 public:
     bool set_credentials(std::string_view ssid, std::string_view pass) override;

@@ -29,6 +29,7 @@
 #include "net/httpd.h"
 #include "net/mqtt.h"
 #include "net/ota.h"
+#include "audio/player.h"
 #include "net/provision.h"
 #include "net/wifi.h"
 #include "ring/ring_store.h"
@@ -44,6 +45,11 @@ namespace {
 constexpr const char* TAG = "app";
 
 swan::FrameScheduler* g_sched = nullptr;
+
+// Local minutes since midnight, for quiet hours.  -1 when the clock has not
+// synced: a display whose SNTP has not come back should still be able to make
+// a noise, because silence is indistinguishable from a broken amp.
+int local_minute_of_day();
 swan::ModeManager* g_modes = nullptr;
 swan::api::EventTapPort* g_tap = nullptr;
 swan::api::RingStager* g_stager = nullptr;
@@ -61,7 +67,18 @@ int64_t utc_ms_now() {
 // event tap forwards every cue onto /ws.
 class LogCueSink final : public swan::CueSink {
 public:
-    void on_cue(swan::Cue c) override { ESP_LOGI("cue", "%s", swan::api::cue_name(c)); }
+    void on_cue(swan::Cue c) override {
+        ESP_LOGI("cue", "%s", swan::api::cue_name(c));
+        // Cues fire from the modes task, so play() must not block - it posts
+        // to the player task and returns.
+        swan::audio::CueId id = swan::audio::CueId::Warn4Min;
+        switch (c) {
+            case swan::Cue::Warn4Min:      id = swan::audio::CueId::Warn4Min; break;
+            case swan::Cue::Warn1Min:      id = swan::audio::CueId::Warn1Min; break;
+            case swan::Cue::SystemFailure: id = swan::audio::CueId::SystemFailure; break;
+        }
+        swan::audio::play(id, local_minute_of_day());
+    }
 };
 
 swan::Status derive_status() {
@@ -219,6 +236,12 @@ void modes_task(void*) {
     }
 }
 
+int local_minute_of_day() {
+    if (g_modes == nullptr || !g_modes->time_valid()) return -1;
+    const swan::LocalTime t = g_modes->local_now();
+    return t.hour * 60 + t.minute;
+}
+
 }  // namespace
 
 extern "C" void app_main() {
@@ -242,6 +265,20 @@ extern "C" void app_main() {
     swan::ColumnConfig cols;
     ESP_ERROR_CHECK(swan::config::load_columns(cols));
     mp.maintenance = cols.maintenance;
+
+    // Audio (spec 9).  Before motion, so a cue at boot is not the first thing
+    // that ever touches I2S.
+    swan::config::AudioConfig ac;
+    swan::config::load_audio(ac);
+    swan::audio::AudioSettings as;
+    as.volume = ac.volume;
+    as.mute = ac.mute;
+    as.quiet_start_min = ac.quiet_start_min;
+    as.quiet_end_min = ac.quiet_end_min;
+    as.failure_loop_s = g_app.modes.failure_loop_s;
+    if (swan::audio::init(as) != ESP_OK) {
+        ESP_LOGE(TAG, "audio init failed; cues will be silent");
+    }
 
     swan::status_led_init();
     ESP_ERROR_CHECK(swan::motion::init(mp));
@@ -300,11 +337,12 @@ extern "C" void app_main() {
     static swan::net::IdfSystemOps ops;
     static swan::net::IdfMqttAdmin mqtt_admin;
     static swan::net::IdfWifiAdmin wifi_admin;
+    static swan::net::IdfAudioAdmin audio_admin;
     g_stager = new swan::api::RingStager(swan::ring_store::mutable_ring());
     // The stager is BOTH the ring source and the upload sink: it owns the lock
     // that makes a snapshot safe against its own swap.
     g_api = new swan::api::Context{*g_modes, *g_stager, motion_admin, cfg_sink,
-                                   sysinfo,  *g_stager, ops, mqtt_admin, wifi_admin, {}};
+                                   sysinfo,  *g_stager, ops, mqtt_admin, wifi_admin, audio_admin, {}};
 
     xTaskCreate(status_task, "swan_status", 3072, nullptr, 2, nullptr);
     xTaskCreate(modes_task, "swan_modes", 8192, nullptr, 5, nullptr);

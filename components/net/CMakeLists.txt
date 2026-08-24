@@ -3,7 +3,7 @@
 # single dispatcher, and nothing here runs on the motion path.
 idf_component_register(SRCS "wifi.cpp" "httpd.cpp" "bindings.cpp" "mqtt.cpp" "ota.cpp" "provision.cpp"
                        INCLUDE_DIRS "include"
-                       REQUIRES webapi config ring modes motion frame swan_hal
+                       REQUIRES webapi config ring modes motion frame swan_hal audio
                                 esp_wifi esp_netif esp_event esp_http_server
                                 esp_timer nvs_flash esp_app_format mqtt app_update esp_partition lwip)
 # `mqtt` is esp-mqtt, an IN-TREE IDF component - not a managed one, so

@@ -50,6 +50,19 @@ struct MqttConfig {
     bool configured() const { return enabled && !uri.empty(); }
 };
 
+// Audio (spec 9, 11 audio.*).  Quiet hours are off by default [Q8]: both
+// bounds equal means "never quiet", which is a state the wrap-around
+// comparison has to handle explicitly.
+struct AudioConfig {
+    int volume = 70;          // [Q8 default]
+    bool mute = false;
+    int quiet_start_min = 0;
+    int quiet_end_min = 0;
+};
+
+esp_err_t load_audio(AudioConfig& c);
+esp_err_t save_audio(const AudioConfig& c);
+
 // Opens NVS, initialising the partition if it is new or was reformatted.
 esp_err_t init();
 

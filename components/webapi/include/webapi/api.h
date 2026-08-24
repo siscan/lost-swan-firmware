@@ -144,6 +144,28 @@ struct MqttStatus {
     uint32_t dropped = 0;
 };
 
+// Audio (spec 9).  An interface, so the host dev server and the tests can
+// exercise the cue commands without an amplifier.
+struct AudioState {
+    int volume = 70;
+    bool mute = false;
+    int quiet_start_min = 0;
+    int quiet_end_min = 0;
+    bool playing = false;
+    std::string cue;
+    int cues_present = 0;
+    int cues_total = 0;
+};
+
+class AudioAdmin {
+public:
+    virtual ~AudioAdmin() = default;
+    virtual AudioState audio_state() = 0;
+    virtual bool audio_set(int volume, bool mute, int quiet_start_min, int quiet_end_min) = 0;
+    virtual bool audio_play(std::string_view cue) = 0;
+    virtual bool audio_stop() = 0;
+};
+
 // WiFi credentials and the provisioning portal (spec 10.1).
 class WifiAdmin {
 public:
@@ -180,6 +202,7 @@ struct Context {
     SystemOps& ops;
     MqttAdmin& mqtt;
     WifiAdmin& wifi;
+    AudioAdmin& audio;
 
     // ONE command at a time, whatever the transport.
     //
