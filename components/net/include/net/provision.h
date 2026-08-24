@@ -21,6 +21,10 @@ namespace net {
 esp_err_t provision_start();
 esp_err_t provision_stop();
 
+// Take the portal down once the STA has an IP.  Nothing else should call
+// this: the portal must never stop because somebody guessed it was done.
+void provision_stop_on_join();
+
 bool provisioning();
 std::string provision_ssid();
 

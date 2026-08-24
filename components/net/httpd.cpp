@@ -286,7 +286,7 @@ esp_err_t static_handler(httpd_req_t* req) {
     // Bounded copy rather than a truncating snprintf: a path that does not
     // fit is a 404, not a silently shortened filename.
     char rel[96];
-    constexpr size_t kIndexLen = sizeof "index.html" - 1;
+    constexpr size_t kIndexLen = sizeof "portal.html" - 1;   // the longer of the two
     const size_t ulen = std::strlen(req->uri);
     if (ulen + kIndexLen >= sizeof rel) {
         httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "path too long");
@@ -297,7 +297,16 @@ esp_err_t static_handler(httpd_req_t* req) {
     if (q != nullptr) *q = '\0';
     const size_t n = std::strlen(rel);
     if (n == 0 || rel[n - 1] == '/') {
-        std::memcpy(rel + n, "index.html", kIndexLen + 1);
+        // While the portal is up, a PAGE request gets the setup page rather
+        // than the control panel.  The control panel is useless on a display
+        // that cannot reach the network - and worse, it fetches /api/ring and
+        // opens a WebSocket, which a phone on an isolated access point sits
+        // and waits on.  Assets are still served normally.
+        if (portal_active()) {
+            std::memcpy(rel + n, "portal.html", sizeof "portal.html");
+        } else {
+            std::memcpy(rel + n, "index.html", sizeof "index.html");
+        }
     }
 
     // Gzipped first: that is how the assets ship (spec 15 phase 3, step e).

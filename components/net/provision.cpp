@@ -126,11 +126,24 @@ esp_err_t provision_stop() {
     if (!g_active.load(std::memory_order_relaxed)) return ESP_OK;
     g_dns_stop.store(true, std::memory_order_relaxed);
     g_active.store(false, std::memory_order_relaxed);
-    wifi_mode_t mode = WIFI_MODE_NULL;
-    esp_wifi_get_mode(&mode);
-    if (mode == WIFI_MODE_APSTA) esp_wifi_set_mode(WIFI_MODE_STA);
-    ESP_LOGI(TAG, "provisioning stopped");
+    // Unconditionally STA, not only from APSTA.  The old test left an OPEN
+    // access point beaconing for ever whenever the portal had been started in
+    // AP-only mode - which is the case when there was no STA to coexist with,
+    // i.e. exactly the unprovisioned boot the portal exists for.
+    esp_wifi_set_mode(WIFI_MODE_STA);
+    ESP_LOGI(TAG, "provisioning stopped; access point down");
     return ESP_OK;
+}
+
+// Called from the link-up path: once the display is actually on a network, the
+// portal has done its job.  Leaving it up would keep an open AP beaconing and
+// keep a DNS hijack answering every query with 192.168.4.1 - following the
+// display onto the LAN, where anything that asked it for a name would be sent
+// to an address that is not there.
+void provision_stop_on_join() {
+    if (!g_active.load(std::memory_order_relaxed)) return;
+    ESP_LOGI(TAG, "joined a network; taking the portal down");
+    provision_stop();
 }
 
 bool provisioning() { return g_active.load(std::memory_order_relaxed); }

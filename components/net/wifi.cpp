@@ -1,3 +1,4 @@
+#include "net/provision.h"
 #include "net/wifi.h"
 
 #include <cstring>
@@ -96,6 +97,9 @@ void on_got_ip(void*, esp_event_base_t, int32_t, void* data) {
         g_status.ip = buf;
     }
     g_attempt = 0;
+    // The portal's job is done the moment there is a route.  Direct rather
+    // than through on_link_change, which is a single slot MQTT already owns.
+    provision_stop_on_join();
     notify_link(true);
     ESP_LOGI(TAG, "connected, ip %s", buf);
 }
@@ -177,9 +181,14 @@ esp_err_t set_credentials(const std::string& ssid, const std::string& pass) {
 
     g_attempt = 0;
     esp_timer_stop(g_retry);
+    // esp_wifi_stop() takes the ACCESS POINT down with it, and this is called
+    // from the dispatcher while a phone is connected to that access point
+    // through the portal - so the client never received the answer to its own
+    // request, and if the password was wrong it had no way back in.  The AP now
+    // stays up until the STA actually joins (provision_stop_on_join), which is
+    // the only evidence that the credentials were right.
     if (g_started) {
         esp_wifi_disconnect();
-        esp_wifi_stop();
         g_started = false;
     }
     if (!cfg.configured()) {
