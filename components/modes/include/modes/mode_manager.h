@@ -212,6 +212,9 @@ public:
     // than through the tz engine directly, so it is taken under the same
     // lock as everything else the modes task owns.
     LocalTime local_now() const;
+    // The live message, space-separated, or empty.  An HA text entity with
+    // no readable state logs a rejection on every push.
+    std::string message_tokens() const;
     Origin cd_set_by() const;
     bool wifi_glyph_shown() const;
     bool time_valid() const;
@@ -273,6 +276,10 @@ private:
 
     // Message state.
     Frame msg_frame_{};
+    // The tokens as given, so the state payload can report the message
+    // back.  The frame is ring INDICES and a column-5 index means a
+    // different character, so it cannot be turned back into names.
+    std::array<std::string, N_COLUMNS> msg_tokens_{};
     bool msg_live_ = false;
     bool msg_hold_ = false;
     int64_t msg_until_ms_ = 0;

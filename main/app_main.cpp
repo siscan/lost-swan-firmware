@@ -15,6 +15,8 @@
 #include "cli/cli.h"
 #include "config/config.h"
 #include "esp_app_desc.h"
+#include <atomic>
+
 #include "esp_log.h"
 #include "esp_task_wdt.h"
 #include "hal/boot_health.h"
@@ -46,10 +48,21 @@ constexpr const char* TAG = "app";
 
 swan::FrameScheduler* g_sched = nullptr;
 
-// Local minutes since midnight, for quiet hours.  -1 when the clock has not
-// synced: a display whose SNTP has not come back should still be able to make
-// a noise, because silence is indistinguishable from a broken amp.
-int local_minute_of_day();
+// Local minutes since midnight, for quiet hours; -1 when the clock has not
+// synced, because silence is indistinguishable from a broken amp.
+//
+// A PLAIN ATOMIC, refreshed by the modes task once a tick, and NOT a call into
+// ModeManager.  The cue sink runs from inside ModeManager's own locked tick
+// (mode_manager.cpp: cues_.on_cue under mu_), so asking ModeManager the time
+// would take a non-recursive std::mutex the same thread already holds - an
+// instant deadlock of the modes task on the FIRST countdown cue.  With the
+// watchdog now set to panic, that is not a hang, it is a reboot loop at 4:00
+// remaining.
+//
+// This is the same rule already written on Context::dispatch_mu - nothing
+// reachable from a sink may take a lock the sink's caller holds - broken here
+// and caught by review rather than by a countdown.
+std::atomic<int> g_local_minute{-1};
 swan::ModeManager* g_modes = nullptr;
 swan::api::EventTapPort* g_tap = nullptr;
 swan::api::RingStager* g_stager = nullptr;
@@ -77,7 +90,7 @@ public:
             case swan::Cue::Warn1Min:      id = swan::audio::CueId::Warn1Min; break;
             case swan::Cue::SystemFailure: id = swan::audio::CueId::SystemFailure; break;
         }
-        swan::audio::play(id, local_minute_of_day());
+        swan::audio::play(id, g_local_minute.load(std::memory_order_relaxed));
     }
 };
 
@@ -136,6 +149,13 @@ void modes_task(void*) {
         esp_task_wdt_reset();
         swan::g_modes_ticks.fetch_add(1, std::memory_order_relaxed);
         const int64_t now = utc_ms_now();
+        // Before the tick, so a cue fired inside it reads a current value.
+        if (g_modes->time_valid()) {
+            const swan::LocalTime lt = g_modes->local_now();
+            g_local_minute.store(lt.hour * 60 + lt.minute, std::memory_order_relaxed);
+        } else {
+            g_local_minute.store(-1, std::memory_order_relaxed);
+        }
 
         // A ring uploaded by the HTTP task was validated into a staging table;
         // the swap happens HERE, in the context that renders - and through
@@ -236,18 +256,28 @@ void modes_task(void*) {
     }
 }
 
-int local_minute_of_day() {
-    if (g_modes == nullptr || !g_modes->time_valid()) return -1;
-    const swan::LocalTime t = g_modes->local_now();
-    return t.hour * 60 + t.minute;
-}
-
 }  // namespace
 
 extern "C" void app_main() {
     const esp_app_desc_t* desc = esp_app_get_description();
     ESP_LOGI(TAG, "LOST Swan split-flap - %s (%s), board %s", desc->version, desc->idf_ver,
              swan::BOARD_NAME);
+
+    // The OTA confirm watcher goes FIRST, before anything that could hang.
+    //
+    // It used to be created at the end of app_main, which is the one place it
+    // is no use: an image that hangs in motion::init, in the LittleFS mount or
+    // in WiFi never reaches the end, so it never starts the watcher, never
+    // fails to confirm on a timer, and just sits there.  The watchdog would
+    // eventually panic and reboot - into the SAME unconfirmed image, because
+    // an aborted PENDING_VERIFY boot is only rolled back by the bootloader
+    // after a reset, and a panic IS a reset... which is the one case that does
+    // work.  But a hang with the watchdog fed by a task that is still running
+    // is not, and the watcher costs nothing: it short-circuits immediately
+    // unless this image is PENDING_VERIFY.
+    if (swan::net::ota_init() != ESP_OK) {
+        ESP_LOGE(TAG, "ota watcher failed to start");
+    }
 
     ESP_ERROR_CHECK(swan::config::init());
     swan::g_config_init_ok.store(true, std::memory_order_relaxed);
@@ -357,11 +387,7 @@ extern "C" void app_main() {
     } else {
         swan::g_httpd_started.store(true, std::memory_order_relaxed);
     }
-    // The confirm watcher (spec 10.4).  Costs nothing unless this image is
-    // PENDING_VERIFY, which it only is on the first boot after an OTA.
-    if (swan::net::ota_init(*g_api) != ESP_OK) {
-        ESP_LOGE(TAG, "ota watcher failed to start");
-    }
+    swan::net::ota_bind(*g_api);
     // MQTT last: off until configured, never waited on, and the display is a
     // complete standalone clock without it (spec 10.0).
     // Provisioning (spec 10.1).  Only with no credentials at all: a display

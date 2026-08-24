@@ -140,6 +140,18 @@ int64_t ModeManager::cd_target() const {
     const Enter witness(*this);
     return cd_.target_utc;
 }
+std::string ModeManager::message_tokens() const {
+    const std::lock_guard<std::mutex> lock(mu_);
+    const Enter witness(*this);
+    if (!msg_live_) return {};
+    std::string out;
+    for (const auto& t : msg_tokens_) {
+        if (!out.empty()) out += ' ';
+        out += t.empty() ? "_" : t;
+    }
+    return out;
+}
+
 LocalTime ModeManager::local_now() const {
     const std::lock_guard<std::mutex> lock(mu_);
     const Enter witness(*this);
@@ -666,6 +678,7 @@ ModeManager::Result ModeManager::cmd_message_set(
         f.idx[static_cast<size_t>(i)] = idx;
     }
     msg_frame_ = f;
+    msg_tokens_ = tokens;
     msg_live_ = true;
     msg_hold_ = hold;
     msg_until_ms_ = utc_ms + static_cast<int64_t>(dwell_s > 0 ? dwell_s : cfg_.msg_dwell_s) * 1000;
