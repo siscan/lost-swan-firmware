@@ -40,14 +40,23 @@ bool seconds_mode_from_name(std::string_view s, SecondsMode& out);
 // the quiet phase; 10 or 1 once `remaining_s <= live_s`, per the mode.
 int countdown_step_s(SecondsMode mode, int remaining_s, int live_s);
 
-// The value actually displayed: `remaining_s` floored to its window.  108:00
-// is the idle face, and a running countdown holds it only for the start
-// instant before rolling to the first window.
+// THE RENDERING CONTRACT (spec 7.3): displayed = ceil(remaining / step) * step.
+//
+// CEILING, corrected 2026-08-24.  The show holds 108:00 until a full minute has
+// elapsed, so a value owns the window ABOVE it: 107:55 remaining still reads
+// 108:00, and 000:00 lands exactly at remaining = 0, with the klaxon rather
+// than a second ahead of it.
+//
+// This is a CROSS-REPO contract.  The presentation readout and the separate
+// terminal prop derive their displays from the same deadline and must use the
+// same formula, or two screens showing the same countdown disagree by a whole
+// step.
 int countdown_shown_s(SecondsMode mode, int remaining_s, int live_s);
 
 // The next distinct display value below `shown` - what the land-on-tick
-// scheduler must pre-render.  Crossing the freeze boundary is just an ordinary
-// step here: 300 -> 240 (quiet), then 240 -> 239 (live).
+// scheduler must pre-render, and the value that lands when remaining reaches
+// it.  Crossing the freeze boundary is just an ordinary step: 300 -> 240
+// (quiet), then 240 -> 239 (live).
 int countdown_next_shown_s(SecondsMode mode, int shown_s, int live_s);
 
 // Clock layout (spec 7.1, Q2): col 1 AM/PM (blank in 24 h), cols 2-3 hours,

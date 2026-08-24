@@ -586,7 +586,12 @@ void ModeManager::tick_countdown(int64_t utc_ms) {
     }
 
     if (cd_.phase == CdPhase::Running) {
-        const int rem_s = static_cast<int>(rem_ms / 1000);
+        // CEILING the milliseconds too, for the same reason the display ceilings
+        // the seconds: truncating first would advance the face up to a second
+        // early, which is precisely the defect this change exists to remove.
+        // Nested ceilings compose, so ceil(ceil(ms/1000)/step) is exactly
+        // ceil(ms / (1000*step)).
+        const int rem_s = static_cast<int>((rem_ms + 999) / 1000);
         const int shown = countdown_shown_s(mode, rem_s, live_s);
         cd_step_s_ = countdown_step_s(mode, rem_s, live_s);
 
@@ -600,20 +605,25 @@ void ModeManager::tick_countdown(int64_t utc_ms) {
         }
 
         if (cfg_.cd_land_on_tick && shown > 0) {
-            // The frame for the next window lands exactly when rem hits
-            // `shown` (the terminal screen is the reference - spec 7.3).  In
-            // seconds mode a wrap can need longer than the one-second window;
-            // FrameScheduler::show then starts it immediately and it lands a
-            // little late rather than never, catching up on the next tick
-            // because forward-only moves just extend (spec 7.3 timing note).
+            // The next frame lands exactly when remaining reaches the NEXT
+            // value - the terminal screen is the reference (spec 7.3).  Under
+            // CEILING `shown` owns (shown - step, shown], so it is already up
+            // by the time remaining equals it; landing on `shown` would put
+            // every frame a whole step early, and 000:00 a second before its
+            // own klaxon.  That was the old floor behaviour.
             //
             // The next value comes from countdown_next_shown_s, not from
             // `shown - step`: the window below this one may be a different
             // size, which is exactly what happens at the freeze boundary
             // (300 -> 240 while quiet, then 240 -> 239 once seconds are live).
-            const int64_t land = target_ms - static_cast<int64_t>(shown) * 1000;
+            //
+            // In seconds mode a wrap can need longer than the one-second
+            // window; FrameScheduler::show then starts it immediately and it
+            // lands a little late rather than never, catching up on the next
+            // tick because forward-only moves just extend.
+            const int next_shown = countdown_next_shown_s(mode, shown, live_s);
+            const int64_t land = target_ms - static_cast<int64_t>(next_shown) * 1000;
             if (cd_scheduled_land_ != land) {
-                const int next_shown = countdown_next_shown_s(mode, shown, live_s);
                 const Frame next = render_countdown(ring_, next_shown, last_frame_);
                 if (utc_ms + sched_.lead_ms(next) + SCHEDULE_MARGIN_MS >= land) {
                     issue(next, utc_ms, land);

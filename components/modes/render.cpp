@@ -86,15 +86,25 @@ int countdown_step_s(SecondsMode mode, int remaining_s, int live_s) {
 int countdown_shown_s(SecondsMode mode, int remaining_s, int live_s) {
     if (remaining_s < 0) remaining_s = 0;
     const int step = countdown_step_s(mode, remaining_s, live_s);
-    return (remaining_s / step) * step;
+    // CEILING, not floor (spec 7.3, corrected 2026-08-24).  The show holds
+    // 108:00 for a full minute after the Numbers are entered - 107:55 remaining
+    // still reads 108:00 - so a value is displayed for the whole window ABOVE
+    // it, not below.  Two things fall out of that and both were wrong before:
+    // the first minute of a run showed 107:00 half a second in, and 000:00
+    // arrived a full second before the deadline, ahead of its own klaxon.
+    return ((remaining_s + step - 1) / step) * step;
 }
 
 int countdown_next_shown_s(SecondsMode mode, int shown_s, int live_s) {
     if (shown_s <= 0) return 0;
-    // The next value is whatever one tick below this window floors to.  That
-    // makes the freeze boundary fall out of the same rule as every other
-    // step: at shown = 300 the next value is 240, and at 240 it is 239.
-    return countdown_shown_s(mode, shown_s - 1, live_s);
+    // Under ceiling, `shown` is displayed while remaining is in
+    // (shown - step, shown], so the next distinct value appears when remaining
+    // reaches shown - step.  It cannot be derived from `shown - 1` any more:
+    // one second below 300 still ceilings to 300.  Taking the step AT the top
+    // of the window keeps the freeze boundary an ordinary step - 300 -> 240
+    // while quiet, then 240 -> 239 once seconds are live.
+    const int step = countdown_step_s(mode, shown_s, live_s);
+    return countdown_shown_s(mode, shown_s - step, live_s);
 }
 
 Frame render_countdown(const RingSet& ring, int shown_s, const Frame& from, bool* diag) {

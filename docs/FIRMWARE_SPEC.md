@@ -710,7 +710,7 @@ Five tokens (§4). Dwell `msg.dwell_s = 600` then return to the previous mode;
   run** and only come alive in the last `countdown.seconds_live_s` (default
   **240**, which is also when the 4-minute cue fires — the display waking and
   the warning sound are one moment).  Above the threshold the display is
-  `floor(remaining / 60) * 60` rendered **MMM:00**; below it the resolution
+  `ceil(remaining / 60) * 60` rendered **MMM:00**; below it the resolution
   changes per `countdown.seconds_mode`:
 
   - **`seconds` (default)** — then **MMM:SS**, live one-second ticks.  Minutes
@@ -762,11 +762,46 @@ Five tokens (§4). Dwell `msg.dwell_s = 600` then return to the previous mode;
   run: column 4 pays the 45-flip 0→5 borrow and column 5 the 16-flip 0→9 wrap,
   ~3.0 s and ~1.1 s at 15 flaps/s.  `countdown.land_on_tick` starts it early so
   it *lands* on 240 — which is what pre-rendering the next value exists for.
-- Frame updates on every window boundary: `shown = floor(remaining / step) *
-  step`, where step is 60 s in the quiet phase and then 10 s or 1 s per
-  `countdown.seconds_mode`.  Note the floor: 108:00 is the idle face, and a
-  *running* countdown holds it only for the start instant before rolling to
-  107:00.
+- **THE RENDERING CONTRACT** (corrected to a ceiling 2026-08-24):
+
+  ```
+  displayed = ceil(remaining / step) * step
+  step = 60 in the quiet phase, then 10 (`tens`) or 1 (`seconds`)
+  ```
+
+  **Round UP, not down.**  The show holds 108:00 until a full minute has
+  elapsed — 107:55 remaining still reads 108:00 — so a value owns the window
+  **above** it and is displayed while `remaining ∈ (shown − step, shown]`.
+  Three things follow, and all three were wrong under the floor rule that
+  preceded this:
+
+  1. **108:00 is held for the first full minute** after the Numbers are
+     entered.  It used to roll to 107:00 half a second in.
+  2. **The 4:00 transition is seamless.**  005:00 owns the minute above the
+     boundary and `004:00` appears exactly as `remaining` reaches 240 — the same
+     instant the seconds go live and the 4-minute cue fires.  Nothing repeats
+     and nothing jumps.
+  3. **000:00 lands exactly at `remaining = 0`**, with the klaxon.  Under the
+     floor rule it appeared at `remaining = 1`, a whole second before its own
+     alarm.  Concretely: the land instant is `target − next_shown × 1000`, and
+     `next_shown` at `shown = 1` is now 0 rather than 1.
+
+  A corollary worth stating because it is the property all three share: **the
+  display never claims less time than actually remains.**
+
+  **This is a CROSS-REPO contract and changing it is contract-affecting.**  The
+  presentation readout (`web/terminal.js`) and the separate terminal prop both
+  derive their displays from the same deadline, so all three must use this
+  formula or two screens showing one countdown disagree by a whole step.  The
+  firmware's implementation is `countdown_shown_s` in
+  `components/modes/render.cpp`; the browser's is `countdownShownS` in
+  `web/terminal.js`; they are deliberate ports of each other.  Pinned by
+  `test_modes.cpp`'s `test_countdown_ceiling_consequences`.
+
+  **Wear is unchanged.**  The *sequence* of displayed values over a run is
+  identical — only its timing shifts by one window — so every figure in the
+  tables above and in §7.1 stands.  `test_wear.cpp` prints the same totals
+  before and after; nobody needs to re-derive them.
 
 **The display is self-sufficient.** Everything — entering the Numbers,
 switching modes, calibration — is done from the display's own web UI on any
@@ -1570,9 +1605,9 @@ numbered section — if you find one that disagrees, fix the section.
     the deadline at boot, one NVS write per set.  **`countdown.reveal`
     remains unset → the reveal frame is all blanks** until Nico picks the
     five glyphs (flagged, not resolved).
-  - **MMM:S0 floor semantics noted:** 108:00 is the idle face; a running
-    countdown shows it only for the start instant before rolling to 107:50 —
-    that is `floor(remaining/10)*10`, verbatim from §7.3.
+  - ~~**MMM:S0 floor semantics noted**~~ — **OBSOLETE, superseded
+    2026-08-24**, along with every other statement in this log that the start
+    face rolls off immediately.  The rule is a ceiling now (§7.3).
   - **WiFi is Phase 4:** until credentials exist SNTP never syncs, so a real
     boot shows blank then the centre-column WiFi glyph after 15 s.  That is
     §7.1 behaviour, not a defect.
@@ -1748,9 +1783,10 @@ numbered section — if you find one that disagrees, fix the section.
     latter matching this spec's own earlier "~22,200, 16,200 on column 5").
     The freeze is still the right call by a wide margin: **22,159 → 1,359**,
     16×, and the show-accurate mode is now cheaper than the old low-wear one.
-  - The 108:00 face rolls off at once, as the floor semantics have always said
-    — a running countdown shows **107:00** half a second in.  Previously it
-    showed 107:59; the visible change is the last two columns reading 00.
+  - ~~The 108:00 face rolls off at once~~ — **OBSOLETE, superseded
+    2026-08-24.**  The rule became a CEILING and 108:00 is now held for the
+    first full minute, which is what the show does.  See the entry at the end of
+    this log; the numbered section §7.3 is the normative statement.
 
 - 2026-08-23 — **Wear is computed, not tabulated.**  The Settings figure came
   from a five-entry JavaScript lookup and only moved for those five values.
@@ -2728,3 +2764,48 @@ numbered section — if you find one that disagrees, fix the section.
     and the image is built by hand (README) — a web change is not on the board
     until that command is re-run, and the symptom is a UI that looks like it
     ignored the fix.
+
+- 2026-08-24 — **The countdown display rounds UP** (Nico, show accuracy).  The
+  Swan holds 108:00 until a full minute has actually elapsed; 107:55 remaining
+  still reads 108:00.  The floor rule the spec had carried since v0.1 was
+  therefore wrong in a way nobody had looked at directly, and it was wrong at
+  both ends of a run.
+
+  ```
+  displayed = ceil(remaining / step) * step
+  ```
+
+  §7.3 is rewritten as the normative statement and states the formula as a
+  **cross-repo rendering contract**: the firmware, the presentation readout and
+  the terminal prop all derive their displays from the same deadline and must
+  use the same formula, or two screens showing one countdown disagree by a whole
+  step.  It is therefore **contract-affecting for the terminal side** and needs
+  relaying rather than merely noting.
+
+  - **Three consequences, all verified.**  108:00 is held for the first full
+    minute (it used to roll to 107:00 half a second in); the 4:00 transition is
+    seamless, with 004:00 appearing exactly as the seconds go live and the cue
+    fires; and **000:00 now lands at `remaining = 0` rather than a second
+    early** — under the floor rule the zero face beat its own klaxon by a
+    second.  The corollary they share: the display never claims less time than
+    remains.
+  - **Two implementation points that are easy to get wrong.**  The milliseconds
+    must be ceilinged too (`(rem_ms + 999) / 1000`), or truncating first
+    advances the face up to a second early and reintroduces the defect.  And
+    `countdown_next_shown_s` can no longer be `shown_s - 1`: one second below
+    300 still ceilings to 300, so the next value is taken from
+    `shown − step_at_the_top_of_the_window`, which keeps the freeze boundary an
+    ordinary step (300 → 240, then 240 → 239).
+  - **Land-on-tick re-derived.**  The transition instants are unchanged — both
+    rules change value at multiples of the step — but the frame that lands is
+    the NEXT value, so `land = target − next_shown × 1000` rather than
+    `target − shown × 1000`.  That single line is what put 000:00 a second early
+    before.
+  - **Wear is unchanged, and nobody should re-derive it.**  The sequence of
+    displayed values over a run is identical; only its timing shifts by one
+    window.  `test_wear.cpp` prints the same totals before and after the change
+    — 559 / 759 / 1,359 and the pre-freeze 5,959 / 22,159 — and the §7.1 clock
+    table is untouched.
+  - Recorded as a correction rather than a preference: the old rule was
+    consistent with itself, which is exactly why it survived four phases and a
+    cold read.

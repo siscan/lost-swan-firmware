@@ -114,15 +114,19 @@ for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
         # machine, so say so plainly rather than passing silently; Linux CI
         # runs it on every push.
         $node = Get-Command node -ErrorAction SilentlyContinue
-        if ($node) {
-            & $node.Source (Join-Path $PSScriptRoot 'test/host/test_flap.js')
-            if ($LASTEXITCODE -ne 0) {
-                Write-Error "Host test failure: test_flap"
-                exit 1
+        $jsSuites = @('test_flap', 'test_countdown')
+        foreach ($suite in $jsSuites) {
+            $pad = ('.' * (33 - $suite.Length))
+            if ($node) {
+                & $node.Source (Join-Path $PSScriptRoot "test/host/$suite.js")
+                if ($LASTEXITCODE -ne 0) {
+                    Write-Error "Host test failure: $suite"
+                    exit 1
+                }
+                Write-Host "$suite $pad Passed" -ForegroundColor Green
+            } else {
+                Write-Host "$suite $pad SKIPPED (no node; CI runs it)" -ForegroundColor Yellow
             }
-            Write-Host "test_flap ......................... Passed" -ForegroundColor Green
-        } else {
-            Write-Host "test_flap ......................... SKIPPED (no node; CI runs it)" -ForegroundColor Yellow
         }
         Write-Host "all host tests passed" -ForegroundColor Green
         exit 0

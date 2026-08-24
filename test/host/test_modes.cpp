@@ -202,8 +202,13 @@ void test_countdown_step_rules() {
         CHECK_EQ(countdown_step_s(m, 6480, live), 60);
         CHECK_EQ(countdown_step_s(m, 241, live), 60);
         CHECK_EQ(countdown_shown_s(m, 6480, live), 6480);
-        CHECK_EQ(countdown_shown_s(m, 299, live), 240);
-        CHECK_EQ(countdown_shown_s(m, 241, live), 240);
+        // CEILING (spec 7.3): a value owns the window ABOVE it, so 108:00 is
+        // held for the whole first minute rather than rolling off at once.
+        CHECK_EQ(countdown_shown_s(m, 6479, live), 6480);
+        CHECK_EQ(countdown_shown_s(m, 6421, live), 6480);
+        CHECK_EQ(countdown_shown_s(m, 6420, live), 6420);   // and only now 107:00
+        CHECK_EQ(countdown_shown_s(m, 299, live), 300);
+        CHECK_EQ(countdown_shown_s(m, 241, live), 300);
         // A quiet-phase value is always a whole minute, which is what puts
         // zeros in both seconds columns.
         CHECK_EQ(countdown_shown_s(m, 6479, live) % 60, 0);
@@ -214,17 +219,32 @@ void test_countdown_step_rules() {
     CHECK_EQ(countdown_step_s(SecondsMode::Tens, 240, live), 10);
     CHECK_EQ(countdown_step_s(SecondsMode::Seconds, 240, live), 1);
 
-    // 240 itself is already live, and floors to itself in every mode - so the
-    // frame at the boundary is 004:00 in all three and nothing jumps.
+    // 240 itself is already live, and ceilings to itself in every mode - so the
+    // frame at the boundary is 004:00 in all three and nothing jumps.  Under
+    // ceiling the value ABOVE it is 005:00, held for the whole preceding
+    // minute, so 004:00 appears exactly as the seconds go live and the
+    // 4-minute cue fires.  They are the same instant.
     CHECK_EQ(countdown_shown_s(SecondsMode::Minutes, 240, live), 240);
     CHECK_EQ(countdown_shown_s(SecondsMode::Tens, 240, live), 240);
     CHECK_EQ(countdown_shown_s(SecondsMode::Seconds, 240, live), 240);
 
-    // One tick below: 004:00 -> 003:59 in seconds, 003:50 in tens, 003:00 in
-    // minutes.
+    CHECK_EQ(countdown_shown_s(SecondsMode::Seconds, 241, live), 300);
+    CHECK_EQ(countdown_shown_s(SecondsMode::Tens, 241, live), 300);
+
+    // One tick below the boundary: 004:00 -> 003:59 in seconds.  In tens and
+    // minutes the coarser window still covers 239, so the face does not change
+    // yet - which is the ceiling rule doing exactly what it says.
     CHECK_EQ(countdown_shown_s(SecondsMode::Seconds, 239, live), 239);
-    CHECK_EQ(countdown_shown_s(SecondsMode::Tens, 239, live), 230);
-    CHECK_EQ(countdown_shown_s(SecondsMode::Minutes, 239, live), 180);
+    CHECK_EQ(countdown_shown_s(SecondsMode::Tens, 239, live), 240);
+    CHECK_EQ(countdown_shown_s(SecondsMode::Minutes, 239, live), 240);
+    CHECK_EQ(countdown_shown_s(SecondsMode::Tens, 231, live), 240);
+    CHECK_EQ(countdown_shown_s(SecondsMode::Tens, 230, live), 230);
+
+    // ZERO LANDS ON ZERO.  Under the old floor rule 000:00 appeared at
+    // remaining = 1, a full second before the deadline and ahead of its own
+    // klaxon.
+    CHECK_EQ(countdown_shown_s(SecondsMode::Seconds, 1, live), 1);
+    CHECK_EQ(countdown_shown_s(SecondsMode::Seconds, 0, live), 0);
 
     // The scheduler's "next value" must cross the boundary without a special
     // case: 300 -> 240 while quiet, then 240 -> 239 once live.
@@ -232,12 +252,55 @@ void test_countdown_step_rules() {
     CHECK_EQ(countdown_next_shown_s(SecondsMode::Seconds, 240, live), 239);
     CHECK_EQ(countdown_next_shown_s(SecondsMode::Tens, 240, live), 230);
     CHECK_EQ(countdown_next_shown_s(SecondsMode::Minutes, 240, live), 180);
+    // 108:00 -> 107:00, the step the first minute of a run now actually takes.
+    CHECK_EQ(countdown_next_shown_s(SecondsMode::Seconds, 6480, live), 6420);
     CHECK_EQ(countdown_next_shown_s(SecondsMode::Seconds, 1, live), 0);
     CHECK_EQ(countdown_next_shown_s(SecondsMode::Seconds, 0, live), 0);
 
     // live_s = 0 is a legitimate "never show seconds" setting for any mode.
     CHECK_EQ(countdown_step_s(SecondsMode::Seconds, 1, 0), 60);
-    CHECK_EQ(countdown_shown_s(SecondsMode::Seconds, 59, 0), 0);
+    CHECK_EQ(countdown_shown_s(SecondsMode::Seconds, 59, 0), 60);
+    CHECK_EQ(countdown_shown_s(SecondsMode::Seconds, 0, 0), 0);
+}
+
+// The three consequences the ceiling correction exists for (spec 7.3,
+// 2026-08-24).  Each one was wrong under the old floor rule, and each is a
+// thing somebody watching the display would actually notice.
+void test_countdown_ceiling_consequences() {
+    const int live = 240;
+    const SecondsMode m = SecondsMode::Seconds;
+
+    // (1) 108:00 IS HELD FOR A FULL MINUTE.  The show does not roll off the
+    // start face until a minute has elapsed; the old rule dropped to 107:00
+    // half a second in.
+    CHECK_EQ(countdown_shown_s(m, 6480, live), 6480);
+    for (int r = 6479; r > 6420; --r) CHECK_EQ(countdown_shown_s(m, r, live), 6480);
+    CHECK_EQ(countdown_shown_s(m, 6420, live), 6420);
+
+    // (2) THE 4:00 TRANSITION IS SEAMLESS.  005:00 owns the minute above the
+    // boundary and 004:00 appears exactly as remaining reaches 240 - the same
+    // instant the seconds go live and the 4-minute cue fires.  Nothing repeats
+    // and nothing jumps.
+    CHECK_EQ(countdown_shown_s(m, 300, live), 300);
+    CHECK_EQ(countdown_shown_s(m, 241, live), 300);
+    CHECK_EQ(countdown_shown_s(m, 240, live), 240);
+    CHECK_EQ(countdown_shown_s(m, 239, live), 239);
+    CHECK_EQ(countdown_next_shown_s(m, 300, live), 240);
+
+    // (3) 000:00 LANDS AT REMAINING = 0, with the klaxon rather than a second
+    // ahead of it.  The land instant is target - next_shown * 1000, so
+    // next_shown == 0 is exactly the statement "the zero frame lands on the
+    // deadline"; under floor it was 1, i.e. a second early.
+    CHECK_EQ(countdown_shown_s(m, 1, live), 1);
+    CHECK_EQ(countdown_shown_s(m, 0, live), 0);
+    CHECK_EQ(countdown_next_shown_s(m, 1, live), 0);
+
+    // The display never claims less time than remains, in any mode, at any
+    // setting.  That single property is what all three of the above are.
+    for (const SecondsMode mm : {SecondsMode::Minutes, SecondsMode::Tens,
+                                 SecondsMode::Seconds}) {
+        for (int r = 0; r <= 6480; ++r) CHECK(countdown_shown_s(mm, r, live) >= r);
+    }
 }
 
 void test_countdown_quiet_phase() {
@@ -249,17 +312,20 @@ void test_countdown_quiet_phase() {
     CHECK(r.mm.cmd_countdown_execute(" 4  8 15 16 23 42 ", t0).ok);
     CHECK(r.mm.cd_phase() == CdPhase::Running);
 
-    // 108:00 is the idle face; a running countdown rolls off it at once
-    // (floor semantics, spec 7.3), so half a second in the display reads
-    // 107:00.  The point of the change is the last two columns: 00, not 59.
+    // 108:00 IS HELD FOR THE FIRST FULL MINUTE (ceiling, spec 7.3) - the show
+    // does not roll off it until a minute has actually elapsed, so 107:55
+    // remaining still reads 108:00.  Half a second in it is still 108:00; it
+    // becomes 107:00 when remaining reaches 6420 and not a moment before.
     r.run_to(t0 + 500);
-    FACES(r, "1|0|7|0|0");
+    FACES(r, "1|0|8|0|0");
+    r.run_to(t0 + 59 * 1000);
+    FACES(r, "1|0|8|0|0");     // 59 s in: still 108:00
 
     // From here on, only the minutes columns may move.  This is the assertion
     // the whole redesign exists for.
     r.port.gos.clear();
-    r.run_to(t0 + 600 * 1000);  // ten minutes in
-    FACES(r, "0|9|7|0|0");
+    r.run_to(t0 + 600 * 1000);  // ten minutes in -> 5880 left -> 098:00
+    FACES(r, "0|9|8|0|0");
     CHECK_EQ(r.port.gos_for(3), 0);
     CHECK_EQ(r.port.gos_for(4), 0);
     // ...and the minutes columns did move: ten ones-digit steps and a borrow.
@@ -276,9 +342,9 @@ void test_countdown_freeze_boundary() {
     // Sampled mid-window throughout: frames land ON the boundary by design, so
     // a boundary-instant sample would see the incoming value.
     r.run_to(t0 + 500);
-    FACES(r, "0|0|5|0|0");     // 005:00
+    FACES(r, "0|0|6|0|0");     // 304.5 s left -> 006:00
     r.run_to(t0 + 10 * 1000);
-    FACES(r, "0|0|4|0|0");     // 004:00, and it holds for a full minute
+    FACES(r, "0|0|5|0|0");     // 295 left -> 005:00, and it holds a full minute
 
     const int col4 = r.port.cols[3].index;
     const int col5 = r.port.cols[4].index;
@@ -289,21 +355,26 @@ void test_countdown_freeze_boundary() {
     // and FakePort settles a move the instant it is issued.  On the wall the
     // columns are in flight over that stretch; in the fake they teleport.
     r.run_to(t0 + 55 * 1000);
-    FACES(r, "0|0|4|0|0");
+    FACES(r, "0|0|5|0|0");     // 250 left: still the 005:00 window
     CHECK_EQ(r.port.cols[3].index, col4);
     CHECK_EQ(r.port.cols[4].index, col5);
 
-    // Boundary: 004:00 -> 003:59 -> 003:58, one second apart.
+    // THE BOUNDARY IS SEAMLESS.  004:00 appears exactly as remaining reaches
+    // 240 - the same instant the seconds go live and the 4-minute cue fires -
+    // and then ticks one second at a time.  Under the old floor rule 004:00 had
+    // already been up for a minute by then.
     r.run_to(t0 + 65500);
     FACES(r, "0|0|3|5|9");
     r.run_to(t0 + 66500);
-    FACES(r, "0|0|3|5|8");
+    FACES(r, "0|0|3|5|9");
 
     // Waking the seconds costs column 4 the 0->5 borrow (45 flips on ring A)
     // and column 5 the 0->9 wrap (16 on ring B, not the 41 a single digit
-    // block would cost), plus the one-flip step to 58.
+    // block would cost).  The wear is unchanged by the ceiling correction - the
+    // sequence of displayed values is identical, only its timing shifted by one
+    // window - which is why test_wear's totals did not move.
     CHECK_EQ(ring_forward_distance(col4, r.port.cols[3].index), 45);
-    CHECK_EQ(ring_forward_distance(col5, r.port.cols[4].index), 16 + 1);
+    CHECK_EQ(ring_forward_distance(col5, r.port.cols[4].index), 16);
 }
 
 void test_countdown_modes() {
@@ -317,10 +388,13 @@ void test_countdown_modes() {
         const int64_t t0 = r.time.utc_ms;
         CHECK(r.mm.cmd_countdown_set_target(t0 / 1000 + 125, t0).ok);
         r.run_to(t0 + 500);
-        FACES(r, "0|0|2|0|0");
+        FACES(r, "0|0|3|0|0");      // 124.5 left -> 003:00
         r.port.gos.clear();
         r.run_to(t0 + 70 * 1000);   // 55 s left: deep inside the live window
-        FACES(r, "0|0|0|0|0");
+        // 001:00, not 000:00.  Ceiling will not claim the run is over while
+        // nearly a minute of it remains - which is the same defect, in
+        // miniature, that made 000:00 arrive a second before the klaxon.
+        FACES(r, "0|0|1|0|0");
         CHECK_EQ(r.port.gos_for(3), 0);
         CHECK_EQ(r.port.gos_for(4), 0);
     }
@@ -334,10 +408,10 @@ void test_countdown_modes() {
         const int64_t t0 = r.time.utc_ms;
         CHECK(r.mm.cmd_countdown_set_target(t0 / 1000 + 245, t0).ok);
         r.run_to(t0 + 500);
-        FACES(r, "0|0|4|0|0");
+        FACES(r, "0|0|5|0|0");      // 244.5 left, still quiet -> 005:00
         const int col5 = r.port.cols[4].index;
-        r.run_to(t0 + 20500);       // 224 s left -> floor to 220 = 003:40
-        FACES(r, "0|0|3|4|0");
+        r.run_to(t0 + 20500);       // 224.5 s left -> ceil to 230 = 003:50
+        FACES(r, "0|0|3|5|0");
         CHECK_EQ(r.port.cols[4].index, col5);   // never moved
     }
     // seconds: live one-second ticks, one flip each on column 5.
@@ -350,8 +424,8 @@ void test_countdown_modes() {
         FACES(r, "0|0|1|3|9");      // 99 s -> 001:39
         const int start = r.port.cols[4].index;
         r.run_to(t0 + 4500);
-        FACES(r, "0|0|1|3|5");
-        CHECK_EQ(ring_forward_distance(start, r.port.cols[4].index), 4);
+        FACES(r, "0|0|1|3|6");      // 95.5 left -> ceil to 96 = 001:36
+        CHECK_EQ(ring_forward_distance(start, r.port.cols[4].index), 3);
     }
 }
 
@@ -432,9 +506,18 @@ void test_countdown_shown_is_monotonic() {
                     ++g_failures;
                     break;
                 }
-                if (shown > rem) {
-                    std::printf("FAIL shown ahead of remaining: live=%d rem=%d shown=%d\n",
+                if (shown < rem) {
+                    std::printf("FAIL shown BEHIND remaining: live=%d rem=%d shown=%d\n",
                                 live, rem, shown);
+                    ++g_failures;
+                    break;
+                }
+                // ... and never more than one window ahead, which is what
+                // stops "round up" becoming "round up to anything".
+                const int step = countdown_step_s(m, rem, live);
+                if (shown - rem >= step || shown % step != 0) {
+                    std::printf("FAIL bad window: live=%d rem=%d shown=%d step=%d\n",
+                                live, rem, shown, step);
                     ++g_failures;
                     break;
                 }
@@ -931,6 +1014,7 @@ void run_tests() {
     test_clock_granularity();
     test_wifi_glyph();
     test_countdown_step_rules();
+    test_countdown_ceiling_consequences();
     test_countdown_quiet_phase();
     test_countdown_freeze_boundary();
     test_countdown_modes();

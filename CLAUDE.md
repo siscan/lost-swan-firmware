@@ -258,6 +258,11 @@ local decisions. Changing any of them is a change in another repository:
   them live and schedules against them; it holds no duplicate. Pinned by
   `test_api.cpp`'s `test_state_document_contract`, which also asserts they sit
   inside the MQTT change window.
+- **The countdown rendering contract**, `displayed = ceil(remaining / step) *
+  step` (§7.3, corrected to a ceiling 2026-08-24). The firmware, the
+  presentation readout and the prop all derive from the same deadline and must
+  round the same way. `countdown_shown_s` in C++ and `countdownShownS` in
+  `web/terminal.js` are deliberate ports of each other.
 - **`{"e":"reveal","seq":N,"t":…}` on `swan/event`** — the beat the failure
   sequence lands on. Two shapes share that topic: a command *result* carries
   `cmd`, an *announcement* carries `e`.

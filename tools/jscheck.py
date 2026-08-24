@@ -7,7 +7,12 @@ newline smuggled into a string literal takes.
 """
 import sys
 
-FILES = ["web/app.js", "web/terminal.js", "web/flap.js", "web/bus.js"]
+# Every browser asset that ships.  Phase 7 added five more files, and the
+# failure mode does not care which one it is in: one unparseable file blanks
+# whichever page loads it.
+import glob
+
+FILES = sorted(glob.glob("web/*.js")) + sorted(glob.glob("web/sim/*.js"))
 
 bad = 0
 for f in FILES:
