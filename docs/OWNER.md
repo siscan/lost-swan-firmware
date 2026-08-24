@@ -30,13 +30,17 @@ One RGB LED, and it is the fastest way to know what is happening:
 | colour | meaning |
 |---|---|
 | dim violet, blinking once a second | powered, hasn't homed yet |
-| amber, blinking fast | homing — the columns are hunting for their sensors |
+| amber, blinking about four times a second | homing — the columns are hunting for their sensors |
 | **solid green** | homed, clock right, everything normal |
 | blue, blinking twice a second | homed, but the clock hasn't synced yet — see *No network* |
-| **red, blinking fast** | at least one column has faulted — see *When a column faults* |
+| **red, blinking about ten times a second** | at least one column has faulted — see *When a column faults* |
 
-A boot takes about half a minute of amber before green, because each column
-takes ~7.5 s to home and they are staggered deliberately.
+A healthy boot is roughly ten seconds of amber before green: a homing pass takes
+about 7.5 seconds and the five columns are staggered a quarter of a second apart
+on purpose, to keep the current draw down. If a column *cannot* find its sensor
+it tries three times, so a genuinely broken one shows amber for around half a
+minute before the light goes red — during which the display looks idle and is
+actually searching.
 
 ## The pages
 
@@ -114,14 +118,15 @@ countdown cues; pressing PLAY yourself always plays.
 
 ## What it remembers
 
-**Diagnostics → the log** (`http://lost.local/api/log`) is the last few
-thousand lines the firmware printed, in memory, lost at power-off. Useful when
-something has just gone wrong.
+**The log** (`http://lost.local/api/log`) is the last few thousand lines the
+firmware printed, in memory, lost at power-off. Useful when something has just
+gone wrong. It opens in a browser tab; there is no button for it yet.
 
 **The journal** (`http://lost.local/api/journal`) is permanent and much
 shorter: every countdown you started and how, every zero, every fault and
 recovery, every mode change, and every boot with the reason it restarted. It
-survives power loss and is the display's actual history.
+survives power loss and is the display's actual history. Also a URL rather than
+a button for now.
 
 ## Updating
 
