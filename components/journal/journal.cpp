@@ -66,10 +66,13 @@ int log_vprintf(const char* fmt, va_list args) {
     const int n = vsnprintf(line, sizeof line, fmt, copy);
     va_end(copy);
     if (n > 0) {
+        // vsnprintf returns what it WOULD have written, so n past the buffer is
+        // how truncation announces itself - and it is the only place that
+        // knows, because the ring only ever sees the cut string.
+        const bool cut = static_cast<std::size_t>(n) >= sizeof line;
+        const std::size_t len = cut ? sizeof line - 1 : static_cast<std::size_t>(n);
         portENTER_CRITICAL(&g_log_lock);
-        g_log.push(line, static_cast<std::size_t>(n) < sizeof line
-                             ? static_cast<std::size_t>(n)
-                             : sizeof line - 1);
+        g_log.push(line, len, cut);
         portEXIT_CRITICAL(&g_log_lock);
     }
     return g_prev_vprintf != nullptr ? g_prev_vprintf(fmt, args) : n;
@@ -313,11 +316,24 @@ void log_capture_start() {
 }
 
 std::string log_read(std::size_t max_bytes) {
-    // The ring is written from a critical section; copy under it and format
-    // outside, so a log read never delays a log write.
+    // ALLOCATE OUTSIDE THE CRITICAL SECTION.  portENTER_CRITICAL masks
+    // interrupts - including the 50 kHz step ISR - and this was allocating up
+    // to 8 KB inside it, so reading the log from a browser could drop steps on
+    // a moving display.  Size the buffer under the lock, release it, allocate,
+    // then fill under the lock again; read_into never allocates and honours the
+    // buffer it is given, so a ring that grew in between is simply cut.
+    std::size_t want;
     portENTER_CRITICAL(&g_log_lock);
-    std::string out = g_log.read(max_bytes);
+    want = g_log.used() + g_log.lines() + 1;
     portEXIT_CRITICAL(&g_log_lock);
+    if (max_bytes != 0 && want > max_bytes) want = max_bytes + LOG_LINE_MAX + 1;
+
+    std::string out;
+    out.resize(want);
+    portENTER_CRITICAL(&g_log_lock);
+    const std::size_t n = g_log.read_into(&out[0], want, max_bytes);
+    portEXIT_CRITICAL(&g_log_lock);
+    out.resize(n);
     return out;
 }
 

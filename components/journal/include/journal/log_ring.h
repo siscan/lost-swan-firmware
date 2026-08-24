@@ -33,10 +33,22 @@ public:
     // Append one line.  A trailing newline is normalised away; embedded ones
     // are kept, because an ESP_LOG line can carry a multi-line payload and
     // splitting it would lose the association.
-    void push(const char* data, std::size_t len);
+    // `truncated` says the CALLER already cut the line short - which is what
+    // actually happens, because the vprintf hook formats into a fixed buffer
+    // and vsnprintf truncates there, so this class never sees an over-long
+    // line and its own length check could not fire.  Without the flag a cut
+    // line read back as a complete one, which is the worst way to read a
+    // backtrace.
+    void push(const char* data, std::size_t len, bool truncated = false);
 
     // Oldest first, newline-separated.  `max_bytes` of 0 means everything.
     std::string read(std::size_t max_bytes = 0) const;
+
+    // The same, into a caller-owned buffer, returning the bytes written.
+    // Allocation-free ON PURPOSE: the shell reads under a portMUX critical
+    // section, which masks the 50 kHz step ISR, and an allocation there drops
+    // steps.  The shell sizes the string outside the lock and fills it inside.
+    std::size_t read_into(char* dst, std::size_t dst_cap, std::size_t max_bytes = 0) const;
 
     std::size_t lines() const { return lines_; }
     std::size_t used() const { return used_; }
@@ -48,6 +60,7 @@ public:
 
 private:
     void pop_oldest();
+    std::size_t start_of_capped(std::size_t max_bytes, std::size_t& start_i) const;
 
     char* buf_;
     std::size_t cap_;

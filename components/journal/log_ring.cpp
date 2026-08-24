@@ -25,13 +25,12 @@ void LogRing::pop_oldest() {
     ++dropped_;
 }
 
-void LogRing::push(const char* data, std::size_t len) {
+void LogRing::push(const char* data, std::size_t len, bool truncated) {
     if (buf_ == nullptr || cap_ < HDR + 4) return;
     while (len > 0 && (data[len - 1] == '\n' || data[len - 1] == '\r')) --len;
     if (len == 0) return;
 
-    bool truncated = false;
-    if (len > LOG_LINE_MAX) {
+    if (len > LOG_LINE_MAX || (truncated && len + 3 > LOG_LINE_MAX)) {
         len = LOG_LINE_MAX - 3;
         truncated = true;
     }
@@ -60,43 +59,58 @@ void LogRing::push(const char* data, std::size_t len) {
     ++lines_;
 }
 
-std::string LogRing::read(std::size_t max_bytes) const {
-    // Line offsets, oldest first, so a capped read can start from the newest
-    // line that still fits.  A log view wants the END of the log; returning the
-    // oldest bytes and calling it "the log" is the wrong half.
-    std::string out;
-    if (lines_ == 0) return out;
-
+std::size_t LogRing::start_of_capped(std::size_t max_bytes, std::size_t& start_i) const {
+    // The newest line that still fits, so a capped read returns the END of the
+    // log.  Returning the oldest bytes and calling it "the log" is the wrong
+    // half.
     std::size_t start = tail_;
-    std::size_t start_i = 0;
-    if (max_bytes != 0 && used_ + lines_ > max_bytes) {
-        std::size_t p = tail_;
-        std::size_t remaining = used_ + lines_;   // + one newline per line
-        for (std::size_t i = 0; i < lines_; ++i) {
-            const std::size_t len =
-                static_cast<std::size_t>(static_cast<unsigned char>(buf_[p])) |
-                (static_cast<std::size_t>(static_cast<unsigned char>(buf_[(p + 1) % cap_])) << 8);
-            if (remaining <= max_bytes) break;
-            remaining -= HDR + len + 1;
-            p = (p + HDR + len) % cap_;
-            start = p;
-            start_i = i + 1;
-        }
-    }
+    start_i = 0;
+    if (max_bytes == 0 || used_ + lines_ <= max_bytes) return start;
 
-    out.reserve(max_bytes == 0 ? used_ + lines_ : max_bytes);
-    std::size_t p = start;
+    std::size_t p = tail_;
+    std::size_t remaining = used_ + lines_;   // + one newline per line
+    for (std::size_t i = 0; i < lines_; ++i) {
+        const std::size_t len =
+            static_cast<std::size_t>(static_cast<unsigned char>(buf_[p])) |
+            (static_cast<std::size_t>(static_cast<unsigned char>(buf_[(p + 1) % cap_])) << 8);
+        if (remaining <= max_bytes) break;
+        remaining -= HDR + len + 1;
+        p = (p + HDR + len) % cap_;
+        start = p;
+        start_i = i + 1;
+    }
+    return start;
+}
+
+std::size_t LogRing::read_into(char* dst, std::size_t dst_cap, std::size_t max_bytes) const {
+    if (dst == nullptr || dst_cap == 0 || lines_ == 0) return 0;
+
+    std::size_t start_i = 0;
+    std::size_t p = start_of_capped(max_bytes, start_i);
+    std::size_t out = 0;
     for (std::size_t i = start_i; i < lines_; ++i) {
         const std::size_t len =
             static_cast<std::size_t>(static_cast<unsigned char>(buf_[p])) |
             (static_cast<std::size_t>(static_cast<unsigned char>(buf_[(p + 1) % cap_])) << 8);
         p = (p + HDR) % cap_;
+        if (out + len + 1 > dst_cap) break;          // the buffer wins, always
         const std::size_t first = std::min(len, cap_ - p);
-        out.append(buf_ + p, first);
-        if (first < len) out.append(buf_, len - first);
-        out.push_back('\n');
+        std::memcpy(dst + out, buf_ + p, first);
+        if (first < len) std::memcpy(dst + out + first, buf_, len - first);
+        out += len;
+        dst[out++] = '\n';
         p = (p + len) % cap_;
     }
+    return out;
+}
+
+std::string LogRing::read(std::size_t max_bytes) const {
+    std::string out;
+    if (lines_ == 0) return out;
+    std::size_t cap = used_ + lines_;
+    if (max_bytes != 0 && cap > max_bytes) cap = max_bytes + LOG_LINE_MAX + 1;
+    out.resize(cap);
+    out.resize(read_into(&out[0], cap, max_bytes));
     return out;
 }
 
