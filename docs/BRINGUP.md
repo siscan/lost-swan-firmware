@@ -851,6 +851,18 @@ mqtt mqtt://<dev-machine>:1883                    # on the console
       reveal holds indefinitely.** Read off the board: `failure_timeout_s = 0`,
       and the display sat in `reveal` until something else moved it. The key is
       kept, not removed.
+- [x] **Set non-zero, it fires AND publishes the transition.** With
+      `failure_timeout_s = 8`, the display left the reveal for the clock exactly
+      8.0 s after entering it, and the retained topic followed:
+
+      ```
+      PUB  swan/countdown  [R] q1 {"state":"reveal","target":1787609294,"set_by":"ui","seq":1}
+      PUB  swan/countdown  [R] q1 {"state":"idle","target":1787609294,"set_by":"ui","seq":1}
+      ```
+
+      That `idle` publish is what a peer following retained state needs in order
+      to leave SYSTEM FAILURE when the display leaves it by itself.  Restored to
+      the default of 0 afterwards.
 - [x] **The phase timings are exact against the DEVICE's clock**, measured by
       polling `/api/state` rather than by watching MQTT:
 
