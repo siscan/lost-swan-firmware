@@ -327,3 +327,16 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
   .flap-text.small { font-size: 10px; }
   .row > label { min-width: 100%; }
 }
+
+/* A countdown running behind another mode (defect 2, 2026-08-25).  Loud enough
+   to notice from across the room, small enough not to compete with the mode. */
+.chip-run {
+  border: 1px solid var(--warn);
+  color: var(--warn);
+  padding: 0 0.45em;
+  border-radius: 2px;
+  letter-spacing: 0.06em;
+  animation: chip-pulse 2s ease-in-out infinite;
+}
+@keyframes chip-pulse { 50% { opacity: 0.55; } }
+@media (prefers-reduced-motion: reduce) { .chip-run { animation: none; } }

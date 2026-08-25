@@ -13,6 +13,11 @@
   <div id="display"></div>
   <div id="statusline">
     <span>mode <b id="s-mode">—</b></span>
+    <!-- A run happening BEHIND another mode (defect 2, 2026-08-25).  The line
+         below always states the countdown; this chip exists to say the one
+         thing that was invisible - that it is live while the display is
+         showing something else, so the finale is never a surprise. -->
+    <span id="cd-chip" class="chip-run" style="display:none">COUNTDOWN —</span>
     <span>countdown <b id="s-cd">—</b></span>
     <span>clock <b id="s-clock">—</b></span>
     <span>ring <b id="s-ring">—</b></span>

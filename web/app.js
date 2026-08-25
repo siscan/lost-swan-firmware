@@ -122,6 +122,17 @@ function onState(s) {
       (s.ring.descending ? " · descending" : " · NOT DESCENDING");
   $("t-remaining").textContent = cdLive ? mmss(s.cd.remaining_s) : "—";
 
+  // Running, but not on screen.  The status line states the countdown either
+  // way; this chip only appears when the display is showing something else, so
+  // "a countdown is live and you are not looking at it" is a visible fact
+  // rather than something you work out from two fields.
+  const chip = $("cd-chip");
+  if (chip) {
+    const hidden = cdLive && s.mode !== "countdown";
+    chip.style.display = hidden ? "" : "none";
+    if (hidden) chip.textContent = "COUNTDOWN " + mmss(s.cd.remaining_s);
+  }
+
   // The mirror follows the axes.  A page opened mid-run SNAPS once to where
   // the drums are, without animating fifty phantom flips; from then on every
   // state document reconciles it, because the go events that drive the
