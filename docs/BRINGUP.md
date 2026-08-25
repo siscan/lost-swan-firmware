@@ -1034,10 +1034,12 @@ mqtt mqtt://<dev-machine>:1883                    # on the console
       `swan/event` and `/ws` when the last column confirms the reveal frame,
       plus one `reveal` line in the journal.
 - [ ] **With a real column**, the reveal convergence again. It landed in
-      **0.146 s** here because `countdown.reveal` is unset, so the reveal frame
-      is all blanks and blank is one flip from where the spin stopped. With five
-      real glyphs it can be up to a full 49-flip wrap (~3.3 s at 15 flaps/s).
-      That range is exactly why the beat is announced rather than estimated.
+      **0.146 s** in this run because `countdown.reveal` was still unset at the
+      time, so the reveal frame was all blanks and blank was one flip from where
+      the spin stopped. It has been set since — step 30b re-measured it at
+      **2.45–2.48 s** with the canon five — and on a real drum it can be up to a
+      full 49-flip wrap (~3.3 s at 15 flaps/s). That range is exactly why the
+      beat is announced rather than estimated.
 
 ### 30b. The canon reveal frame — **DONE 2026-08-24**
 
