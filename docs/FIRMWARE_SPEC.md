@@ -1096,6 +1096,27 @@ normative and each has a test or a stated verification:
    rate of one `SYSTEM FAILURE` per 100 ms (140 characters/second, §7.3); that
    figure is shared with the terminal prop and is not the teletype's.
 
+**Three cadences exist, and two of them are FLAGGED rather than settled.**
+Rule 4 asks for one constant at ~30-60 chars/s.  The station screen's own
+output obeys it (45).  Two others do not, deliberately, because they are not
+the terminal printing:
+
+| printer | rate | what it is |
+|---|---:|---|
+| station teletype | **45 c/s** | rule 4's constant - the terminal speaking |
+| SYSTEM FAILURE flood | 140 c/s | the §7.3 cross-repo contract, untouchable |
+| Pearl log printout | 220 c/s | a dot-matrix printer, not a terminal - 45 c/s would take minutes for a real journal |
+| chat | 17 c/s | a *person* typing at the other end, and per-script in `chat.json` |
+
+Both exceptions are named constants carrying their reasons in source.  If they
+should collapse to the one cadence, say so and they will; they are recorded
+here so the divergence is a decision rather than drift.
+
+**Fullscreen does not persist, and cannot.**  Browsers only enter fullscreen
+from a user gesture, so a stored preference could not be honoured on load
+without lying about it.  It is the one control on the strip that is an action
+rather than a setting.
+
 **Three stations**, sharing the renderer, the CRT, the keyboard, the echo and
 the teletype — freely, but never at each other's expense.  No station's
 commands reach another's prompt, and each is complete on its own:
