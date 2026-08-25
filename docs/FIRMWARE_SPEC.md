@@ -2809,3 +2809,92 @@ numbered section — if you find one that disagrees, fix the section.
   - Recorded as a correction rather than a preference: the old rule was
     consistent with itself, which is exactly why it survived four phases and a
     cold read.
+
+- 2026-08-24 — **The scoped re-sweep** (Nico: escalation/EN paths and the
+  two-consumer contracts only, not a full re-run — the areas the usage-limited
+  review may have left unjudged).  Six lenses, three refuters per candidate,
+  138 agents: **23 findings survived and 21 were refuted**, collapsing to nine
+  root causes.  All fixed; the two criticals verified on the board.
+
+  **Both criticals were introduced by the escalation fix earlier the same day**,
+  and that is the finding worth keeping.  The fix for "an escalation drops EN
+  and the display never comes back" created two failures worse than the one it
+  cured, and neither the host suite nor a re-read caught either.
+
+  - **CRITICAL — `en 0` after an escalation permanently cancelled the
+    recovery.**  `enable()` opened by unconditionally clearing the
+    "dropped-by-escalation" flag, so *any* call cleared it, `enable(false)`
+    included.  Typing `en 0` on a display escalation had already killed made the
+    following `en 1` skip the re-home and leave it powered and permanently
+    still — precisely the state the flag was added to prevent.
+
+    The fix is **not a better flag, it is no flag**: *releasing EN stops every
+    axis; asserting EN re-homes every non-disabled axis, unless maintenance is
+    on.*  Nothing is remembered about **why** EN went down, so there is nothing
+    to forget.  Both halves are one argument — de-energized drums coast and get
+    pushed, and an axis running its DDA into dead drivers completes the move in
+    software and publishes a face the drum never reached.  Maintenance is the
+    single exemption and it is §5.9 rather than convenience: energizing during a
+    repair gives powered, stationary drums, which is exactly what the Calibrate
+    page needs.  That one rule also closed four further findings (a manual
+    `en 0` posted no Stop; the manual re-assert never re-homed; `enable()` had
+    no mutual exclusion across four tasks; the flag was a plain bool written
+    from the 1 kHz control task).
+
+  - **CRITICAL — a deadline that passed while the display was held replayed the
+    whole zero choreography.**  The EN gate returned from `tick_locked` *before*
+    the countdown machinery — eight lines above the comment explaining why cues
+    and phase must be unconditional.  The phase froze on Running, and the first
+    unheld tick fired the 60 s system-failure klaxon **and** a six-second
+    open-loop spin at alarm speed, and that spin destroyed the recovery re-home
+    posted alongside it.  It is the Phase 3 review's "a run started before bed
+    detonated the next time anyone opened the Modes page", reintroduced through
+    a different gate, and the same rule fixes it: **wake silently into the
+    reveal**, because the cues and the spin belong to the real zero moment.
+
+    **And it was not only the new gate.**  The test drives all three hold routes
+    and **maintenance detonates identically** — a countdown reaching zero during
+    a repair would have set off the alarm the moment the repair ended.  That one
+    predates today and nothing had found it.
+
+  - The rest of the EN cluster: the re-enable guard tested `maintenance` rather
+    than *are the drivers energized*, covering one of the three ways EN goes
+    down and missing the two that matter, so re-enabling a `disabled` column
+    after an escalation manufactured a latched `no_hall` fault on a healthy
+    column; `motion.cal` was missing from the EN block list although
+    `adjust_cal` issues a move now, so a nudge with EN down answered `ok` and
+    published an arrival the drum never made; the EN gate carried
+    `&& !maintenance()`, which disabled it in the one state that *guarantees* EN
+    is released; the deferred park's bail-out published `index = RING_HOME_SLOT`
+    — reporting the column parked on blank, the exact lie its own comment says
+    it prevents — and publishes UNKNOWN now; and **CLI `maint on` never
+    persisted**, so the command BRINGUP tells a bench operator to type before
+    touching a drum was forgotten by the next boot, against a §5.9 clause that
+    is a safety claim.
+
+  - **The two-consumer contracts, four findings.**  A countdown reaching zero
+    **off-screen wrote no `zero` journal line**, so the permanent record showed
+    a run executed and never ended — which reads as one still going.  The same
+    hole existed on the silent-wake path (found while testing the fix above, not
+    by the sweep): a zero that happened while the display was powered off, in
+    maintenance, mid-OTA or de-energized is now journalled, guarded by the
+    *persisted* phase so a reboot loop cannot write it twice.  `reveal_landed_`
+    was only cleared at the Spin→Reveal edge, so a run that never took that edge
+    left it set and the **next** run's reveal could never be announced; it is
+    cleared where a run is armed now, which is where it belongs.
+    `display.frame` during the Reveal phase made `settled()` confirm the wrong
+    frame — a `reveal` event and a journal line for a display showing something
+    else — so the announcement now checks that the settled frame **is** the
+    reveal frame.  And the announcement was fire-and-forget on two lossy
+    transports and appeared in no repeating document: `cd.reveal_landed` carries
+    the same fact in the state document, so a peer that missed the event, or was
+    not connected when it fired, still learns it.
+
+  - **Refuted and recorded**, so they are not re-raised: that `drop_enable`'s
+    Stop publishes a false index on mid-move columns (it publishes
+    `dest_index`, which after a spin is `RING_INVALID` — the honest answer);
+    that the recovery re-home can be superseded by the frame scheduler (the EN
+    hold keeps the scheduler silent until after the homes are posted); that
+    `countdown.set_target` writes a journal line (it does not, and that absence
+    is documented); and that a partial journal line could be served and then
+    concatenated (the writer appends whole records under one open).
