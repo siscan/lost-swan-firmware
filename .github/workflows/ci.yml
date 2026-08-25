@@ -54,6 +54,8 @@ jobs:
         run: node test/host/test_countdown.js
       - name: Swan mark trigram ring (docs/ref/swan_trigrams.md)
         run: node test/host/test_logo.js
+      - name: Toggle matrix (content and presentation are orthogonal)
+        run: node test/host/test_toggles.js
       - name: Simulator traces are current
         run: |
           ./build_host/gen_traces data/ring.json /tmp/traces.js
