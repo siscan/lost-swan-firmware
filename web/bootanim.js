@@ -10,8 +10,14 @@
 // screengrab.  Paths also mean it stroke-animates and stays sharp from a 195 px
 // phone to a 440 px kiosk; a bitmap would do neither.
 //
-// Off by default like every Phase 7 flourish (SwanTerm.prefs.boot).  Nothing on
-// this page may appear because a module was loaded.
+// It plays on every load of terminal.html while the station is SWAN, in both
+// content modes, and is always skippable - spec 10.2b says exactly when, in one
+// place.  It was gated on a default-off preference until 2026-08-25, which
+// meant it had never played for anybody who had not gone looking for the
+// toggle first.  Deliberate replays: REPLAY LOGO on the strip, and LOGO at the
+// Swan prompt.  The Swan mark is the only one that ships; Pearl and Flame marks
+// are optional future art, which is why this is Swan-only rather than
+// per-station.
 "use strict";
 
 (function (global) {
@@ -289,9 +295,17 @@
   function play(opts) {
     if (running) return running;
     const o = opts || {};
-    // Default off, and absent means off: nothing here may force itself on.
-    const prefs = global.SwanTerm && global.SwanTerm.prefs;
-    if (!prefs || !prefs.boot || !document.body) return Promise.resolve();
+    // THE SECOND HALF OF DEFECT 1 (2026-08-25).  This used to read
+    // `if (!prefs || !prefs.boot) return` - the same default-off gate that
+    // terminal.js had, in a second file.  Removing one of them changed
+    // nothing, which is worth remembering: a feature gated in two places fails
+    // exactly as silently after the first fix as before it.
+    //
+    // WHEN IT PLAYS IS THE CALLER'S DECISION, and it is stated in one place
+    // (§10.2b): every load of terminal.html while the station is SWAN, plus
+    // the strip's REPLAY LOGO and `LOGO` at the Swan prompt.  Nothing is
+    // decided here except that there has to be a document to draw into.
+    if (!document.body) return Promise.resolve();
 
     const skipable = o.skipable !== false;
     const reduced = !!(global.matchMedia &&
