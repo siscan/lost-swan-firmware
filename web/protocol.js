@@ -53,11 +53,13 @@
   // ---------------------------------------------------------------------
   // The stations.
   //
-  // STATION NUMBERS ARE DELIBERATELY OMITTED for Pearl and Flame. The Swan is
-  // Station 3 and has been on this page since phase 3.5, but I could not verify
-  // the other two against Lostpedia from here, and printing a number I am not
-  // sure of onto a prop is worse than printing none. Flagged rather than
-  // guessed; add them when somebody checks.
+  // STATION NUMBERS, verified by Nico against Lostpedia's station list
+  // 2026-08-25. The full canon is Hydra 1, Arrow 2, Swan 3, Flame 4, Pearl 5,
+  // Orchid 6 - so the Flame is 4 and the Pearl is 5, and NOT the other way
+  // round, which is the mistake a guess would most likely have made. They were
+  // printed without numbers until somebody checked, because a wrong number on
+  // a prop is worse than no number. test_toggles.js pins all three headers
+  // against that list.
   // ---------------------------------------------------------------------
   const STATIONS = {
     swan: {
@@ -67,12 +69,12 @@
     },
     pearl: {
       label: "PEARL",
-      header: "THE PEARL",
+      header: "STATION 5 · THE PEARL",
       hint: "TYPE LOG TO PRINT THE STATION RECORD",
     },
     flame: {
       label: "FLAME",
-      header: "THE FLAME",
+      header: "STATION 4 · THE FLAME",
       hint: "TYPE CHESS TO PLAY",
     },
   };

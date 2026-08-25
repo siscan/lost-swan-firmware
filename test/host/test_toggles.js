@@ -266,6 +266,45 @@ function makeModule(store) {
   eq(M.station(), "flame", "the station still changes for the session");
 }
 
+// ---------------------------------------------------------------------------
+// 6. STATION IDENTITY.  The numbers are canon, verified against Lostpedia's
+//    station list on 2026-08-25: Hydra 1, Arrow 2, Swan 3, Flame 4, Pearl 5,
+//    Orchid 6.  They are pinned here rather than trusted, because the Flame and
+//    the Pearl are ADJACENT in that list and 4/5 is exactly the pair a guess
+//    would transpose - and a wrong number printed on a prop is worse than no
+//    number, which is why they shipped without any until somebody checked.
+//
+//    Parsed by string indexing rather than by regex: a regex here needs
+//    double-escaped backslashes inside a JS string literal, and one eaten
+//    level turns the pattern into something that silently matches nothing -
+//    a test that passes by failing to look.
+// ---------------------------------------------------------------------------
+{
+  const proto = fs.readFileSync(
+      path.join(__dirname, "..", "..", "web", "protocol.js"), "utf8");
+
+  // The header string belonging to one station key inside the STATIONS table.
+  function headerOf(station) {
+    const at = proto.indexOf(station + ": {");
+    if (at < 0) return null;
+    const key = proto.indexOf("header:", at);
+    const end = proto.indexOf("},", at);
+    if (key < 0 || (end >= 0 && key > end)) return null;   // no header in THIS entry
+    const q1 = proto.indexOf("\"", key);
+    const q2 = proto.indexOf("\"", q1 + 1);
+    return q1 < 0 || q2 < 0 ? null : proto.slice(q1 + 1, q2);
+  }
+
+  const CANON = { swan: "STATION 3 · THE SWAN",
+                  flame: "STATION 4 · THE FLAME",
+                  pearl: "STATION 5 · THE PEARL" };
+  for (const st of STATIONS) {
+    eq(headerOf(st), CANON[st], st + "'s header is the canon one");
+  }
+  // The extraction itself has to be able to fail, or the three checks above
+  // would pass on any file at all.
+  eq(headerOf("orchid"), null, "a station that is not in the table reads as absent");
+}
 if (failures) {
   console.log(failures + " failure(s)");
   process.exit(1);

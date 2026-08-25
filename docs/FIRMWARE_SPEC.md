@@ -943,6 +943,16 @@ first real use of the presentation pack (2026-08-25):
   standing still.  **The finale must never fire invisibly**, and the four-minute
   boundary is where the display has something worth showing again.
 
+- **A time step across the deadline still fires the zero cue, deliberately.**
+  If the clock is corrected forward past a live deadline, both the on-screen and
+  the off-screen paths fire `system_failure` at the moment the step lands: the
+  deadline genuinely passed, and the alarm is the honest report of that.  What
+  the auto-return's guard prevents is the *display seizure and the spin* — five
+  drums whirling for a moment that is already over — not the sound.  Accepted
+  as-is 2026-08-25; recorded so it is not rediscovered as a defect.  It is a
+  different case from a **resume** with a past deadline, which wakes silently
+  into the reveal and always has (§17, 2026-08-21).
+
 - **Every surface that shows a readout follows the MODE.**  The presentation
   readout shows the real clock in clock mode, remaining time in countdown mode,
   and dashes in message mode.  A countdown number captioned as a clock is worse
@@ -1088,29 +1098,35 @@ normative and each has a test or a stated verification:
    one state**: a countdown running above the `countdown.seconds_live_s` mark,
    on Swan.  That inertness is the show's behaviour and the reason the mode
    exists; anywhere else, typing blind is a bug.
-4. **Output teletypes at one cadence.**  `TELETYPE_CPS = 45` characters per
-   second (`web/protocol.js`), one constant for every printed line on every
-   station.  **User input echoes instantly** — the teletype is for output — and
-   **any key completes an in-progress print at once**, so a flourish never makes
-   anybody wait.  The SYSTEM FAILURE flood keeps its **separate** contractual
-   rate of one `SYSTEM FAILURE` per 100 ms (140 characters/second, §7.3); that
-   figure is shared with the terminal prop and is not the teletype's.
 
-**Three cadences exist, and two of them are FLAGGED rather than settled.**
-Rule 4 asks for one constant at ~30-60 chars/s.  The station screen's own
-output obeys it (45).  Two others do not, deliberately, because they are not
-the terminal printing:
+   One **deliberate exception**, decided 2026-08-25: a **Y/N prompt** consumes
+   its key without echoing it.  A single-key confirm answers itself — Y opens
+   the printout or the board, N prints the hint — so the response *is* the
+   acknowledgement, and echoing a `Y` that is about to be replaced by a whole
+   screen is noise.  The rule is about never typing blind, and nobody typing at
+   a Y/N is blind.
+4. **Output teletypes at ONE MACHINE CADENCE.**  `TELETYPE_CPS = 45` characters
+   per second (`web/protocol.js`), one constant for every line the *terminal*
+   prints, on every station.  **User input echoes instantly** — the teletype is
+   for output — and **any key completes an in-progress print at once**, so a
+   flourish never makes anybody wait.
 
-| printer | rate | what it is |
-|---|---:|---|
-| station teletype | **45 c/s** | rule 4's constant - the terminal speaking |
-| SYSTEM FAILURE flood | 140 c/s | the §7.3 cross-repo contract, untouchable |
-| Pearl log printout | 220 c/s | a dot-matrix printer, not a terminal - 45 c/s would take minutes for a real journal |
-| chat | 17 c/s | a *person* typing at the other end, and per-script in `chat.json` |
+   **The Pearl printer and chat run distinct named constants with stated
+   reasons**, and that is the rule rather than a waiver against it (settled
+   2026-08-25).  The rates are *diegetic*: what is producing the characters is
+   a different machine, or not a machine at all, so one number could not be
+   right for all of them.
 
-Both exceptions are named constants carrying their reasons in source.  If they
-should collapse to the one cadence, say so and they will; they are recorded
-here so the divergence is a decision rather than drift.
+   | producer | rate | what it is |
+   |---|---:|---|
+   | station teletype | **45 c/s** | the terminal speaking — rule 4's constant |
+   | SYSTEM FAILURE flood | 140 c/s | the §7.3 **cross-repo contract**, shared with the terminal prop and not to be touched |
+   | Pearl log printout | 220 c/s | a **dot-matrix printer**, not a terminal; at 45 a real journal would take minutes |
+   | chat | 17 c/s | a **person typing** at the other end; per-script in `chat.json` |
+
+   Each is a named constant carrying its reason in source.  Adding a fifth
+   producer means adding a row here and saying what is producing the
+   characters — an unexplained rate is drift, a stated one is a decision.
 
 **Fullscreen does not persist, and cannot.**  Browsers only enter fullscreen
 from a user gesture, so a stored preference could not be honoured on load
@@ -1133,10 +1149,28 @@ The station is selected from the strip or by typing its name at an idle prompt,
 persists per browser, and **is content — selecting one touches no presentation
 toggle**.
 
-**Station numbers are printed only where they are verified.**  The Swan is
-Station 3.  The Pearl's and the Flame's headers carry the name and no number,
-because they were not checked against a source from here and a wrong number on
-a prop is worse than no number.  Add them when somebody verifies them.
+**The friendly terminal has no station persona** (decided 2026-08-25).  It is a
+*control surface*, not a prop: the keypad, EXECUTE and the readout are how a
+person drives the display, and they are present whatever station is selected.
+The stations are presentation-mode identities.  What the station still governs
+in the friendly terminal is **which station's feature the keyboard offers** —
+`LOGO` and the chat egg on Swan, `LOG` on the Pearl, `CHESS` on the Flame — so
+every station's command works in **both** content modes and in **no** other
+station, and the strip's station buttons are never dead.
+
+**Station numbers, verified 2026-08-25.**  Source: Lostpedia's DHARMA station
+list — the same authority §11 cites for `countdown.reveal`'s canon glyphs and
+`docs/ref/swan_trigrams.md` cites for the mark.  The full numbering is
+
+> **Hydra 1 · Arrow 2 · Swan 3 · Flame 4 · Pearl 5 · Orchid 6**
+
+so the headers are `STATION 3 · THE SWAN`, `STATION 4 · THE FLAME` and
+`STATION 5 · THE PEARL`.  They shipped without numbers until somebody checked,
+because a wrong number printed on a prop is worse than no number — and the
+Flame and the Pearl are **adjacent** in that list, which makes 4/5 exactly the
+pair a guess would transpose.  `test/host/test_toggles.js` pins all three
+headers against this table, and its extractor is checked against a station that
+is not in the table so it cannot pass by failing to look.
 
 **The boot animation** (`web/bootanim.js`, the mark in `bootanim_logo.js`) plays
 on **every load of `terminal.html` while the station is SWAN**, in both content
@@ -1144,8 +1178,15 @@ modes, always skippable, and never on the control panel — which does not load
 the script.  Deliberate replays: the strip's REPLAY LOGO, and `LOGO` at the Swan
 prompt.  It does **not** play on socket reconnect: a dropped socket is not a
 boot.  The Swan mark is the only one that ships; **Pearl and Flame marks are
-optional future art**, and their absence is why the animation is Swan-only
-rather than per-station.
+optional future art** (parked 2026-08-25), and their absence is why the
+animation is Swan-only rather than per-station.  If art arrives it lands the
+way the Swan mark did — a fenced data block in its own
+`bootanim_<station>_logo.js`, pre-proportioned in one coordinate system, with a
+host test asserting whatever is checkable about it against a reference
+document.  The Swan's is `docs/ref/swan_trigrams.md` and
+`test/host/test_logo.js`; do not re-derive a station's iconography from theory,
+because the Swan's ring proved that produces something internally consistent
+and wrong.
 
 **The readout follows the MODE, never the countdown's state** — see §7.4a.
 
@@ -3145,8 +3186,9 @@ numbered section — if you find one that disagrees, fix the section.
     its own toggle.  The Pearl log renderer is the Pearl's, and keeps its
     `TYPE LOG` hint.  Each is reachable from its own station in **both** content
     modes and from no other station.
-  - **Station numbers are printed only where verified.**  The Swan is Station 3.
-    Pearl and Flame carry names and no numbers, flagged rather than guessed.
+  - **Station numbers were printed only where verified.**  The Swan is Station
+    3; Pearl and Flame shipped with names and no numbers, flagged rather than
+    guessed.  **Closed the same day** — see the review-decisions entry below.
     **Pearl and Flame marks are optional future art** — the boot animation is
     Swan-only because the Swan mark is the only one that exists.
   - **The auto-return window is strictly ahead of zero, and needs a synced
@@ -3180,3 +3222,41 @@ numbered section — if you find one that disagrees, fix the section.
     a blank page on a perfectly healthy board.  The whole body is guarded now.
     Same failure shape as the raw-newline-in-a-string-literal defect, and the
     same reason it is hard to spot: the board keeps answering.
+
+- 2026-08-25 — **The six flags from the presentation review, decided** (Nico).
+  Each was raised as "flag rather than decide"; each is now settled, and the
+  numbered sections are edited in place.
+  - **Three cadences: keep all three, and the RULE changes to match.**  They are
+    diegetically correct — the machine teletypes at 45, a printer prints at 220,
+    a person types at 17 — so rule 4 in §10.2b now reads *one machine cadence;
+    the Pearl printer and chat run distinct named constants with stated
+    reasons*.  That is the point worth keeping: the reality was right and the
+    rule was too narrow, so the rule moved rather than the reality acquiring a
+    permanent waiver.  A fifth producer means a new row and a statement of what
+    is producing the characters.
+  - **Station numbers, verified against Lostpedia's station list:**
+    **Hydra 1 · Arrow 2 · Swan 3 · Flame 4 · Pearl 5 · Orchid 6.**  So
+    `STATION 4 · THE FLAME` and `STATION 5 · THE PEARL` join `STATION 3 · THE
+    SWAN`, cited in §10.2b beside the other Lostpedia-sourced facts (§11's
+    reveal glyphs, `docs/ref/swan_trigrams.md`).  Pinned by
+    `test/host/test_toggles.js`, whose extractor is itself checked against a
+    station that is not in the table — otherwise three passing assertions could
+    mean "found nothing".  The two are **adjacent** in the canon list, which is
+    exactly why a guess would have transposed them and why they shipped bare.
+  - **Pearl and Flame boot marks: parked as optional future art**, Swan-only
+    confirmed correct for now.  §10.2b says how art would land if it arrives —
+    the Swan's shape, including the instruction not to re-derive iconography
+    from theory.
+  - **Y/N prompts stay as they are**, and the deliberate rule-3 exception is
+    written into §10.2b.  A single-key confirm answers itself; the response is
+    the acknowledgement, and nobody typing at a Y/N is typing blind.
+  - **The friendly terminal gets no station persona.**  It is a control surface,
+    not a prop; the stations are presentation-mode identities.  The shape
+    already built is the decision: each station's command works in **both**
+    content modes and no other station's, so the strip's station buttons are
+    never dead, while the keypad, EXECUTE and the readout are always present.
+  - **A time step across the deadline still fires the zero cue.**  The deadline
+    genuinely passed and the alarm is the honest report of it; the auto-return
+    guard's job was the display seizure and the spin, not the sound.  Recorded
+    in §7.4a so it is not rediscovered as a defect, and distinguished from a
+    *resume* with a past deadline, which wakes silently and always has.
