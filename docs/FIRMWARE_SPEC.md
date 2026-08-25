@@ -922,6 +922,34 @@ configurable.
   full-display `?????` state is a named preset: `preset.set {name: "qmarks"}`
   → all five columns to `?`. Other presets: `blank`, `reveal`, `wifi`.
 
+### 7.4a A countdown running behind another mode
+
+A deadline is absolute and survives a mode change (§7.3), so a run can be live
+while the display shows the clock.  Two rules govern that state, both from the
+first real use of the presentation pack (2026-08-25):
+
+- **The display takes itself back at `countdown.seconds_live_s`.**  A run that
+  is still off-screen when it reaches the live window (default 240 s) switches
+  the mode to `countdown` on its own and journals the change as
+  `mode change → countdown (auto, 4:00)`.  Before that boundary the operator's
+  choice of display stands, because a quiet run has nothing to show — its
+  seconds columns are frozen and the minutes tick once a minute.
+
+  The alternative considered was to let the run finish off-screen and hold the
+  zero choreography until somebody looked.  It was rejected: a held finale is
+  the "detonated the next time anyone opened the Modes page" defect (§17,
+  2026-08-23) rebuilt on purpose, and the cues fire from the deadline in either
+  case — so holding gives an alarm sounding over a clock face with the drums
+  standing still.  **The finale must never fire invisibly**, and the four-minute
+  boundary is where the display has something worth showing again.
+
+- **Every surface that shows a readout follows the MODE.**  The presentation
+  readout shows the real clock in clock mode, remaining time in countdown mode,
+  and dashes in message mode.  A countdown number captioned as a clock is worse
+  than either number alone.  The fact that a run is live behind another mode is
+  surfaced as its own small chip — `COUNTDOWN 101:00` — in the presentation
+  header and on the control panel's status line.
+
 ### 7.4 Boot / no-signal, and the FAULT display policy
 
 Covered in §7.1.
@@ -1024,7 +1052,81 @@ Pages:
   countdown implementation — it is the display's own page, so the deadline it
   renders is the display's by construction.
 
+  The page has **two content modes** — the friendly terminal described above,
+  and the **station screen** of §10.2b — and a set of **presentation** toggles
+  that apply to both.
+
 Auth `[Q7]` (default: none on LAN).
+
+### 10.2b The station screen (phase 7)
+
+`terminal.html` in its second content mode: a purist terminal, near-black, with
+a `>:` caret and nothing else on screen.  It is the presentation pack, and
+**nothing in it sends a dispatcher command** with one deliberate exception —
+Swan's EXECUTE uses the same `countdown.execute` path the friendly terminal
+already uses.  It never touches the flaps by any other route.
+
+**Four rules**, from the first real use of the mode (2026-08-25).  They are
+normative and each has a test or a stated verification:
+
+1. **Content and presentation are orthogonal.**  Station and content mode say
+   *what* is on screen; CRT, key click, mirror dock and fullscreen say *how it
+   looks*.  Every combination composes, **no toggle may write another toggle's
+   state**, and each persists on its own key in `localStorage`.  The station
+   screen therefore renders *inside* the CRT layer (`.crt-layer`), not over it.
+   Pinned by `test/host/test_toggles.js`, which walks all 96 combinations of
+   five toggles × three stations and reloads between transitions.
+2. **No persisted mode without an always-available escape, mouse and keyboard
+   both.**  The toggle strip hides when untouched and any pointer movement,
+   click on dead space or tap brings it back for `STRIP_MS = 5000` ms; it
+   always carries CONTROL PANEL, REPLAY LOGO and the three station buttons.
+   **ESC** leaves the station screen.  **PANEL** typed at any idle prompt goes
+   to the control panel.  A persisted mode with no way out is a trap, and this
+   is a web page: a PC with only a mouse must always be able to leave.
+3. **Accepted input echoes.**  Wherever input is taken it appears at the `>:`
+   caret, with working DEL and CLEAR.  Inert-with-no-echo applies to **exactly
+   one state**: a countdown running above the `countdown.seconds_live_s` mark,
+   on Swan.  That inertness is the show's behaviour and the reason the mode
+   exists; anywhere else, typing blind is a bug.
+4. **Output teletypes at one cadence.**  `TELETYPE_CPS = 45` characters per
+   second (`web/protocol.js`), one constant for every printed line on every
+   station.  **User input echoes instantly** — the teletype is for output — and
+   **any key completes an in-progress print at once**, so a flourish never makes
+   anybody wait.  The SYSTEM FAILURE flood keeps its **separate** contractual
+   rate of one `SYSTEM FAILURE` per 100 ms (140 characters/second, §7.3); that
+   figure is shared with the terminal prop and is not the teletype's.
+
+**Three stations**, sharing the renderer, the CRT, the keyboard, the echo and
+the teletype — freely, but never at each other's expense.  No station's
+commands reach another's prompt, and each is complete on its own:
+
+| station | boots to | commands | countdown |
+|---|---|---|---|
+| **SWAN** *(default)* | the hint, or the show's silence | the Numbers + EXECUTE, `LOGO`, the chat egg | **reacts**: live window, SYSTEM FAILURE |
+| **PEARL** | `PRINT LOG? Y/N` | `LOG` — prints the §12 event journal | indifferent |
+| **FLAME** | `CHESS? Y/N` | `CHESS` — the board, and Chang's menu | indifferent |
+
+Pearl and Flame are **indifferent to countdown state** by design: only Swan is
+the countdown's station, so only Swan goes inert, floods, or shows a readout.
+The station is selected from the strip or by typing its name at an idle prompt,
+persists per browser, and **is content — selecting one touches no presentation
+toggle**.
+
+**Station numbers are printed only where they are verified.**  The Swan is
+Station 3.  The Pearl's and the Flame's headers carry the name and no number,
+because they were not checked against a source from here and a wrong number on
+a prop is worse than no number.  Add them when somebody verifies them.
+
+**The boot animation** (`web/bootanim.js`, the mark in `bootanim_logo.js`) plays
+on **every load of `terminal.html` while the station is SWAN**, in both content
+modes, always skippable, and never on the control panel — which does not load
+the script.  Deliberate replays: the strip's REPLAY LOGO, and `LOGO` at the Swan
+prompt.  It does **not** play on socket reconnect: a dropped socket is not a
+boot.  The Swan mark is the only one that ships; **Pearl and Flame marks are
+optional future art**, and their absence is why the animation is Swan-only
+rather than per-station.
+
+**The readout follows the MODE, never the countdown's state** — see §7.4a.
 
 ### 10.2a Command bus — one command set, every transport
 
@@ -1439,6 +1541,12 @@ Each phase ends with a flashable build and a bench checklist.
 5. **Audio** — player, cue table, countdown cue wiring, placeholders.
 6. **Hardening** — fault policy, watchdogs, boot stagger, soak mode (run N
    wraps, log resyncs), power-loss behaviour, documentation.
+7. **Show-accuracy presentation pack** — entirely browser-side: the station
+   screen (§10.2b) with its three stations, the boot animation, the Pearl log
+   printout (which renders the §12 event journal, so it is real device history
+   rather than a prop), the chat easter egg and Flame chess.  Nothing in it
+   sends a dispatcher command or touches the flaps, except Swan's EXECUTE,
+   which uses the same `countdown.execute` path the friendly terminal does.
 
 Toolchain `[Q1, default]`: ESP-IDF 5.5.x (latest patch), C++17, `idf.py`.
 Arduino-as-IDF-component is the fallback if a specific Arduino library is
@@ -2933,3 +3041,121 @@ numbered section — if you find one that disagrees, fix the section.
     both miss it by construction; the logo suite greps for it explicitly.
   - LittleFS: **201,223 B gzipped** of a 256 KB budget, +2,687 B against the
     constructed generator it replaced.
+
+- 2026-08-25 — **The presentation pack restructured, from the first real use of
+  protocol mode** (Nico's field report, talked through and settled).  Four rules
+  are now normative in §10.2b, the mode is three stations, and three defects are
+  fixed.  What was decided and what the defects actually were:
+  - **Content and presentation are orthogonal (rule 1), and the CRT proved it
+    was not.**  Turning protocol mode on killed the phosphor, because the
+    station screen was `position: fixed; z-index: 40` — *over* the CRT's glass
+    and scanline layers rather than inside them.  The purist mode was the one
+    losing the effect, which is backwards.  Structural fix: the filter styles a
+    `.crt-layer` class and the station screen carries it, so the phosphor wraps
+    whatever content renders.  `test/host/test_toggles.js` now walks all 96
+    combinations of five toggles × three stations, asserts no toggle rewrites
+    another **in memory or in storage**, and reloads between transitions —
+    because a toggle that persisted a neighbour would pass an in-memory check
+    and still lose the setting on the next page load.
+  - **Rule 2, the escape.**  A persisted mode with no way out is a trap and this
+    is a web page.  The strip hides after 5 s untouched and any pointer move,
+    click on dead space or tap brings it back; ESC leaves; `PANEL` at any idle
+    prompt navigates.  Verified mouse-only, keyboard-only and touch-only.
+  - **Rule 3, echo.**  Letters were swallowed, so `LOG` was typed blind — the
+    machine took the command with nothing on screen saying so.  Input echoes at
+    the caret everywhere except the one state that is *supposed* to be inert: a
+    Swan countdown above the 4:00 mark.
+  - **Rule 4, the teletype.**  One cadence, `TELETYPE_CPS = 45`, for every
+    printed line on every station; input echoes instantly and any key completes
+    a print immediately.  The SYSTEM FAILURE flood's 140 chars/s is a separate
+    contract shared with the terminal prop and was left alone.
+  - **THE DOUBLE EXECUTE, found in the journal rather than in the code.**  One
+    press of Enter wrote two entries — `seq 1` and `seq 2`, same second, both
+    `u:783` — because `protocol.js` never called `stopPropagation()` and
+    `terminal.js` binds its own window key handler.  Every keystroke reached
+    both surfaces.  It is also why typing `CHESS` raised the friendly terminal's
+    CANCEL confirm on the `C`.  The station screen owns the keyboard while it is
+    up; the one detector that legitimately needs those keys (the chat egg's
+    masher) is handed them explicitly rather than keeping a second copy.
+  - **DEFECT 1, the boot animation: THREE independent gates, any one of which
+    was enough.**  It had never played on load for anybody, ever.
+    1. `PREFS.boot` shipped `false` and gated `playBoot()` in `terminal.js`.  A
+       clean profile has empty `localStorage`, so only somebody who had found
+       the BOOT toggle and turned it on could ever have seen it.
+    2. `bootanim.js`'s own `play()` carried **the same check again**
+       (`if (!prefs || !prefs.boot) return`).  Removing gate 1 changed nothing.
+    3. And with both gone it still never played, because `terminal.html` loads
+       `terminal.js` at script tag 3 and `bootanim.js` at tag 7 — so the
+       top-level `playBoot()` ran before `window.SwanBoot` existed and returned
+       `Promise.resolve()` every time.  The call is deferred to
+       `DOMContentLoaded` now.
+
+    Worth keeping, because it is the lesson: **fixing the first two gates looked
+    exactly like fixing none**, and I reported gate 1 as "the root cause" after
+    confirming only that opening it let a *manual* `SwanBoot.play()` draw the
+    overlay — which proved the renderer worked, not the load path.  What settled
+    it was a harness rather than an inspection: a hidden iframe loading
+    `terminal.html` fresh and polling for the overlay element, which said
+    `everSeen: false` through two "fixes" and `firstAt: 842 ms` after the third.
+    Also worth recording: the incognito reproduction **guaranteed** the failure
+    rather than ruling causes out — a private window is the worst place to test
+    something gated on storage.
+
+    `boot` is no longer a pref anywhere; §10.2b defines exactly when the
+    animation plays, in one place.
+  - **DEFECT 2, the readout followed the countdown instead of the mode.**  A
+    display in clock mode — badge reading CLOCK, flaps correctly showing the
+    time — put `101:00` on the CRT under a clock caption, because a run was
+    live in the background.  The readout follows the mode now, and a background
+    run surfaces as its own `COUNTDOWN 101:00` chip on both the presentation
+    header and the control panel.
+  - **DEFECT 3, background countdowns: the display takes itself back at
+    `seconds_live_s`.**  Decided rather than left open, and journalled
+    (`mode change → countdown (auto, 4:00)`).  The alternative — hold the zero
+    choreography until somebody looks — was rejected because it deliberately
+    rebuilds the 2026-08-23 defect where a finished countdown detonated the next
+    time the Modes page was opened, and because the cues fire from the deadline
+    either way: holding gives an alarm sounding over a clock face with the drums
+    standing still.  Three host tests cover it: the boundary itself, a reboot
+    with a background deadline, and switching away at every phase of the run.
+  - **Station scoping, and what moved.**  Chess was gated on the CHAT toggle,
+    which put two unrelated features behind one switch and let a Swan prompt
+    answer a Flame command; it is the Flame's now.  Chat is Swan's, still behind
+    its own toggle.  The Pearl log renderer is the Pearl's, and keeps its
+    `TYPE LOG` hint.  Each is reachable from its own station in **both** content
+    modes and from no other station.
+  - **Station numbers are printed only where verified.**  The Swan is Station 3.
+    Pearl and Flame carry names and no numbers, flagged rather than guessed.
+    **Pearl and Flame marks are optional future art** — the boot animation is
+    Swan-only because the Swan mark is the only one that exists.
+  - **The auto-return window is strictly ahead of zero, and needs a synced
+    clock.**  Neither guard was in the first cut, and both matter: a deadline
+    already in the past has a hugely negative `rem_ms`, which satisfies
+    `rem_ms <= seconds_live_s` trivially — so a forward SNTP step across a
+    deadline while the display was on the clock face would have entered
+    countdown mode and replayed the whole zero choreography, spin included, for
+    a moment that was already over.  That is the silent-wake rule (§17,
+    2026-08-21) trampled by its own successor.  With `seconds_live_s = 0` there
+    is no live window to return for, so the display takes itself back at the
+    one-minute cue instead — without that floor the guard would disable the rule
+    entirely for that setting.  Four cases in `test_modes`.
+
+    Method note: I first read this off a board transcript (`mode` went from
+    `clock` to `countdown` right after SNTP arrived) and was **wrong** — the
+    journal had no `mode change → countdown (auto, 4:00)` line, so what I had
+    watched was the ordinary deferred resume, which has entered countdown mode
+    on boot since Phase 2.  The guard is correct on its own merits; the
+    transcript was not evidence for it.
+  - **The toggle strip covered the mirror dock**, found by measuring rather than
+    by looking: it floats over the page and wraps to **three rows on a 375 px
+    phone** against one on a kiosk, so a fixed bottom offset could not clear it.
+    Its height is measured into a `--foot-h` custom property (`ResizeObserver`
+    plus `resize`) and both the content column and the docked mirror reserve it.
+    Verified at 375×812 and 1920×1080, in both content modes: no overlap, no
+    horizontal overflow.
+  - One thing fixed on the way that nobody reported: `loadPrefs()` guarded only
+    its station read, so a browser with storage blocked outright threw out of
+    the pref loop — and an exception there stops the module executing, which is
+    a blank page on a perfectly healthy board.  The whole body is guarded now.
+    Same failure shape as the raw-newline-in-a-string-literal defect, and the
+    same reason it is hard to spot: the board keeps answering.

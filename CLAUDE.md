@@ -241,12 +241,44 @@ built at last, the `reveal` announcement, prop presence on
 `swan/prop/terminal`, the frozen journal and state contracts above, the `>:`
 prompt, and the flood cadence defined.
 
-Next: **Phase 7** — the show-accuracy presentation pack, entirely browser-side:
-protocol mode, the Pearl log printout (which renders the Phase 6 journal, so it
-is real device history rather than a prop), the boot animation, the chat easter
-egg and, as a stretch, Flame chess. Nothing in it may send a dispatcher command
-or touch the flaps, with one exception: protocol mode's EXECUTE uses the same
-`countdown.execute` path the friendly terminal already uses.
+**Phase 7 delivered and restructured** (2026-08-25, from the first real use of
+protocol mode). The presentation page has two content modes — the friendly
+terminal and the **station screen** — and three stations: SWAN (the Numbers,
+EXECUTE, the live window, SYSTEM FAILURE, the chat egg), PEARL (the journal
+printout) and FLAME (chess). Spec §10.2b is normative; it carries the four
+rules, and they are the working agreement for anything added to this page:
+
+1. **Content and presentation are orthogonal.** Station and content mode are
+   content; CRT, key click, mirror and fullscreen are presentation. Every
+   combination composes, no toggle writes another toggle, each persists on its
+   own key. `test/host/test_toggles.js` walks all 96 combinations and reloads
+   between transitions — add a toggle, add it there.
+2. **No persisted mode without an always-available escape**, mouse and keyboard
+   both: the strip reveals on any pointer move, click or tap; ESC leaves; PANEL
+   at an idle prompt navigates.
+3. **Accepted input echoes.** The one inert state is a Swan countdown above the
+   4:00 mark — that is the show, and everywhere else typing blind is a bug.
+4. **Output teletypes at one cadence** (`TELETYPE_CPS = 45`), input echoes
+   instantly, any key completes a print. The SYSTEM FAILURE flood's 140 chars/s
+   is a separate contract with the terminal prop; do not fold them together.
+
+Nothing in the pack sends a dispatcher command or touches the flaps, with one
+exception: Swan's EXECUTE uses the same `countdown.execute` path the friendly
+terminal does.
+
+Also settled there, and load-bearing:
+- **A background countdown takes the display back at `seconds_live_s`** and
+  journals it. The finale must never fire invisibly. The window is *strictly
+  ahead of zero* and needs a synced clock — a past deadline still wakes
+  silently into the reveal, as it always did.
+- **Every readout follows the MODE**, never the countdown's state. A run behind
+  another mode shows as a `COUNTDOWN 101:00` chip, on the presentation header
+  and the control panel both.
+- **A feature gated in two places fails as silently after the first fix as
+  before it.** The boot animation had three independent gates and had never
+  played on load for anyone; two "fixes" changed nothing measurable. What
+  settled it was a hidden-iframe harness that loads the page fresh and polls
+  for the overlay — reach for that shape before reporting a browser root cause.
 
 **The Swan mark is reference art, not construction.** `web/bootanim_logo.js`
 is the supplied vector (frame, trigram ring, disc, swan, DHARMA wordmark) in one
