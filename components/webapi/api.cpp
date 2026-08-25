@@ -100,6 +100,12 @@ std::string build_state(Context& ctx, int64_t utc_ms) {
         // able to tell its own decision from somebody else's.
         .kv("set_by", origin_name(ctx.modes.cd_set_by()))
         .kv("seq", static_cast<int64_t>(ctx.modes.cd_seq()))
+        // The reveal LANDING as a fact rather than as an event.  swan/event is
+        // QoS 0 and unretained and /ws drops under pressure, so a peer can miss
+        // the announcement - or simply not be connected when it fires.  This is
+        // the same thing in a document that repeats, which is what makes the
+        // beat recoverable rather than one-shot.
+        .kv("reveal_landed", ctx.modes.reveal_landed())
         .end_obj();
 
     // Device-wide honesty flags.  A simulated display must be impossible to
@@ -699,9 +705,31 @@ std::string handle_command(Context& ctx, std::string_view body, int64_t utc_ms, 
     // maintenance gate above exists for.  Manual driving is NOT blocked:
     // motion.enable is how you recover, and the rest of the Calibrate page is
     // how you look first.
-    if (!ctx.motion.enabled() && !ctx.modes.maintenance()) {
+    // EN DOWN BLOCKS EVERYTHING THAT MOVES A DRUM, MAINTENANCE INCLUDED.  The
+    // `&& !maintenance()` this used to carry was meant to keep manual driving
+    // available during a repair - but maintenance is the one state that
+    // GUARANTEES EN is released (spec 5.9), so the exemption disabled the gate
+    // in precisely the case it was written for.  A nudge or a re-home there
+    // pulsed STEP into dead drivers and answered `ok`; a re-home manufactured a
+    // latched no_hall fault on a healthy column.
+    //
+    // The route through is `motion.enable true`, which in maintenance gives
+    // energized stationary drums and deliberately does NOT home (spec 5.9) -
+    // exactly what the Calibrate page needs.
+    //
+    // motion.cal is on the list because adjust_cal ISSUES A MOVE now - the
+    // 2026-08-24 fix for a nudge that returned ok and moved nothing.  It was
+    // already on the OTA hold's list one screen up for that same reason.
+    //
+    // motion.column is deliberately NOT on it.  It is configuration, and
+    // disabling a column in order to work on it is a normal thing to do with
+    // the drivers off; the move it can cause - homing a column on the way back
+    // from `disabled` - is refused at the motion layer instead, which is where
+    // the answer to "are the drivers energized" actually lives.
+    if (!ctx.motion.enabled()) {
         for (const char* blocked : {"mode.set", "message.set", "preset.set", "display.frame",
-                                    "motion.rehome", "motion.spin", "motion.ramp"}) {
+                                    "motion.rehome", "motion.spin", "motion.ramp",
+                                    "motion.cal"}) {
             if (c == blocked) {
                 return err_result("the motors are de-energized - energize them first "
                                   "(Calibrate, or `en 1`)");

@@ -96,6 +96,11 @@ struct Request {
     int64_t usteps = 0;        // StepOpen
     int32_t flaps_s = 0;       // StepOpen
     uint32_t delay_ticks = 0;  // Home
+    // Stop: publish the index as UNKNOWN rather than as the move's destination.
+    // A plain Stop publishes `dest_index`, which is right for an interrupted
+    // `go` - the drum is mid-travel - but wrong for a caller that knows the
+    // drum never moved at all.
+    bool invalidate_index = false;
 };
 
 // ---------------------------------------------------------------------------

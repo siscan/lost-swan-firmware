@@ -356,9 +356,36 @@ void ModeManager::tick_locked(int64_t utc_ms) {
     // without this the convergence pass re-commanded all five on the very next
     // tick - 50 ms later - so "stop everything" lasted one tick.
     const bool no_drivers = !drivers_.load(std::memory_order_relaxed);
-    if (maintenance_ || ota_hold_ || no_drivers) {
+    const bool held = maintenance_ || ota_hold_ || no_drivers;
+    if (held) {
+        held_ = true;
         if (ramp_.active && !ota_hold_ && !no_drivers) tick_ramp(utc_ms);
         return;
+    }
+
+    // COMING OUT OF A HOLD WITH THE DEADLINE ALREADY PAST: wake silently into
+    // the reveal.  Do not replay the choreography.
+    //
+    // This gate freezes the countdown, so a deadline that passes while the
+    // display is held leaves the phase on Running with cue_zero_ still false.
+    // Without this, the first unheld tick fires the system-failure klaxon for
+    // its full 60 s loop and starts a six-second open-loop spin at alarm speed
+    // - and that spin destroys the recovery re-home posted alongside it, so the
+    // display ends up powered, spinning, and with no idea where its drums are.
+    //
+    // It is the same defect the Phase 3 review found for mode switches ("a run
+    // started before bed detonated the next time anyone opened the Modes
+    // page"), reintroduced through a different gate, and the same rule fixes
+    // it: the cues and the spin belong to the real zero moment and never
+    // replay (spec 17).  A repair, an OTA and a de-energized display are all
+    // moments when nobody wants an alarm.
+    if (held_) {
+        held_ = false;
+        if (cd_.phase == CdPhase::Running && time_.valid() &&
+            cd_.target_utc > 0 && utc_ms >= cd_.target_utc * 1000) {
+            enter_reveal_silently();
+            persist();
+        }
     }
 
     if (pending_resume_ && time_.valid()) {
@@ -461,6 +488,12 @@ void ModeManager::countdown_arm(int64_t target_utc, int64_t utc_ms, Origin by) {
     cd_scheduled_land_ = 0;
     cue_warn4_ = cue_warn1_ = cue_zero_ = false;
     spin_started_ = false;
+    // Arming a run re-arms its announcement.  The latch was only ever cleared
+    // at the Spin->Reveal edge, so a run that never took that edge - one that
+    // zeroed off-screen, or one interrupted - left it set and the NEXT run's
+    // reveal could never be announced.  Clearing it where the run begins is
+    // the statement that the latch belongs to a run rather than to a phase.
+    reveal_landed_ = false;
     const int64_t rem_s = target_utc - utc_ms / 1000;
     if (rem_s > 0) {
         cd_.phase = CdPhase::Running;
@@ -497,6 +530,20 @@ void ModeManager::countdown_resume(int64_t utc_ms) {
 }
 
 void ModeManager::enter_reveal_silently() {
+    // THE ZERO STILL HAPPENED, so it still gets a journal line.  This path is
+    // taken when the deadline passed while nobody could see it - the display
+    // was powered off, in maintenance, mid-OTA, or de-energized - and without
+    // this the permanent record showed a countdown that was executed and never
+    // ended, which reads as a run still going.  The cues do not replay; the
+    // history is not a cue.
+    //
+    // Guarded by the PERSISTED phase rather than a flag: entering Reveal
+    // persists it, so a reboot that comes back already in Reveal knows the zero
+    // was accounted for and does not write a second line.  A flag would reset
+    // on every boot and a reboot loop would fill the journal with them.
+    if (cd_.phase == CdPhase::Running) {
+        note_locked(journal::Event::Kind::CountdownZero, nullptr, cd_.seq, cd_.set_by);
+    }
     cd_.phase = CdPhase::Reveal;
     cue_zero_ = true;      // the cue fired (or should have) at the real zero
     spin_started_ = true;  // ditto the spin
@@ -540,11 +587,23 @@ void ModeManager::tick_countdown_offscreen(int64_t utc_ms) {
     if (!cue_zero_) {
         cue_zero_ = true;
         cues_.on_cue(Cue::SystemFailure);
+        // THE ZERO IS JOURNALLED HERE TOO.  It was not, so a countdown that
+        // reached zero while the clock was on the display was recorded as
+        // started and never ended - the Pearl printout showed an execute with
+        // no zero after it, which reads as a run that is still going.  The
+        // event is the same event whoever is watching; the display being busy
+        // with something else does not make it less true.
+        note_locked(journal::Event::Kind::CountdownZero, nullptr, cd_.seq, cd_.set_by);
     }
     // No spin and no 000:00 - the columns are showing something else, and
     // seizing them would be a countdown overriding a mode it does not own.
     // Land straight in Reveal so a later mode.set countdown shows the reveal
     // rather than replaying the choreography.
+    //
+    // Re-arm the announcement latch, exactly as the on-screen path does at the
+    // Spin->Reveal edge: without it a second run that ends off-screen could
+    // never announce its reveal, because the latch was still set by the first.
+    reveal_landed_ = false;
     cd_.phase = CdPhase::Reveal;
     spin_started_ = true;
     cd_shown_ = SHOWN_NONE;
@@ -676,7 +735,16 @@ void ModeManager::tick_countdown(int64_t utc_ms) {
         // estimated by a peer.  FrameScheduler::settled() is exactly the
         // predicate - every non-excluded column Idle on its desired index - and
         // until now it had no caller outside the tests.
-        if (!reveal_landed_ && sched_.settled()) {
+        //
+        // And it must be THE REVEAL that settled.  `settled()` only knows
+        // whether the columns reached whatever frame the scheduler was last
+        // given, and display.frame can replace that while the phase is still
+        // Reveal - a prop or a test poking one frame in would have produced a
+        // `reveal` event, and a journal line, for a display showing something
+        // else entirely.  Comparing against the reveal frame costs one array
+        // compare and makes the announcement mean what it says.
+        if (!reveal_landed_ && sched_.has_desired() && sched_.desired() == reveal_frame() &&
+            sched_.settled()) {
             reveal_landed_ = true;
             reveal_announce_ = true;   // taken by the modes task, outside the lock
         }
@@ -940,6 +1008,12 @@ void ModeManager::set_ntp(std::string_view server) {
     const std::lock_guard<std::mutex> lock(mu_);
     const Enter witness(*this);
     ntp_ = std::string(server);
+}
+
+bool ModeManager::reveal_landed() const {
+    const std::lock_guard<std::mutex> lock(mu_);
+    const Enter witness(*this);
+    return reveal_landed_;
 }
 
 bool ModeManager::take_reveal_landed() {

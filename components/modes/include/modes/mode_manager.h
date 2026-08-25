@@ -166,6 +166,13 @@ public:
     // block or re-enter.
     bool take_reveal_landed();
 
+    // Has THIS run's reveal been confirmed?  The announcement is one
+    // fire-and-forget message on two transports; this is the same fact in the
+    // repeating state document, so a peer that missed the event - a reconnect,
+    // a dropped /ws frame, an MQTT gap - still learns it, and a peer that comes
+    // up late learns it at all.
+    bool reveal_landed() const;
+
     bool set_tz(std::string_view posix_tz);  // false = parse rejected, kept old
     // The NTP server, owned here for the same reason tz is: it is written on
     // the HTTP task and read on the modes task, and a bare std::string across
@@ -305,6 +312,7 @@ private:
     std::string ntp_ = "pool.ntp.org";
     JournalFn journal_;
     std::atomic<bool> drivers_{true};
+    bool held_ = false;              // maintenance / OTA / EN-down suppressed the last tick
     bool reveal_landed_ = false;     // this run's reveal has been confirmed
     bool reveal_announce_ = false;   // ... and not yet taken by the modes task
     // Called with mu_ held; see the contract on JournalFn.

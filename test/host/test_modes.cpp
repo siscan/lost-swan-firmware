@@ -843,6 +843,59 @@ void test_the_canon_reveal_resolves_on_both_rings() {
     CHECK(std::string(ModesConfig::REVEAL_CANON[0]) != "hook");
 }
 
+// THE CRITICAL the scoped re-sweep found in my own escalation fix.  The EN gate
+// freezes the countdown, so a deadline that passes while the display is held
+// leaves the phase on Running with the cue unfired.  Without care, the first
+// unheld tick fires the 60 s system-failure klaxon AND starts a six-second
+// open-loop spin at alarm speed - and that spin destroys the recovery re-home
+// posted alongside it, leaving the display powered, spinning, and with no idea
+// where its drums are.
+//
+// It is the Phase 3 review's "a run started before bed detonated the next time
+// anyone opened the Modes page", reintroduced through a different gate, and the
+// same rule fixes it: the cues and the spin belong to the real zero moment and
+// never replay (spec 17).
+void test_a_deadline_that_passes_while_held_wakes_silently() {
+    for (const int which : {0, 1, 2}) {   // EN down, maintenance, OTA hold
+        Rig r;
+        r.begin_at(utc_ms(2026, 1, 15, 17, 0, 0));
+        const int64_t t0 = r.time.utc_ms;
+        CHECK(r.mm.cmd_countdown_set_target(t0 / 1000 + 20, t0).ok);
+        r.run_to(t0 + 2000);
+
+        // Hold the display, by each of the three routes in turn.
+        if (which == 0) r.mm.set_drivers_enabled(false);
+        else if (which == 1) CHECK(r.mm.cmd_maintenance(true, r.time.utc_ms).ok);
+        else r.mm.cmd_ota_hold(true, r.time.utc_ms);
+
+        r.cues.recs.clear();
+        r.port.gos.clear();
+        r.port.spins.clear();
+
+        // Sail past the deadline and well past hold + spin.
+        r.run_to(t0 + 60 * 1000);
+
+        // Release it.
+        if (which == 0) r.mm.set_drivers_enabled(true);
+        else if (which == 1) CHECK(r.mm.cmd_maintenance(false, r.time.utc_ms).ok);
+        else r.mm.cmd_ota_hold(false, r.time.utc_ms);
+        r.run_to(r.time.utc_ms + 3000);
+
+        // NO KLAXON and NO SPIN.  Those belong to the zero moment, which passed
+        // while nobody could see or hear it.
+        // at() returns -1 for "never fired", which is the whole point.
+        if (r.cues.at(Cue::SystemFailure) >= 0) {
+            std::printf("  route %d replayed the system-failure cue\n", which);
+        }
+        CHECK(r.cues.at(Cue::SystemFailure) < 0);
+        if (!r.port.spins.empty()) std::printf("  route %d replayed the alarm spin\n", which);
+        CHECK(r.port.spins.empty());
+
+        // ... and it is in the reveal, not stuck on Running for ever.
+        CHECK(r.mm.cd_phase() == CdPhase::Reveal);
+    }
+}
+
 void test_en_down_stops_the_frame_layer() {
     Rig r;
     r.configure(cfg_minutely());
@@ -1031,6 +1084,7 @@ void run_tests() {
     test_mode_set_message_requires_message();
     test_maintenance_suspends_everything();
     test_the_canon_reveal_resolves_on_both_rings();
+    test_a_deadline_that_passes_while_held_wakes_silently();
     test_en_down_stops_the_frame_layer();
     test_maintenance_survives_and_blocks_countdown();
     test_excluded_columns_leave_a_hole();

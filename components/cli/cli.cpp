@@ -879,10 +879,19 @@ int cmd_maint(int argc, char** argv) {
     p.maintenance = on;
     motion::set_params(p);
     g_mm->cmd_maintenance(on, g_utc_ms());
-    if (!on) motion::home(-1);  // leaving re-arms and re-homes
-    std::printf("maintenance %s%s\n", on ? "ON - nothing moves on its own" : "off",
-                on ? "" : "; re-homing");
-    return 0;
+    // PERSIST IT.  Spec 5.9 makes maintenance survive a reboot deliberately -
+    // pulling power mid-repair must not restart a countdown on top of your
+    // hands - and that is a safety claim, not a convenience.  The dispatcher
+    // path saved it (bindings.cpp) and this one did not, so `maint on` from
+    // the console - which is what BRINGUP tells a bench operator to type
+    // before touching a drum - was forgotten by the next boot.
+    const esp_err_t merr = config::save_columns(motion::columns());
+    // Leaving maintenance re-homes from motion::enable(true) now - one rule
+    // in one place - so there is no explicit home(-1) here any more.
+    std::printf("maintenance %s%s%s\n", on ? "ON - nothing moves on its own" : "off",
+                on ? "" : "; re-homing",
+                merr == ESP_OK ? "" : " (NOT SAVED - it will not survive a reboot)");
+    return merr == ESP_OK ? 0 : 1;
 }
 
 int cmd_reboot(int, char**) {

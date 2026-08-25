@@ -126,11 +126,6 @@ ColumnConfig g_cols;  // guarded by g_lock for the masks; read freely otherwise
 // See set_columns: posting the park there raced republish_masks and lost.
 DRAM_ATTR bool g_park_pending[N_COLUMNS] = {};
 
-// Set when escalation released EN, cleared when somebody re-asserts it.  The
-// distinction matters: a normal boot asserts EN and homes immediately anyway,
-// but a RECOVERY has to re-home because the drums have been sitting
-// de-energized and nothing knows where they are.
-DRAM_ATTR bool g_dropped_by_escalation = false;
 
 // Defined below; the deferred park and the escalation both need it.
 void post(int col, const Request& r);
@@ -244,18 +239,11 @@ void apply_escalation(int col, FaultCause cause) {
                      "col %d fault during %s -> DROPPING EN FOR ALL FIVE COLUMNS. "
                      "Check the mechanism before re-enabling (`en 1`).",
                      col, any_fast_spin(col) ? "a high-speed spin" : "a multi-column failure");
-            enable(false);
-            g_dropped_by_escalation = true;
-            // ... and STOP them.  Releasing EN only wrote the pin: the axes
+            // enable(false) stops all five itself now - see the rule on
+            // enable().  Releasing EN used to write only the pin, so the axes
             // carried on stepping in software into dead drivers, completed
-            // their moves, and published indices the drums never reached - so
-            // after an escalation the display confidently reported a face it
-            // was not showing.  "Stop everything" has to mean everything.
-            for (int i = 0; i < N_COLUMNS; ++i) {
-                Request r;
-                r.kind = ReqKind::Stop;
-                post(i, r);
-            }
+            // their moves and published indices the drums never reached.
+            enable(false);
             break;
     }
 }
@@ -351,6 +339,12 @@ void tick_park_pending() {
         if (++waited[i] > 30000) {
             Request r;
             r.kind = ReqKind::Stop;
+            // UNKNOWN, not blank.  A plain Stop publishes where the move was
+            // HEADED, and this move was headed for the home slot - so bailing
+            // out reported the column parked on blank, which is the exact lie
+            // the deferred park exists to prevent.  It did not get there; say
+            // so.
+            r.invalidate_index = true;
             post(i, r);
             g_park_pending[i] = false;
             waited[i] = 0;
@@ -590,14 +584,20 @@ void set_columns(const ColumnConfig& c) {
             }
         }
         if (was == ColumnMode::Disabled && now != ColumnMode::Disabled) {
-            // A column can be re-enabled while a repair is in progress, and a
-            // homing pass with EN released steps 1.2 revolutions into dead
+            // A homing pass with EN released steps 1.2 revolutions into dead
             // drivers, sees no edge and latches a no_hall FAULT - a fault
             // manufactured by the act of re-enabling, on a column that is fine.
-            // Leaving maintenance re-homes everything anyway (spec 5.9).
+            //
+            // THE TEST IS "ARE THE DRIVERS ENERGIZED", not "is maintenance on".
+            // It used to be the latter, which covered exactly one of the three
+            // ways EN goes down and missed the two that matter most: after an
+            // escalation, and after a manual `en 0`.  Re-enabling a column in
+            // either state manufactured the fault this comment describes.
+            // Asserting EN re-homes everything anyway, so nothing is lost by
+            // waiting for it.
             g_park_pending[i] = false;   // it is not parking any more
-            if (next.maintenance) {
-                ESP_LOGI(TAG, "col %d re-enabled; it will home when maintenance ends", i);
+            if (!g_enabled.load(RLX) || next.maintenance) {
+                ESP_LOGI(TAG, "col %d re-enabled; it will home when the drivers are", i);
                 continue;
             }
             // Leaving disabled has to HOME.  A disabled column is never homed -
@@ -708,29 +708,66 @@ MotionParams params() {
 }
 
 
+// ONE RULE, and it replaced a flag plus three special cases that between them
+// carried two criticals (the scoped re-sweep, 2026-08-24):
+//
+//     releasing EN STOPS every axis.  asserting EN RE-HOMES every
+//     non-disabled axis, unless maintenance is on.
+//
+// No memory of *why* EN went down, which is what the previous version got
+// wrong: it remembered "an escalation dropped this" in a plain bool that ANY
+// enable() call cleared - so `en 0` on an already-dead display silently
+// cancelled the recovery re-home and left it powered and permanently still.
+// The rule below cannot have that bug because it has nothing to forget.
+//
+// The two halves are the same argument from opposite ends.  De-energized drums
+// coast and are pushed; an axis that keeps running its DDA into dead drivers
+// completes the move in software and publishes a face the drum never reached.
+// So: stop on the way down, and on the way up distrust the position, because
+// nothing watched the drums while they were unpowered - whether they were
+// unpowered by an escalation, by a person, or by a repair.
+//
+// MAINTENANCE IS THE ONE EXEMPTION, and it is spec 5.9 rather than a
+// convenience: a boot in maintenance deliberately does not home, because the
+// operator's hands are in the mechanism.  Energizing during a repair gives them
+// powered, stationary drums - which is exactly what the Calibrate page wants.
+// Leaving maintenance calls enable(true) with the flag already cleared, so the
+// re-home that spec 5.9 promises still happens, from this same line.
 void enable(bool on) {
-    const bool recovering = on && g_dropped_by_escalation;
-    g_dropped_by_escalation = false;
+    // Serialised: this is called from the 1 kHz control task (escalation), from
+    // httpd, from the CLI and from the modes task, and it both writes a pin and
+    // posts to five mailboxes.  Two callers interleaving could leave the pin
+    // and g_enabled disagreeing - a display reporting itself de-energized while
+    // the drivers are live.
+    portENTER_CRITICAL(&g_lock);
+    const bool was = g_enabled.load(RLX);
     g_enabled.store(on, RLX);
     gpio_set_level(static_cast<gpio_num_t>(PIN_EN), on ? 0 : 1);  // active low
+    const bool changed = (was != on);
+    portEXIT_CRITICAL(&g_lock);
+    if (!changed) return;
 
-    // Coming back up after an escalation dropped EN: RE-HOME.  The Stop that
-    // accompanied the drop left every axis Unhomed with no hall reference, and
-    // nothing re-arms one by itself - the frame scheduler skips Unhomed columns
-    // and go() refuses them - so without this the display came back energized
-    // and permanently still, with a banner telling the user to wait for a retry
-    // that had been cancelled.  The drums have also been sitting de-energized,
-    // so their position is genuinely unknown.
-    if (recovering) {
-        ESP_LOGW(TAG, "EN re-asserted after an escalation - re-homing all five, because "
-                      "nothing knows where the drums are now");
+    if (!on) {
+        ESP_LOGW(TAG, "EN released for all five - stopping every axis");
         Request r;
-        r.kind = ReqKind::Home;
-        for (int i = 0; i < N_COLUMNS; ++i) {
-            if (g_cols.mode[static_cast<size_t>(i)] == ColumnMode::Disabled) continue;
-            r.delay_ticks = 1 + i * HOME_STAGGER_MS;
-            post(i, r);
-        }
+        r.kind = ReqKind::Stop;
+        for (int i = 0; i < N_COLUMNS; ++i) post(i, r);
+        return;
+    }
+
+    if (g_cols.maintenance) {
+        ESP_LOGI(TAG, "EN asserted, maintenance on - NOT homing (spec 5.9); "
+                      "the drums are yours");
+        return;
+    }
+    ESP_LOGW(TAG, "EN asserted - re-homing every column, because nothing watched "
+                  "the drums while they were unpowered");
+    Request r;
+    r.kind = ReqKind::Home;
+    for (int i = 0; i < N_COLUMNS; ++i) {
+        if (g_cols.mode[static_cast<size_t>(i)] == ColumnMode::Disabled) continue;
+        r.delay_ticks = 1 + i * HOME_STAGGER_MS;
+        post(i, r);
     }
 }
 

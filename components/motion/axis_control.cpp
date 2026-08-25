@@ -201,7 +201,8 @@ void apply_request(TickCtx& c, const Request& r) {
                 // the firmware asserted the opposite.  For an interrupted
                 // `go` it is equally right - the drum is mid-travel, not at
                 // the index it left.
-                a.index.store(a.dest_index.load(RLX), RLX);
+                a.index.store(r.invalidate_index ? RING_INVALID : a.dest_index.load(RLX),
+                              RLX);
                 a.state.store(AxisState::Idle, RLX);
             } else if (s == AxisState::Homing) {
                 // Abort the homing pass honestly: without this, the truncated
