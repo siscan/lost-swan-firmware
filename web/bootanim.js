@@ -42,25 +42,43 @@
   const BAR_HALF = 14;              // half a bar's length, along the edge
   const GAP_HALF = 4.6;             // half the break in a yin bar
 
-  // THE BAGUA, in the EARLIER HEAVEN (Fu Xi) arrangement, clockwise from the
-  // top.  Written bottom-line-first, because on a bagua ring a trigram's bottom
-  // line is the one facing the centre - so index 0 is the INNERMOST bar, which
-  // is the order BAR_R is in.  1 = solid (yang), 0 = broken (yin).
+  // ======================================================================
+  // PLACEHOLDER SEQUENCE - THE BAGUA RING.  REPLACE THIS TABLE.
+  // ======================================================================
   //
-  //   k=0  top          Qian  heaven    111   three solid
-  //   k=1               Dui   lake      110
-  //   k=2               Li    fire      101
-  //   k=3               Zhen  thunder   100
-  //   k=4  bottom       Kun   earth     000   three broken
-  //   k=5               Gen   mountain  001
-  //   k=6               Kan   water     010
-  //   k=7               Xun   wind      011
+  // THE ORDER BELOW IS WRONG FOR THIS MARK, and is left in place only so the
+  // ring draws while the real one is produced.  It is the second half of the
+  // same correction as the swan silhouette below, and it arrives with it.
   //
-  // Two properties identify this as a real arrangement rather than eight
-  // decorative dashes, and both are worth checking if anyone edits the array:
-  // every one of the eight three-bit patterns appears EXACTLY ONCE, and each
-  // trigram sits diametrically opposite its exact complement (Qian/Kun,
-  // Dui/Gen, Li/Kan, Zhen/Xun).  The second is what Earlier Heaven means.
+  // WHAT THE REFERENCE SAYS (Nico, 2026-08-24, from Lostpedia):
+  //   - The CLASSIC STATION LOGOS - which is what this is - use the LATER
+  //     HEAVEN (King Wen) arrangement.
+  //   - Their trigrams are INVERTED INSIDE-TO-OUTSIDE relative to the usual
+  //     drawing convention.  That is a second change, not a restatement of the
+  //     first: it means index 0 is the trigram's TOP line rather than its
+  //     bottom one, because BAR_R[0] is the innermost bar.  Swapping the
+  //     sequence without also settling this would produce eight correct
+  //     trigrams drawn upside down.
+  //   - EARLIER HEAVEN belongs to the LATER-ERA DHARMA logo only, and sits 90
+  //     degrees away from this one.  Which is what the table below currently
+  //     is, so it is wrong twice over: wrong arrangement, wrong rotation.
+  //
+  // AND THE RULE THAT MATTERS MOST, because it is how this went wrong in the
+  // first place: THE ORDER IS REFERENCE-DERIVED, NOT DERIVED FROM BAGUA
+  // THEORY.  I reasoned the previous table out from first principles - "each
+  // trigram opposite its exact complement, which is what Earlier Heaven means"
+  // - and produced something internally consistent and not the mark.  A
+  // property being true of an arrangement does not make it true of THIS one.
+  // Do not re-derive it; copy it from the reference.
+  //
+  // TO REPLACE: put the authoritative clockwise-from-top sequence in the array,
+  // in whatever bit order the inside-to-outside question settles on, and say in
+  // one line where it came from.  Nothing else in this file changes - the
+  // geometry is one authored group rotated eight times and does not care what
+  // the bits say.
+  //
+  // Written index-0-innermost, 1 = solid (yang), 0 = broken (yin).
+  const TRIGRAMS_ARE_PLACEHOLDER = true;
   const TRIGRAMS = ["111", "110", "101", "100", "000", "001", "010", "011"];
 
   // ======================================================================

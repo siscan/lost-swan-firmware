@@ -32,11 +32,41 @@ flip *decrements* the digit. Decide it with the motor's coupler off the drum, or
 in maintenance with `step`, before the drum can jam against the bezel lip.
 **Record the answer here when you know it.**
 
-**3. `motion.hall_active_low` cannot be set from anywhere.** Step 2 tells you to
-set it if the magnet polarity reads inverted. It is a `MotionParams` field that
-is persisted and loaded but has no command on any surface — a gap found by the
-same cold read, listed in §17. Until it has a setter, changing it means editing
-`components/motion/include/motion/motion_types.h` and reflashing.
+**3. `motion.hall_active_low` is settable now — but NOT from the console.**
+Step 2 tells you to change it if the magnet polarity reads inverted. It got a
+setter on 2026-08-24 (it had none before, and changing it meant a reflash), and
+the setter is on the **Calibrate page**, or over HTTP:
+
+```bash
+curl -X POST http://lost.local/api/cmd -d '{"cmd":"motion.params","payload":{"hall_active_low":false}}'
+```
+
+then `save` on the console, or SAVE CALIBRATION AND SPEEDS, to persist it.
+
+**There is no console command for it**, which is the awkward part at a bench:
+if the board is not on WiFi yet you cannot change it with the serial cable in
+your hand. Set the credentials first (`wifi <ssid> <pass>`), or accept a reflash.
+Flagged for Nico rather than fixed here — a `hall` sub-command would be four
+lines, but this file should not describe a control that does not exist.
+
+**4. The button on GPIO28 is the BOOT strapping pin, and it now does
+something.** As of 2026-08-24 a short press EXECUTES the Numbers — it starts or
+resets a 108-minute countdown — and a two-second hold RE-HOMES ALL FIVE COLUMNS.
+On a bench that is a drum starting to turn while your hands are on it.
+
+Two consequences worth knowing before you lean on the board:
+
+- **In maintenance the button is ignored entirely**, which is one more reason
+  step 0 is `maint on`.
+- **Holding it while the board powers up or resets may leave the board in the
+  serial bootloader** — powered, silent, off the network, looking dead. That is
+  the ROM's decision and no firmware can override it. Release it and power-cycle.
+  The firmware does the one thing it can: a button already held when it starts
+  is ignored until released, so it cannot fire on the boot that follows.
+
+`button` on the console prints the live level, and `button 10` watches for ten
+seconds and times the edges — that is how you check a panel button and its loom
+before deciding the firmware is at fault.
 
 Two more, less dangerous but confusing:
 
@@ -66,7 +96,7 @@ derive.
 
 ## Verification status
 
-Phases 1–6 build and their host tests pass, and everything through Phase 6 has
+Phases 1–7 build and their host tests pass, and everything through Phase 7 has
 been exercised **on the board** — but against simulated drums. **No motor,
 driver or Hall sensor has ever been connected.** So every result below marked
 done is the firmware working; nothing here is evidence about the mechanism, and
@@ -74,19 +104,41 @@ the numbers that describe the mechanism (the gear ratio, `hall_tol`, the
 jam/slip thresholds, the usable flap rate) are still open. Steps needing a motor
 are marked with an unticked box.
 
+Two things follow from that and are worth saying plainly to whoever reads this
+first. **The simulated results are not weak evidence about the mechanism; they
+are no evidence at all** — `sim_drum.h` was written from the same assumptions as
+the classifier that reads it, so a clean simulated soak proves the plumbing and
+nothing else. And **the numbers most likely to be wrong are the ones nothing has
+ever pushed back on**: the gear ratio, `hall_tol`, the jam and slip thresholds,
+and `flaps_s_alarm`. Steps 3 through 7 exist to settle exactly those, and each
+ends in a blank to fill in.
+
 | gate | status |
 |---|---|
-| `.\build.ps1 set-target esp32c5` + `.\build.ps1` | **passes** — ESP-IDF v5.5.5, DevKitC-1 1,251 KB app (52% of the partition free), zero warnings |
-| `.\build.ps1 -DSWAN_BOARD=xiao build` | **passes** — 1,232 KB. Exercises the alternate pin map and its strapping-pin `static_assert`s |
-| LittleFS payload | **46,195 bytes** (UI, presentation terminal, glyph sheet + `ring.json`, gzipped) of a 2048 KB partition |
-| host tests (`.\test-host.ps1`) | **9/9 pass** — rings, motion math, simulated axis, ring.json, TZ/DST, frame, modes, wear, web API |
+| `.\build.ps1 set-target esp32c5` + `.\build.ps1` | **passes** — ESP-IDF v5.5.5, DevKitC-1 **1,528 KB** app (40% of the partition free), zero warnings |
+| `.\build.ps1 -B build-xiao -DSWAN_BOARD=xiao app` | **passes** — **1,509 KB**. Exercises the alternate pin map and its strapping-pin `static_assert`s |
+| LittleFS payload | **198,536 bytes gzipped** of a 256 KB budget on a 2048 KB partition — the UI, the presentation terminal, the glyph sheet, the Phase 7 pack and `ring.json` |
+| host tests (`.\test-host.ps1`) | **19 C++ suites + 2 JavaScript suites pass.** The JS pair (`test_flap.js`, `test_countdown.js`) needs node, which this Windows machine does not have — the runner reports them SKIPPED and Linux CI runs them on every push |
 | `git diff` empty after `tools/ringgen.py` | **clean** — regeneration is byte-identical |
 | motion cross-task handoff explicit | **done** — spinlock + request mailbox + relaxed atomics + the `AxisCtl::seq` seqlock (`docs/MOTION_SYNC.md`) |
 | chip revision ≥ v1.0 | **v1.2** — production silicon, verified by esptool and the bootloader |
 | first flash + boot | **done** — CLI up on COM3, ring.json loads from LittleFS, no revision abort |
 | unwired homing fails cleanly | **done** — all five latch FAULT after 3 re-homes; no hang |
 | pin map, no strapping conflict | **done** — `pins` matches §2.2 |
+| the physical button (GPIO28) | **partly** — the read path, the boot log and `button` verified on the board; **a real press needs a thumb** and has never happened |
 | every bench step needing mechanics | **not run** — needs motors, drivers and Halls |
+
+Three things on that list are **the only work in this file still waiting on
+hardware**, and they are worth naming so nobody goes looking for more:
+
+1. **Step 20, the fault thresholds.** The jam/slip numbers have only ever been
+   exercised against a model built from the same assumptions. A Hall unplugged
+   mid-run is *expected to be misclassified* as `jam`, and that is one of the
+   things step 20 is for.
+2. **Step 27's real-column soak**, against the 66-minute simulated one.
+3. **Step 30b's reveal convergence** with real drums — it measured 2.45–2.48 s
+   on simulated ones, but the alarm spin stops in the same place every time in
+   simulation and will not on a real drum.
 
 What passing host tests do and do not prove: `T(i)` rounding, the 8242/8243
 revolution alternation, forward-distance costs over all 2500 index pairs, edge
@@ -96,6 +148,36 @@ every web command and the upload validator round-tripped through the JSON
 layer are all verified in software. Nothing about the Hall wiring, the gear
 ratio, driver behaviour, flap mechanics, radio range behind the aluminium
 faceplate, or mDNS on a real LAN is verified by them.
+
+## The first hour, in order
+
+The steps below are numbered but they are not all equal, and a first session
+does not run all of them. This is the path:
+
+| # | do | you are answering |
+|---|---|---|
+| — | `maint on` **before the drum goes on** | nothing turns while you wire |
+| — | `col 1..4 disabled` if only one column is wired | four unwired `real` columns drop EN for all five |
+| 1 | `pins` | is this the board map you wired to |
+| 2 | `hall` + a magnet | polarity, and is the sensor alive at all |
+| 3 | `step 0 200` | **which rail DIR is tied to** — with the coupler OFF the drum |
+| 4 | `home 0`, `revs 0 10` | **the gear ratio**: 8242 or 8369 |
+| 5 | `spin 0 <n> 10`, 10 → 25 | **`flaps_s_alarm`** — watched, not read |
+| 6 | `revs 0 20` | **`hall_tol`** |
+| 7 | `en 0`, ten minutes | **`en_idle_off`** |
+| 8 | `cal`, `save`, then `go 0 0..49` | the blank card, and the right drum on the right column |
+| 20 | the physical provocations | the fault thresholds, which are the least-trusted numbers here |
+
+Steps 3, 4, 5, 6 and 7 each end in a number that belongs in the spec, and every
+one of them is currently a guess. **Fill in the `Result:` lines as you go** —
+they are the whole point of the file, and §17 gets the ones that change a
+constant.
+
+Steps 9 through 32 are the later phases and are already done against simulated
+drums; they are recorded here as evidence, not as work waiting for you. The two
+that are NOT done and need real hardware are **step 20** (the fault thresholds)
+and the real-column halves of **step 27** (soak) and **step 30b** (the reveal
+convergence).
 
 ## Phase 1 bench checklist (spec §14.1)
 
@@ -162,9 +244,14 @@ Wave the magnet past the sensor.
       LOW on assert).
 - [ ] `magnet` reads `YES` while the magnet is present.
 
-If `magnet` is inverted, the config default is wrong, not the code:
-set `motion.hall_active_low` false. If `raw` never moves, it is the magnet
-**face** (A3144 is unipolar — BOM gotcha #2) or the 5 V supply, not firmware.
+If `magnet` is inverted, the config default is wrong, not the code — set
+`motion.hall_active_low` false, by the route in the warning at the top of this
+file (Calibrate page or `curl`; there is no console command), then `save`.
+
+If `raw` never moves at all, it is the magnet **face** (A3144 is unipolar —
+BOM gotcha #2) or the 5 V supply, not firmware. `hall` prints `raw` straight off
+the GPIO bank, so a `raw` that never changes is a wiring fact, not a software
+one.
 
 - Result: hall_active_low = ______
 
@@ -833,6 +920,47 @@ stats
       line was unreachable until today — the retry counter is cleared at the
       hall edge, several hundred milliseconds before the event that carries it.
 
+### 28. Power loss (spec 15 phase 6) — **DONE 2026-08-24**
+
+Twelve cuts, each a hardware reset with no shutdown path — the same thing as
+pulling the plug as far as NVS and LittleFS are concerned.
+
+- [x] Ten points through a countdown: just after EXECUTE, mid quiet phase, one
+      tick before the seconds wake, inside the live-seconds window, at the
+      1-minute cue, five seconds from zero, and after a cancel.  **Every one**
+      came back with the deadline intact to the second, the five column modes
+      intact (including a *disabled* one), and the calibration intact.
+- [x] The two transient phases, caught live because `countdown.set_target`
+      refuses a past epoch: power cut **during the zero hold** and **during the
+      alarm spin**.  Both woke silently into the reveal — no cue replayed,
+      nothing spinning.  That is the §17 rule (the cues and the spin belong to
+      the real zero moment) holding under a power cut rather than a reboot.
+- [x] The journal recorded the whole campaign: every zero, every boot, every
+      cancel, with timestamps and `seq`, across all twelve cuts.
+- [ ] With motors attached: a cut mid-move leaves the drum wherever physics
+      left it, so the FIRST thing after a power-loss test is `home all` — the
+      firmware cannot know where a drum stopped.
+
+### 29. Fault-path matrix (spec 5.8/5.9/7.4) — **DONE 2026-08-24, simulated**
+
+Run `matrix_board.py`, or by hand:
+
+- [x] Two columns faulting **while still retrying** → EN drops for all five.
+      (It did not before: a retryable fault stores `Unhomed`, so neither column
+      counted itself and the rule could only fire ~22 s later.)
+- [x] After an escalation, **no column is still MOVING** — dropping EN posts a
+      Stop rather than only writing the pin.
+- [x] EN is re-assertable from the network (`motion.enable`), not just `en 1` on
+      the console, and `sys.drivers_enabled` says which state it is in.
+- [x] One column **disabled and latched** plus one real fault → EN stays up.  A
+      disabled column is configuration, not a vote.
+- [x] **Re-enabling** a disabled column homes it by itself and reaches a known
+      index.  It never did; across a reboot it came back unhomed and silently
+      never closed the hole.
+- [x] **Disabling** an idle column parks it on blank *before* its drive bit goes
+      away — verified by watching a `qmark` become `blank`.
+- [ ] The same six on a real column, where EN actually de-energizes something.
+
 ### 30. Zero and failure semantics, verified not redesigned — **DONE 2026-08-24**
 
 Asked for by the terminal prop's integration pass: confirm what the display
@@ -975,46 +1103,33 @@ python <scratchpad>/mqtt_peer.py <broker> prop 1.0.0 30
       internal pull-up is enabled, but a metre of unshielded wire next to five
       stepper motors is a different proposition from a pad on a dev board.
 
-### 28. Power loss (spec 15 phase 6) — **DONE 2026-08-24**
+### 33. Phase 7, the presentation pack — **DONE 2026-08-24 (browser, not bench)**
 
-Twelve cuts, each a hardware reset with no shutdown path — the same thing as
-pulling the plug as far as NVS and LittleFS are concerned.
+Recorded here for completeness rather than as bench work: it is entirely
+browser-side and the ESP32 pays only the LittleFS bytes. Verified against the
+board at 375x812 and 1920x1080, with no horizontal overflow at either.
 
-- [x] Ten points through a countdown: just after EXECUTE, mid quiet phase, one
-      tick before the seconds wake, inside the live-seconds window, at the
-      1-minute cue, five seconds from zero, and after a cancel.  **Every one**
-      came back with the deadline intact to the second, the five column modes
-      intact (including a *disabled* one), and the calibration intact.
-- [x] The two transient phases, caught live because `countdown.set_target`
-      refuses a past epoch: power cut **during the zero hold** and **during the
-      alarm spin**.  Both woke silently into the reveal — no cue replayed,
-      nothing spinning.  That is the §17 rule (the cues and the spin belong to
-      the real zero moment) holding under a power cut rather than a reboot.
-- [x] The journal recorded the whole campaign: every zero, every boot, every
-      cancel, with timestamps and `seq`, across all twelve cuts.
-- [ ] With motors attached: a cut mid-move leaves the drum wherever physics
-      left it, so the FIRST thing after a power-loss test is `home all` — the
-      firmware cannot know where a drum stopped.
-
-### 29. Fault-path matrix (spec 5.8/5.9/7.4) — **DONE 2026-08-24, simulated**
-
-Run `matrix_board.py`, or by hand:
-
-- [x] Two columns faulting **while still retrying** → EN drops for all five.
-      (It did not before: a retryable fault stores `Unhomed`, so neither column
-      counted itself and the rule could only fire ~22 s later.)
-- [x] After an escalation, **no column is still MOVING** — dropping EN posts a
-      Stop rather than only writing the pin.
-- [x] EN is re-assertable from the network (`motion.enable`), not just `en 1` on
-      the console, and `sys.drivers_enabled` says which state it is in.
-- [x] One column **disabled and latched** plus one real fault → EN stays up.  A
-      disabled column is configuration, not a vote.
-- [x] **Re-enabling** a disabled column homes it by itself and reaches a known
-      index.  It never did; across a reboot it came back unhomed and silently
-      never closed the hole.
-- [x] **Disabling** an idle column parks it on blank *before* its drive bit goes
-      away — verified by watching a `qmark` become `blank`.
-- [ ] The same six on a real column, where EN actually de-energizes something.
+- [x] **Protocol mode is inert outside the live window**, which is the point of
+      it: with 380 s remaining, typing the whole Numbers and Enter produced
+      nothing on screen, sent no command, and did not open the eggs.
+- [x] **The SYSTEM FAILURE flood matches the §7.3 cadence contract**, measured
+      live: pure 14-character repeats with no separator and no newline, 108
+      repeats in 10.8 s (the 100 ms tick), stopping when the phase leaves
+      zero/spin/reveal, and the paper NOT cleared afterwards.
+- [x] **The beats are timed off the deadline, the landing off the `reveal`
+      event** - watched it go SEALING to SEALED as the event arrived.
+- [x] **The Pearl log prints the device's real journal**, honouring the frozen
+      format: uptime stamps for `t: 0`, column 0 emitted, the device's timezone.
+- [x] **Chess: 27/27 self-test in a browser on the board**, including perft
+      20 / 400 / 8902 from the initial position, kiwipete 48 / 2039, and
+      checkmate detection (which is what opens the Chang menu).
+- [ ] **The boot logo is not finished art.** Two clearly-marked placeholder
+      blocks in `web/bootanim.js`: the swan silhouette, and the bagua sequence -
+      the classic station logos use LATER HEAVEN (King Wen) with the trigrams
+      inverted inside-to-outside, and the table in the file is neither. Both
+      arrive together as a drop-in; the constructed geometry around them does
+      not change. **Do not re-derive the trigram order from bagua theory** -
+      that is how the current wrong one was produced.
 
 ## Notes
 
