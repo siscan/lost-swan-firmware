@@ -574,6 +574,52 @@ void ModeManager::tick_countdown_offscreen(int64_t utc_ms) {
     if (cd_.phase != CdPhase::Running) return;
     const int64_t rem_ms = cd_.target_utc * 1000 - utc_ms;
 
+    // THE FINALE MUST NEVER FIRE INVISIBLY (Nico, 2026-08-25).  A countdown
+    // whose mode has been switched away keeps running - the deadline is
+    // absolute - and until now it reached zero behind a clock face: the cue
+    // sounded, the phase went to Reveal, and the drums never moved.
+    //
+    // DECISION: at `seconds_live_s` the display AUTO-RETURNS to countdown mode.
+    //
+    // The show-accuracy argument is the obvious one - the machine demanding
+    // attention at four minutes is what the Swan does.  The stronger argument
+    // is the alternative's failure mode.  Holding the choreography until
+    // countdown mode resumes means a countdown can sit at zero indefinitely
+    // with its alarm suppressed and then fire whenever somebody happens to
+    // switch modes, which is EXACTLY the defect the Phase 3 review found ("a
+    // run started before bed detonated the next time anyone opened the Modes
+    // page") and that the scoped re-sweep found again in the EN gate.  Holding
+    // would re-create it deliberately, as a feature.  Auto-return means a
+    // running countdown is never in that category for a mere mode change.
+    //
+    // The silent-wake rule still covers the cases where the display genuinely
+    // COULD not show it - maintenance, an OTA, EN down - because those are
+    // holds on the whole display rather than a choice about what to look at.
+    // The window is STRICTLY AHEAD OF ZERO, and only with a synced clock.
+    // Both guards were missing and the board found it within a minute of
+    // flashing: a deadline already in the past has a hugely negative rem_ms,
+    // which satisfies `rem_ms <= seconds_live_s` trivially - so a resume of a
+    // six-hour-old deadline seized the display and journalled "(auto, 4:00)"
+    // for a run that had ended before anyone was awake.  That is the silent-wake
+    // rule (17, 2026-08-21) trampled by its own successor: a past deadline
+    // belongs to the reveal path below, silently, and always did.
+    //
+    // The clock guard is the same defect one step earlier.  Before SNTP the
+    // arithmetic runs against a 1970 clock, and the resume is deferred until
+    // validity precisely because comparing a 2026 deadline against it
+    // mis-derives everything.
+    //
+    // With `seconds_live_s = 0` there is no live window to return for, so the
+    // display takes itself back at the one-minute cue instead - the finale
+    // still gets a visible run-up, which is the whole point of the rule.
+    const int64_t wake_s = cfg_.seconds_live_s > 0 ? cfg_.seconds_live_s : 60;
+    if (time_.valid() && rem_ms > 0 && rem_ms <= wake_s * 1000) {
+        note_locked(journal::Event::Kind::ModeChange, "countdown (auto, 4:00)",
+                    cd_.seq, cd_.set_by);
+        enter_mode(Mode::Countdown, utc_ms);
+        return;   // enter_mode ticks; the on-screen path owns it from here
+    }
+
     if (!cue_warn4_ && rem_ms <= 240 * 1000) {
         cue_warn4_ = true;
         cues_.on_cue(Cue::Warn4Min);

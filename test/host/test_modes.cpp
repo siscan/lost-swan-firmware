@@ -446,30 +446,41 @@ void test_countdown_runs_offscreen() {
     CHECK(r.mm.cmd_mode_set(Mode::Clock, r.time.utc_ms).ok);
     CHECK(r.mm.cd_phase() == CdPhase::Running);  // the deadline survives
 
-    // The cues fire at the real moments, on the clock face.
+    // The run advances on the clock face - phase and cues are unconditional,
+    // which is what this test was written for.  It stays the operator's choice
+    // of display for as long as the run is nowhere near its end.
+    r.run_to(t0 + 40 * 1000);   // 260 s left, still outside the live window
+    CHECK(r.mm.mode() == Mode::Clock);
+    CHECK(r.mm.cd_phase() == CdPhase::Running);
+
+    // AT seconds_live_s THE DISPLAY TAKES ITSELF BACK (2026-08-25).  This test
+    // used to assert the opposite - "it did not seize the display" - and that
+    // was the defect: the finale then fired behind a clock face, with the cue
+    // sounding and the drums never moving.
     r.run_to(t0 + 65 * 1000);   // 235 s left
     CHECK(r.cues.fired(Cue::Warn4Min));
     CHECK(!r.cues.fired(Cue::Warn1Min));
+    CHECK(r.mm.mode() == Mode::Countdown);
+
     r.run_to(t0 + 245 * 1000);  // 55 s left
     CHECK(r.cues.fired(Cue::Warn1Min));
 
-    // Zero happens whether or not anyone is looking at it.
-    const int64_t clock_gos = r.port.gos.size();
+    // ... so the zero choreography happens ON SCREEN: the cue AND the spin.
     r.run_to(t0 + 310 * 1000);
     CHECK(r.cues.fired(Cue::SystemFailure));
     CHECK_EQ(r.cues.recs.size(), 3u);
     CHECK(r.mm.cd_phase() == CdPhase::Reveal);
-    CHECK(r.mm.mode() == Mode::Clock);   // it did not seize the display
-    CHECK_EQ(r.port.spins.size(), 0u);   // and did not spin columns it does not own
-    CHECK(r.port.gos.size() >= static_cast<size_t>(clock_gos));  // clock kept ticking
+    CHECK(!r.port.spins.empty());       // it owns the columns now, and used them
 
-    // Entering countdown mode later shows the reveal.  It must NOT replay.
+    // Leaving the reveal ends the run (spec 17: the reveal holds only while the
+    // mode does), and coming back must not replay anything.
     const size_t cues_before = r.cues.recs.size();
+    const size_t spins_before = r.port.spins.size();
+    CHECK(r.mm.cmd_mode_set(Mode::Clock, r.time.utc_ms).ok);
     CHECK(r.mm.cmd_mode_set(Mode::Countdown, r.time.utc_ms).ok);
     r.run_to(r.time.utc_ms + 20 * 1000);
     CHECK_EQ(r.cues.recs.size(), cues_before);
-    CHECK_EQ(r.port.spins.size(), 0u);
-    CHECK(r.mm.cd_phase() == CdPhase::Reveal);
+    CHECK_EQ(r.port.spins.size(), spins_before);
 }
 
 // A deadline in milliseconds is the obvious integration mistake, and it used
@@ -855,6 +866,246 @@ void test_the_canon_reveal_resolves_on_both_rings() {
 // anyone opened the Modes page", reintroduced through a different gate, and the
 // same rule fixes it: the cues and the spin belong to the real zero moment and
 // never replay (spec 17).
+// ---------------------------------------------------------------------------
+// A COUNTDOWN RUNNING BEHIND ANOTHER MODE (defect 3, 2026-08-25).
+//
+// The deadline is absolute, so switching to the clock does not cancel a run -
+// and until now that run reached zero behind a clock face: the cue sounded, the
+// phase went to Reveal, and the drums never moved. The finale fired invisibly.
+//
+// DECISION: at seconds_live_s the display takes itself back. Holding the
+// choreography instead would let a countdown sit at zero with its alarm
+// suppressed until somebody switched modes - which is the "detonated the next
+// time anyone opened the Modes page" defect, deliberately reintroduced.
+// ---------------------------------------------------------------------------
+void test_background_countdown_takes_the_display_back() {
+    Rig r;
+    r.begin_at(utc_ms(2026, 1, 15, 17, 0, 0));
+    const int64_t t0 = r.time.utc_ms;
+
+    // A run, then the operator switches to the clock well outside the window.
+    CHECK(r.mm.cmd_countdown_set_target(t0 / 1000 + 400, t0).ok);
+    CHECK(r.mm.cd_phase() == CdPhase::Running);
+    CHECK(r.mm.cmd_mode_set(Mode::Clock, r.time.utc_ms).ok);
+    CHECK(r.mm.mode() == Mode::Clock);
+
+    // It stays the operator's choice while the run is nowhere near the end.
+    r.run_to(t0 + 100 * 1000);          // 300 s left
+    CHECK(r.mm.mode() == Mode::Clock);
+    CHECK(r.mm.cd_phase() == CdPhase::Running);
+
+    // ... and takes the display back AT the live window, not before.
+    r.run_to(t0 + 161 * 1000);          // 239 s left
+    if (r.mm.mode() != Mode::Countdown) {
+        std::printf("  did not auto-return: mode=%d\n", static_cast<int>(r.mm.mode()));
+    }
+    CHECK(r.mm.mode() == Mode::Countdown);
+
+    // The zero choreography then runs ON SCREEN, which is the whole point:
+    // the cue AND the spin, not a silent phase change.
+    r.cues.recs.clear();
+    r.port.spins.clear();
+    r.run_to(t0 + 412 * 1000);
+    CHECK(r.cues.at(Cue::SystemFailure) >= 0);
+    CHECK(!r.port.spins.empty());
+    CHECK(r.mm.cd_phase() == CdPhase::Reveal);
+}
+
+// Switching away is allowed at every phase, and never loses the run.
+void test_mode_switch_away_at_every_countdown_phase() {
+    struct Case { const char* what; int at_s; };
+    // Relative to a 20 s deadline with the default 3 s hold and 6 s spin.
+    const Case cases[] = {
+        {"deep in the quiet phase", 2},
+        {"inside the live window", 19},
+        {"during the zero hold", 21},
+        {"during the alarm spin", 25},
+        {"on the reveal", 32},
+    };
+    for (const Case& c : cases) {
+        Rig r;
+        r.begin_at(utc_ms(2026, 1, 15, 17, 0, 0));
+        const int64_t t0 = r.time.utc_ms;
+        // seconds_live_s well below the switch point for the quiet case, so the
+        // auto-return does not pre-empt what this test is measuring.
+        ModesConfig cfg;
+        cfg.seconds_live_s = 5;
+        r.configure(cfg);
+        CHECK(r.mm.cmd_countdown_set_target(t0 / 1000 + 20, t0).ok);
+        r.run_to(t0 + c.at_s * 1000);
+
+        const CdPhase before = r.mm.cd_phase();
+        const int64_t target_before = r.mm.cd_target();
+        CHECK(r.mm.cmd_mode_set(Mode::Clock, r.time.utc_ms).ok);
+
+        // THE DEADLINE SURVIVES, whatever the phase. It is absolute; a mode
+        // change is a decision about what to look at, not about what is true.
+        if (r.mm.cd_target() != target_before) {
+            std::printf("  %s: the deadline moved\n", c.what);
+        }
+        CHECK_EQ(r.mm.cd_target(), target_before);
+
+        r.run_to(r.time.utc_ms + 20 * 1000);
+        const CdPhase after = r.mm.cd_phase();
+        if (before == CdPhase::Running) {
+            // A LIVE run never rewinds: it either keeps running or moves on
+            // through its own choreography.
+            if (static_cast<int>(after) < static_cast<int>(before)) {
+                std::printf("  %s: a live run rewound %d -> %d\n", c.what,
+                            static_cast<int>(before), static_cast<int>(after));
+            }
+            CHECK(static_cast<int>(after) >= static_cast<int>(before));
+        } else {
+            // A run PAST zero (Zero, Spin, Reveal) ends when the mode leaves,
+            // deliberately - spec 17: the reveal holds only while the mode
+            // does, and a finished countdown must not re-arm itself. Idle is
+            // the correct destination, not a rewind.
+            if (after != CdPhase::Idle) {
+                std::printf("  %s: expected Idle after leaving, got %d\n", c.what,
+                            static_cast<int>(after));
+            }
+            CHECK(after == CdPhase::Idle);
+        }
+    }
+}
+
+// A reboot mid-run resumes from the persisted deadline, and a reboot AFTER zero
+// wakes silently into the reveal rather than replaying the alarm (spec 17).
+void test_background_countdown_across_a_reboot() {
+    // Mid-run: the deadline survives and the run continues.
+    {
+        Rig r;
+        r.begin_at(utc_ms(2026, 1, 15, 17, 0, 0));
+        const int64_t t0 = r.time.utc_ms;
+        CHECK(r.mm.cmd_countdown_set_target(t0 / 1000 + 300, t0).ok);
+        CHECK(r.mm.cmd_mode_set(Mode::Clock, r.time.utc_ms).ok);
+        r.run_to(t0 + 10 * 1000);
+        const int64_t target = r.mm.cd_target();
+
+        Rig r2;                          // a fresh ModeManager over the same store
+        r2.store.stored = r.store.stored;   // what NVS would have held
+        r2.store.have = true;
+        r2.begin_at(t0 + 30 * 1000);
+        r2.run_to(r2.time.utc_ms + 2000);
+        CHECK_EQ(r2.mm.cd_target(), target);
+        CHECK(r2.mm.cd_phase() == CdPhase::Running);
+    }
+    // After zero: silent reveal, no cue, no spin.
+    {
+        Rig r;
+        r.begin_at(utc_ms(2026, 1, 15, 17, 0, 0));
+        const int64_t t0 = r.time.utc_ms;
+        CHECK(r.mm.cmd_countdown_set_target(t0 / 1000 + 20, t0).ok);
+        r.run_to(t0 + 5000);
+
+        Rig r2;
+        r2.store.stored = r.store.stored;
+        r2.store.have = true;
+        r2.begin_at(t0 + 600 * 1000);    // rebooted ten minutes after the deadline
+        r2.cues.recs.clear();
+        r2.port.spins.clear();
+        r2.run_to(r2.time.utc_ms + 3000);
+        CHECK(r2.mm.cd_phase() == CdPhase::Reveal);
+        CHECK(r2.cues.at(Cue::SystemFailure) < 0);   // never fired
+        CHECK(r2.port.spins.empty());                // and nothing spun
+    }
+}
+
+
+// The board found this one within a minute of being flashed, and the host
+// suite had missed it because every auto-return test started from a synced
+// clock and a deadline in the future.
+void test_auto_return_never_fires_for_a_deadline_that_is_already_gone() {
+    // The auto-return window is STRICTLY AHEAD OF ZERO and needs a synced
+    // clock.  Neither guard was there at first, and both matter: a past
+    // deadline has a hugely negative rem_ms, which satisfies
+    // `rem_ms <= seconds_live_s` trivially.
+
+    // (a) SNTP STEPS THE CLOCK FORWARD PAST THE DEADLINE while the display is
+    //     on the clock face.  Unguarded this enters countdown mode and the
+    //     on-screen path then finds itself at zero - cue, spin, the whole
+    //     choreography, for a moment that passed before the step.  It must wake
+    //     silently into the reveal and leave the mode alone.
+    {
+        Rig r;
+        r.begin_at(utc_ms(2026, 1, 15, 17, 0, 0));
+        const int64_t t0 = r.time.utc_ms;
+        CHECK(r.mm.cmd_countdown_set_target(t0 / 1000 + 3000, t0).ok);
+        CHECK(r.mm.cmd_mode_set(Mode::Clock, r.time.utc_ms).ok);
+        r.run_to(t0 + 5000);
+        r.cues.recs.clear();
+        r.port.spins.clear();
+
+        // One tick, an hour later: the deadline is now well behind us.
+        r.time.utc_ms = t0 + 3600 * 1000;
+        r.port.now_ms = r.time.utc_ms;
+        r.cues.now_ms = r.time.utc_ms;
+        r.mm.tick(r.time.utc_ms);
+        r.run_to(r.time.utc_ms + 2000);
+
+        CHECK(r.mm.mode() == Mode::Clock);          // it did NOT seize the display
+        CHECK(r.mm.cd_phase() == CdPhase::Reveal);  // and landed straight there
+        CHECK(r.port.spins.empty());                // nothing spun
+
+        // NOT asserted: the zero cue.  The off-screen path fires it when the
+        // deadline is found to have passed, exactly as the on-screen path does,
+        // and that is pre-existing behaviour shared by both - a step forward
+        // across zero means the deadline really did pass.  What must not happen
+        // is the display seizing five columns and spinning them for a moment
+        // that is already over, and that is what the two assertions above pin.
+    }
+
+    // (b) AN UNSYNCED CLOCK.  The same arithmetic one step earlier: before SNTP
+    //     the reading is not a time, and the resume is deferred for exactly
+    //     that reason.  Nothing may auto-return off it.
+    {
+        Rig r;
+        r.begin_at(utc_ms(2026, 1, 15, 17, 0, 0));
+        const int64_t t0 = r.time.utc_ms;
+        CHECK(r.mm.cmd_countdown_set_target(t0 / 1000 + 300, t0).ok);
+        CHECK(r.mm.cmd_mode_set(Mode::Clock, r.time.utc_ms).ok);
+        r.time.is_valid = false;
+        r.run_to(t0 + 100 * 1000);      // 200 s left: inside the live window
+        CHECK(r.mm.mode() == Mode::Clock);
+        r.time.is_valid = true;         // ... and now the clock is trustworthy
+        r.run_to(r.time.utc_ms + 1000);
+        CHECK(r.mm.mode() == Mode::Countdown);
+    }
+
+    // (c) THE RULE STILL FIRES for a live run crossing the boundary, which is
+    //     the whole point of it.  Guarding must not have disarmed it.
+    {
+        Rig r;
+        r.begin_at(utc_ms(2026, 1, 15, 17, 0, 0));
+        const int64_t t0 = r.time.utc_ms;
+        CHECK(r.mm.cmd_countdown_set_target(t0 / 1000 + 300, t0).ok);
+        CHECK(r.mm.cmd_mode_set(Mode::Clock, r.time.utc_ms).ok);
+        r.run_to(t0 + 40 * 1000);
+        CHECK(r.mm.mode() == Mode::Clock);        // 260 s left: still the clock
+        r.run_to(t0 + 65 * 1000);                 // 235 s left
+        CHECK(r.mm.mode() == Mode::Countdown);
+    }
+
+    // (d) `seconds_live_s = 0` has no live window, so the display takes itself
+    //     back at the one-minute cue instead.  Without that floor the guard in
+    //     (a) would disable the rule entirely for that setting and the finale
+    //     would be invisible again - which is the thing being prevented.
+    {
+        Rig r;
+        ModesConfig c;
+        c.seconds_live_s = 0;
+        r.configure(c);
+        r.begin_at(utc_ms(2026, 1, 15, 17, 0, 0));
+        const int64_t t0 = r.time.utc_ms;
+        CHECK(r.mm.cmd_countdown_set_target(t0 / 1000 + 300, t0).ok);
+        CHECK(r.mm.cmd_mode_set(Mode::Clock, r.time.utc_ms).ok);
+        r.run_to(t0 + 200 * 1000);                // 100 s left
+        CHECK(r.mm.mode() == Mode::Clock);
+        r.run_to(t0 + 245 * 1000);                // 55 s left
+        CHECK(r.mm.mode() == Mode::Countdown);
+    }
+}
+
 void test_a_deadline_that_passes_while_held_wakes_silently() {
     for (const int which : {0, 1, 2}) {   // EN down, maintenance, OTA hold
         Rig r;
@@ -1084,6 +1335,10 @@ void run_tests() {
     test_mode_set_message_requires_message();
     test_maintenance_suspends_everything();
     test_the_canon_reveal_resolves_on_both_rings();
+    test_background_countdown_takes_the_display_back();
+    test_mode_switch_away_at_every_countdown_phase();
+    test_background_countdown_across_a_reboot();
+    test_auto_return_never_fires_for_a_deadline_that_is_already_gone();
     test_a_deadline_that_passes_while_held_wakes_silently();
     test_en_down_stops_the_frame_layer();
     test_maintenance_survives_and_blocks_countdown();
