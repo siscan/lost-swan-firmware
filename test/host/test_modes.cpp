@@ -1073,7 +1073,10 @@ void test_auto_return_never_fires_for_a_deadline_that_is_already_gone() {
     }
 
     // (c) THE RULE STILL FIRES for a live run crossing the boundary, which is
-    //     the whole point of it.  Guarding must not have disarmed it.
+    //     the whole point of it.  Guarding must not have disarmed it.  And it
+    //     writes ONE journal line, with its reason: the board showed
+    //     "countdown (auto, 4:00)" immediately followed by a plain "countdown",
+    //     which reads as the display changing mode twice.
     {
         Rig r;
         r.begin_at(utc_ms(2026, 1, 15, 17, 0, 0));
@@ -1082,8 +1085,19 @@ void test_auto_return_never_fires_for_a_deadline_that_is_already_gone() {
         CHECK(r.mm.cmd_mode_set(Mode::Clock, r.time.utc_ms).ok);
         r.run_to(t0 + 40 * 1000);
         CHECK(r.mm.mode() == Mode::Clock);        // 260 s left: still the clock
+        std::vector<std::string> notes;
+        r.mm.set_journal([&notes](const journal::Event& e) {
+            if (e.kind == journal::Event::Kind::ModeChange) notes.push_back(e.detail);
+        });
         r.run_to(t0 + 65 * 1000);                 // 235 s left
         CHECK(r.mm.mode() == Mode::Countdown);
+        if (notes.size() != 1) {
+            std::printf("  auto-return wrote %d ModeChange lines, expected 1\n",
+                        static_cast<int>(notes.size()));
+            for (const auto& n : notes) std::printf("    %s\n", n.c_str());
+        }
+        CHECK_EQ(notes.size(), 1u);
+        CHECK(notes.empty() || notes[0].find("auto, 4:00") != std::string::npos);
     }
 
     // (d) `seconds_live_s = 0` has no live window, so the display takes itself

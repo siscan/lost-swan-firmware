@@ -214,8 +214,19 @@ void ModeManager::enter_mode(Mode m, int64_t utc_ms) {
 
     if (mode_ != m) {
         prev_mode_ = mode_;
-        note_locked(journal::Event::Kind::ModeChange, mode_name(m));
+        // ONE EVENT, ONE LINE.  The auto-return announces itself with a reason
+        // and then calls straight in here, which wrote a second, plainer
+        // ModeChange for the same instant - two lines a millisecond apart
+        // saying the display changed mode twice, on the Pearl printout, which
+        // is exactly the lie the execute/start merge was made to avoid.
+        if (mode_note_) {
+            note_locked(journal::Event::Kind::ModeChange, mode_note_, cd_.seq, cd_.set_by);
+            mode_note_ = nullptr;
+        } else {
+            note_locked(journal::Event::Kind::ModeChange, mode_name(m));
+        }
     }
+    mode_note_ = nullptr;   // never leaks into a later, unrelated switch
     mode_ = m;
     rendered_key_ = RENDER_NONE;  // clock re-renders on entry
     cd_shown_ = SHOWN_NONE;          // countdown re-renders on entry
@@ -614,8 +625,7 @@ void ModeManager::tick_countdown_offscreen(int64_t utc_ms) {
     // still gets a visible run-up, which is the whole point of the rule.
     const int64_t wake_s = cfg_.seconds_live_s > 0 ? cfg_.seconds_live_s : 60;
     if (time_.valid() && rem_ms > 0 && rem_ms <= wake_s * 1000) {
-        note_locked(journal::Event::Kind::ModeChange, "countdown (auto, 4:00)",
-                    cd_.seq, cd_.set_by);
+        mode_note_ = "countdown (auto, 4:00)";
         enter_mode(Mode::Countdown, utc_ms);
         return;   // enter_mode ticks; the on-screen path owns it from here
     }

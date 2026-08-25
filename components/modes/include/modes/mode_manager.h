@@ -341,6 +341,11 @@ private:
 
     Mode mode_ = Mode::Clock;
     Mode prev_mode_ = Mode::Clock;
+    // The reason for the NEXT mode change, when there is one worth recording.
+    // enter_mode consumes it, so an announced switch writes one journal line
+    // rather than its own plus a plainer duplicate.  Modes-task only, under the
+    // lock, like everything else here.
+    const char* mode_note_ = nullptr;
 
     // The frame currently displayed (or being moved to).  Renderers need it:
     // the rings are one-way and column 5 has two slots per digit, so the slot
