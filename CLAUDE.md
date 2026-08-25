@@ -384,3 +384,13 @@ ratio 85/33 against the stale 68/26 prose, `hall_tol`, the jam/slip thresholds,
 `flaps_s_alarm`) is settled by a bench run, not by code and not by a simulated
 soak. `sim_drum.h` was written from the same assumptions as the classifier that
 reads it, so a clean simulated result proves the plumbing and nothing else.
+
+**The repository is QUIET as of 2026-08-25**, closed on green CI, waiting for
+hardware. If you are opening it after that date: the software side is finished
+through Phase 7 and the next work is a bench, not a keyboard. **Read
+`docs/BRINGUP.md` — "The first hour, in order" — before changing anything**, and
+read the final `STATE OF THE WORLD` entry at the end of the spec's §17, which
+says what is verified, what has never been measured, and which traps have
+already cost a session here. Planned-but-not-built work lives in
+`docs/FUTURE.md`; the scriptable zero choreography is deliberately post-hardware
+and its four contracts are already checked against the shipped code.
