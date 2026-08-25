@@ -1,132 +1,245 @@
-// Protocol mode (spec §15 phase 7): the purist Swan terminal.
+// The station screen (spec §15 phase 7, restructured 2026-08-25).
 //
-// The friendly terminal shows you what is happening.  This one shows you what
-// the Swan showed Desmond: a near-black screen, a blinking prompt, and a
-// keyboard that does nothing at all until the timer has four minutes left.
-// That inertness is the feature - it is what the show demonstrates, and a
-// version that helpfully accepted the Numbers early would be a different prop.
+// One purist terminal, three station personas. SWAN, PEARL and FLAME share the
+// renderer, the CRT, the keyboard, the echo and the teletype - and share them
+// freely - but never at each other's expense: no station's commands leak into
+// another, and each is complete on its own.
 //
-// Screen-side only, with ONE exception, which is the same exception the whole
-// phase has: EXECUTE goes through SwanTerm.send("countdown.execute", …), the
-// identical §10.2a path the friendly terminal's own EXECUTE key uses.  Nothing
-// else here sends anything, and nothing here touches the flaps.
+//   SWAN   the Numbers and EXECUTE, the live window, the SYSTEM FAILURE
+//          choreography, and the chat easter egg. No LOG, no CHESS.
+//   PEARL  boots to PRINT LOG? Y/N and prints the device's own journal.
+//   FLAME  boots to the chess offer, and Chang's menu on a win.
 //
-// TWO CONTRACTS ARE IMPLEMENTED HERE RATHER THAN INVENTED:
+// PEARL AND FLAME ARE INDIFFERENT TO COUNTDOWN STATE. Only Swan reacts to the
+// deadline, because only Swan is the countdown's station.
 //
-//   1. The SYSTEM FAILURE flood is FIRMWARE_SPEC §7.3's cadence, verbatim: no
-//      separator between repeats, no emitted line breaks, one fourteen-character
-//      repeat every 100 ms, starting at zero and stopping when the phase leaves
-//      zero/spin/reveal, with no clear and no cadence reset on a restart.  The
-//      separate terminal prop prints the same string at the same rate; a third
-//      cadence invented here would be exactly the divergence that contract
-//      exists to prevent.
+// FOUR RULES THIS FILE EXISTS TO KEEP:
 //
-//   2. Every beat is timed off the DEADLINE plus the retained timing keys
-//      (cfg.zero_hold_s, cfg.spin_s), and the landing comes off the firmware's
-//      `reveal` EVENT.  Never off the arrival time of a message: publish skew on
-//      swan/countdown was measured at up to ~0.7 s (BRINGUP §30), so arrival is
-//      not a clock.  The event is used because the landing genuinely cannot be
-//      computed - after the alarm spin the columns converge from an unknown
-//      index, measured at 2.45-2.48 s with the canon reveal and as little as
-//      0.15 s with blanks.
+//  1. Content and presentation are orthogonal. Station and protocol are
+//     content; CRT, key click, mirror and fullscreen are presentation. Every
+//     combination composes, no toggle writes another toggle, each persists on
+//     its own. The screen renders INSIDE the CRT filter (`.crt-layer`), which
+//     is what stopped protocol mode punching through it - the purist mode was
+//     the one losing the phosphor, which is backwards.
+//  2. No persisted mode without an always-available escape, mouse and keyboard
+//     both. Pointer movement, a click on dead space or a tap reveals the strip;
+//     ESC leaves protocol mode; PANEL at any idle prompt goes to the control
+//     panel.
+//  3. Accepted input echoes. Everywhere input is taken it appears at `>:` with
+//     working DEL and CLEAR. Inert-with-no-echo applies to exactly one state:
+//     a running countdown above the 4:00 mark, which is what the show does.
+//  4. Output teletypes at one documented cadence. Input echoes instantly, and
+//     any key completes an in-progress print so it never slows anybody down.
+//     The SYSTEM FAILURE flood keeps its separate contractual rate.
 "use strict";
 
 (function () {
-  // FIRMWARE_SPEC §7.3, and a cross-repo constant: fourteen characters, six
-  // then one space then seven, no trailing space.  Do not tidy this string.
+  // FIRMWARE_SPEC §7.3, a cross-repo constant: fourteen characters, six then
+  // one space then seven, no trailing space. Do not tidy this string.
   const SYSTEM_FAILURE = "SYSTEM FAILURE";
-  const REPEAT_MS = 100;          // one repeat per tick -> 140 characters/second
+  const FLOOD_REPEAT_MS = 100;    // one repeat per tick -> 140 characters/second
 
-  // The flood is unbounded in principle and a browser is not.  Keeping the last
-  // ~24 k characters is many screens' worth at any size and costs nothing; the
-  // cadence is unaffected, which is the part that is contractual.
+  // RULE 4's ONE CADENCE, for every teletyped line on every station.
+  // 45 characters a second: fast enough that a hint is never a wait, slow
+  // enough to read as a machine printing rather than as text appearing. It is
+  // deliberately NOT the flood's rate - that one is a contract shared with the
+  // terminal prop and is left exactly alone.
+  const TELETYPE_CPS = 45;
+  const TELETYPE_MS = Math.round(1000 / TELETYPE_CPS);   // 22 ms per character
+
   const FLOOD_MAX = 24000;
-
   const MAX_ENTRY = 24;
 
-  let el = null;          // the overlay, created on first use
-  let parts = null;       // {prompt, entry, cursor, flood, status}
+  // ---------------------------------------------------------------------
+  // The stations.
+  //
+  // STATION NUMBERS ARE DELIBERATELY OMITTED for Pearl and Flame. The Swan is
+  // Station 3 and has been on this page since phase 3.5, but I could not verify
+  // the other two against Lostpedia from here, and printing a number I am not
+  // sure of onto a prop is worse than printing none. Flagged rather than
+  // guessed; add them when somebody checks.
+  // ---------------------------------------------------------------------
+  const STATIONS = {
+    swan: {
+      label: "SWAN",
+      header: "STATION 3 · THE SWAN",
+      hint: "ENTER THE NUMBERS, THEN EXECUTE.",
+    },
+    pearl: {
+      label: "PEARL",
+      header: "THE PEARL",
+      hint: "TYPE LOG TO PRINT THE STATION RECORD",
+    },
+    flame: {
+      label: "FLAME",
+      header: "THE FLAME",
+      hint: "TYPE CHESS TO PLAY",
+    },
+  };
+  const STATION_NAMES = ["swan", "pearl", "flame"];
+
+  let el = null;
+  let parts = null;
   let entry = "";
   let flood = "";
   let floodTimer = null;
   let pendingExecute = false;
   let revealLanded = false;
-  let askingLog = false;   // PRINT LOG? Y/N is up
-  let word = "";           // letters typed at the idle prompt (CHESS, LOG)
+  let asking = null;        // "log" | "chess" | null - a pending Y/N
+  let word = "";
+  let lastSit = null;
+  let booted = false;       // this station has printed its opening line
 
   const T = () => window.SwanTerm;
-
   const on = () => !!(T() && T().prefs.protocol);
+  const station = () => {
+    const t = T();
+    const s = t && t.station ? t.station() : "swan";
+    return STATIONS[s] ? s : "swan";
+  };
 
   // ---------------------------------------------------------------------
-  // What the terminal is doing right now, derived from the deadline rather
-  // than from whatever message last arrived.
-  //
-  //   idle     nothing armed.  The prompt is awake; this is where the eggs live.
-  //   asleep   a countdown is running with more than seconds_live_s to go.
-  //            KEYS DO NOTHING VISIBLE.  This is the show-accurate state and the
-  //            reason this mode exists.
-  //   live     inside the live window.  The prompt has woken with the 4-minute
-  //            cue and the Numbers can be entered.
-  //   failure  zero and after: the flood.
+  // RULE 4: the teletype.
+  // ---------------------------------------------------------------------
+  let ttQueue = [];
+  let ttTimer = null;
+  let ttLine = "";
+  let ttAt = 0;
+
+  function say(text) {
+    ttQueue.push(String(text));
+    pumpTeletype();
+  }
+
+  function pumpTeletype() {
+    if (ttTimer !== null || !parts) return;
+    if (!ttLine) {
+      if (!ttQueue.length) return;
+      ttLine = ttQueue.shift();
+      ttAt = 0;
+      const d = document.createElement("div");
+      d.className = "said";
+      parts.out.appendChild(d);
+    }
+    ttTimer = setInterval(() => {
+      const node = parts && parts.out.lastChild;
+      if (!node) { finishTeletype(); return; }
+      ttAt++;
+      node.textContent = ttLine.slice(0, ttAt);
+      if (ttAt >= ttLine.length) {
+        clearInterval(ttTimer);
+        ttTimer = null;
+        ttLine = "";
+        trimOut();
+        if (ttQueue.length) pumpTeletype();
+      }
+    }, TELETYPE_MS);
+  }
+
+  // RULE 4: any key completes the print at once. A flourish that makes somebody
+  // wait has stopped being one.
+  function finishTeletype() {
+    if (ttTimer !== null) { clearInterval(ttTimer); ttTimer = null; }
+    if (!parts) { ttLine = ""; ttQueue = []; return; }
+    if (ttLine) {
+      const node = parts.out.lastChild;
+      if (node) node.textContent = ttLine;
+      ttLine = "";
+    }
+    while (ttQueue.length) {
+      const d = document.createElement("div");
+      d.className = "said";
+      d.textContent = ttQueue.shift();
+      parts.out.appendChild(d);
+    }
+    trimOut();
+  }
+
+  function trimOut() {
+    if (!parts) return;
+    while (parts.out.childNodes.length > 40) parts.out.removeChild(parts.out.firstChild);
+    parts.out.scrollTop = parts.out.scrollHeight;
+  }
+
+  function clearOut() {
+    finishTeletype();
+    if (parts) parts.out.textContent = "";
+    ttQueue = [];
+  }
+
+  // ---------------------------------------------------------------------
+  // What the SWAN screen is doing. Pearl and Flame never consult this.
   // ---------------------------------------------------------------------
   function situation() {
     const t = T();
     if (!t) return "idle";
+    if (station() !== "swan") return "idle";     // other stations have no phases
     const ph = t.phase();
     if (ph === "zero" || ph === "spin" || ph === "reveal") return "failure";
     const rem = t.remaining();
     if (rem === null || ph !== "running") return "idle";
-    // The deadline, not the message: `remaining` is computed from the device's
-    // own clock via the skew this page already tracks.
     if (rem <= 0) return "failure";
     return rem <= t.secondsLive() ? "live" : "asleep";
   }
 
+  // RULE 3: input is accepted, and therefore echoed, everywhere except one
+  // state - a countdown running above the 4:00 mark, on Swan. That inertness is
+  // the show's behaviour and the reason this mode exists; everywhere else,
+  // typing blind is just a bug.
+  function accepts() { return situation() !== "asleep"; }
+
+  // ---------------------------------------------------------------------
   function build() {
     if (el) return;
+    const host = document.getElementById("screen") || document.body;
     el = document.createElement("div");
     el.id = "protocol";
-    el.className = "protocol";
+    // `crt-layer` is rule 1's structural half: the CRT filter styles that class,
+    // so the phosphor wraps the station screen instead of being punched through.
+    el.className = "protocol crt-layer";
     el.innerHTML =
+      '<div class="pr-head" id="pr-head"></div>' +
       '<div class="pr-status" id="pr-status"></div>' +
+      '<div class="pr-out" id="pr-out"></div>' +
       '<div class="pr-line"><span class="pr-caret">&gt;:</span>' +
       '<span class="pr-entry" id="pr-entry"></span>' +
       '<span class="pr-cursor" id="pr-cursor"></span></div>' +
-      '<div class="pr-ask" id="pr-ask"></div>' +
       '<div class="pr-flood" id="pr-flood"></div>';
-    document.body.appendChild(el);
+    host.appendChild(el);
     parts = {
+      head: el.querySelector("#pr-head"),
       status: el.querySelector("#pr-status"),
+      out: el.querySelector("#pr-out"),
       entry: el.querySelector("#pr-entry"),
-      cursor: el.querySelector("#pr-cursor"),
       flood: el.querySelector("#pr-flood"),
-      ask: el.querySelector("#pr-ask"),
     };
+    booted = false;
   }
 
   function destroy() {
     stopFlood();
+    finishTeletype();
     if (el && el.parentNode) el.parentNode.removeChild(el);
     el = null;
     parts = null;
     entry = "";
+    asking = null;
+    booted = false;
   }
 
   // ---------------------------------------------------------------------
-  // The flood.  §7.3's cadence, and nothing else.
+  // The flood. §7.3's cadence, and nothing else. Swan only.
   // ---------------------------------------------------------------------
   function startFlood() {
-    if (floodTimer !== null) return;   // already running: do NOT reset the cadence
+    if (floodTimer !== null) return;   // running: do NOT reset the cadence
     floodTimer = setInterval(() => {
       flood += SYSTEM_FAILURE;         // no separator, and no newline: §7.3
       if (flood.length > FLOOD_MAX) flood = flood.slice(flood.length - FLOOD_MAX);
       if (parts) {
         parts.flood.textContent = flood;
-        // The paper always shows its own end.
         parts.flood.scrollTop = parts.flood.scrollHeight;
       }
-    }, REPEAT_MS);
+    }, FLOOD_REPEAT_MS);
   }
 
   function stopFlood() {
@@ -135,242 +248,250 @@
     floodTimer = null;
   }
 
-  // ---------------------------------------------------------------------
-  // The failure beat, timed off the deadline and the retained timing keys.
-  // ---------------------------------------------------------------------
   function beat() {
     const t = T();
     const s = t && t.state;
     if (!s) return "";
     const rem = t.remaining();
     if (rem === null) return "";
-    const since = -rem;                       // seconds since the deadline
+    const since = -rem;
     const hold = (s.cfg && s.cfg.zero_hold_s) || 0;
     const spin = (s.cfg && s.cfg.spin_s) || 0;
-    if (since < hold) return "SYSTEM FAILURE";
-    if (since < hold + spin) return "SYSTEM FAILURE · DISCHARGE";
-    // Past the computed beats the display is converging on the reveal, and only
-    // the firmware knows when it arrives - so this last one waits for the event.
-    return revealLanded ? "SYSTEM FAILURE · SEALED"
-                        : "SYSTEM FAILURE · SEALING";
+    if (since < hold) return SYSTEM_FAILURE;
+    if (since < hold + spin) return SYSTEM_FAILURE + " · DISCHARGE";
+    return revealLanded ? SYSTEM_FAILURE + " · SEALED"
+                        : SYSTEM_FAILURE + " · SEALING";
   }
 
-  function renderAsk() {
-    if (!parts) return;
-    parts.ask.textContent = askingLog
-        ? "PRINT LOG? Y/N"
-        : (situation() === "idle" ? "TYPE LOG TO PRINT THE STATION RECORD" : "");
+  // ---------------------------------------------------------------------
+  // Each station's opening line, printed once when the screen appears.
+  // ---------------------------------------------------------------------
+  function bootStation() {
+    if (booted) return;
+    booted = true;
+    clearOut();
+    asking = null;
+    const st = station();
+    if (st === "pearl") {
+      asking = "log";
+      say("PRINT LOG? Y/N");
+    } else if (st === "flame") {
+      asking = "chess";
+      say("CHESS? Y/N");
+    } else if (situation() === "idle") {
+      say(STATIONS.swan.hint);
+    }
   }
-
-  let lastSit = null;
 
   function render() {
     if (!el) return;
+    const st = station();
     const sit = situation();
     if (sit !== lastSit) {
-      // Anything half-typed belongs to the situation it was typed in.  Without
-      // this, digits left at the idle prompt are still sitting there when the
-      // countdown reaches the live window, and the next EXECUTE sends them
-      // joined onto whatever the operator types next.
-      entry = "";
-      askingLog = false;
+      entry = "";            // half-typed input belongs to the state it was typed in
+      asking = null;
       word = "";
       lastSit = sit;
     }
     el.dataset.sit = sit;
+    el.dataset.station = st;
+    parts.head.textContent = STATIONS[st].header;
 
     if (sit === "failure") {
       startFlood();
       parts.status.textContent = beat();
       parts.entry.textContent = "";
-      parts.ask.textContent = "";
-      askingLog = false;
       return;
     }
     stopFlood();
-    renderAsk();
+    bootStation();
 
     const t = T();
     if (sit === "asleep") {
-      // Nothing. Not a hint, not a countdown, not a "wait" - the screen the show
-      // put on the wall gave you a blinking cursor and no acknowledgement at
-      // all, and the whole point of this mode is to reproduce that.
+      // Nothing at all. Not a hint, not a countdown, not a "wait" - the screen
+      // the show put on the wall gave you a cursor and no acknowledgement, and
+      // reproducing that is the whole point of this mode.
       parts.status.textContent = "";
       parts.entry.textContent = "";
       return;
     }
     if (sit === "live") {
-      // The spec 7.3 contract, through the host so there is one implementation:
-      // ceil(remaining / step) * step.  A protocol screen that disagreed with
-      // the flaps beside it by a whole second would be the exact defect the
-      // contract exists to prevent.
       const shown = t.shownS(Math.max(0, t.remaining()));
-      const m = Math.floor(shown / 60);
-      const ss = String(shown % 60).padStart(2, "0");
-      parts.status.textContent = m + ":" + ss;
+      parts.status.textContent =
+          Math.floor(shown / 60) + ":" + String(shown % 60).padStart(2, "0");
     } else {
       parts.status.textContent = "";
     }
-    parts.entry.textContent = entry;
+    parts.entry.textContent = entry;   // RULE 3: what you typed, where you typed it
   }
 
   // ---------------------------------------------------------------------
-  // Input.  `asleep` swallows everything, which is the feature.
+  // Input.
   // ---------------------------------------------------------------------
-  function accepts() {
-    const sit = situation();
-    return sit === "live" || sit === "idle";
-  }
-
   function onKey(e) {
-    if (!on() || !el) return false;
-    // Let the eggs have the idle prompt to themselves; they arm their own
-    // listeners and decide for themselves whether they are enabled.
+    if (!on() || !el) return;
     const k = e.key;
 
+    // ESC always leaves protocol mode (rule 2), before anything else can
+    // swallow it.
     if (k === "Escape") {
-      entry = "";
-      render();
-      return true;
-    }
-    if (!accepts()) {
-      // Swallowed on purpose.  Preventing the default too, so a stray key does
-      // not scroll the page behind a screen that is pretending to ignore it.
       e.preventDefault();
-      return true;
+      e.stopPropagation();
+      const t = T();
+      t.prefs.protocol = false;
+      t.savePref("protocol");
+      t.applyPrefs();
+      return;
     }
-    // ---- the idle prompt's own affordances (phase 7) -------------------
-    // All of them are screen-side and all are behind PREFS.egg except the log,
-    // which is the display's own history and not an easter egg.
-    if (situation() === "idle") {
-      if (askingLog) {
-        if (k === "y" || k === "Y") {
-          askingLog = false;
-          renderAsk();
-          if (window.SwanPearl) window.SwanPearl.open();
-          T().clickSound("exec");
-          e.preventDefault();
-          return true;
-        }
-        if (k === "n" || k === "N" || k === "Escape") {
-          askingLog = false;
-          renderAsk();
-          e.preventDefault();
-          return true;
-        }
-      }
-      // A word typed at the prompt, rather than the Numbers.
-      if (/^[a-zA-Z]$/.test(k)) {
-        word = (word + k.toUpperCase()).slice(-8);
-        if (word.endsWith("CHESS")) {
-          word = "";
-          if (window.SwanChess) window.SwanChess.open();
-          e.preventDefault();
-          return true;
-        }
-        if (word.endsWith("LOG") || word.endsWith("PRINT")) {
-          word = "";
-          askingLog = true;
-          renderAsk();
-          e.preventDefault();
-          return true;
-        }
-        T().clickSound("key");
+
+    // RULE 4: any key finishes an in-progress print immediately.
+    if (ttTimer !== null || ttQueue.length) finishTeletype();
+
+    // WE OWN THE KEYBOARD WHILE WE ARE UP. terminal.js binds its own window
+    // handler, and without stopping propagation every keystroke reached BOTH -
+    // which is why one press of EXECUTE started two countdowns (the journal
+    // shows seq 1 and seq 2 in the same second), and why typing CHESS raised
+    // the friendly terminal's CANCEL confirm on the C.
+    e.stopPropagation();
+
+    if (!accepts()) { e.preventDefault(); return; }
+
+    const st = station();
+
+    // A pending Y/N owns the next key.
+    if (asking) {
+      if (k === "y" || k === "Y") {
+        const what = asking;
+        asking = null;
         e.preventDefault();
-        return true;      // letters never enter the Numbers
+        T().clickSound("exec");
+        if (what === "log" && window.SwanPearl) window.SwanPearl.open();
+        if (what === "chess" && window.SwanChess) window.SwanChess.open();
+        render();
+        return;
       }
+      if (k === "n" || k === "N") {
+        asking = null;
+        e.preventDefault();
+        say(STATIONS[st].hint);
+        render();
+        return;
+      }
+    }
+
+    if (k === "Backspace") {
+      entry = entry.slice(0, -1);
+      word = word.slice(0, -1);
+      e.preventDefault();
+      T().clickSound("key");
+      render();
+      return;
     }
 
     if (k >= "0" && k <= "9") {
-      if (entry.length < MAX_ENTRY) entry += k;
-    } else if (k === " ") {
-      if (entry.length < MAX_ENTRY && entry.slice(-1) !== " ") entry += " ";
+      // Digits are Swan's - the Numbers. The other stations have nothing to do
+      // with them and must not pretend to accept them.
+      if (st === "swan" && entry.length < MAX_ENTRY) entry += k;
       e.preventDefault();
-    } else if (k === "Backspace") {
-      entry = entry.slice(0, -1);
-      e.preventDefault();
-    } else if (k === "Enter") {
-      execute();
-      e.preventDefault();
-    } else {
-      return false;      // not ours; the eggs may want it
+      T().clickSound("key");
+      render();
+      return;
     }
-    T().clickSound("key");
+
+    if (k === " ") {
+      if (st === "swan" && entry.length < MAX_ENTRY && entry.slice(-1) !== " ") entry += " ";
+      e.preventDefault();
+      T().clickSound("key");
+      render();
+      return;
+    }
+
+    if (k === "Enter") {
+      e.preventDefault();
+      runWord(false);
+      return;
+    }
+
+    if (/^[a-zA-Z]$/.test(k)) {
+      // RULE 3 again: letters ECHO. They used to be swallowed, so LOG was typed
+      // blind - the machine took the command with nothing on screen saying so.
+      word = (word + k.toUpperCase()).slice(-12);
+      if (entry.length < MAX_ENTRY) entry += k.toUpperCase();
+      e.preventDefault();
+      T().clickSound("key");
+      render();
+      runWord(true);
+      // The chat egg is SWAN'S, and it lives on a mash detector we have just
+      // stopped from reaching window.  Hand it the key rather than keeping a
+      // second copy of the detector here.
+      if (st === "swan" && window.SwanChat && window.SwanChat.feedKey) {
+        window.SwanChat.feedKey(e);
+      }
+    }
+  }
+
+  // Commands at an idle prompt. `implicit` means it matched as a suffix while
+  // typing rather than being submitted with Enter.
+  function runWord(implicit) {
+    const w = word;
+    const st = station();
+    const hit = (name) => w.endsWith(name);
+
+    // EVERY STATION: the escape hatches (rule 2) and the station switch.
+    if (hit("PANEL")) { clearEntry(); window.location.href = "index.html"; return; }
+    for (const name of STATION_NAMES) {
+      if (hit(name.toUpperCase())) {
+        clearEntry();
+        if (name !== st) T().setStation(name);
+        return;
+      }
+    }
+
+    if (st === "swan") {
+      if (hit("LOGO")) {
+        clearEntry();
+        if (window.SwanBoot) window.SwanBoot.play({ skipable: true });
+        return;
+      }
+      // LOG and CHESS are deliberately NOT here. They belong to Pearl and
+      // Flame; a station's commands must not leak into another's prompt.
+      if (!implicit) execute();
+      return;
+    }
+
+    if (st === "pearl") {
+      if (hit("LOG") || hit("PRINT")) {
+        clearEntry();
+        asking = "log";
+        say("PRINT LOG? Y/N");
+        render();
+      }
+      return;
+    }
+
+    if (st === "flame") {
+      if (hit("CHESS")) {
+        clearEntry();
+        if (window.SwanChess) window.SwanChess.open();
+      }
+    }
+  }
+
+  function clearEntry() {
+    entry = "";
+    word = "";
     render();
-    return true;
   }
 
   function execute() {
     const t = T();
-    if (!t.timeValid()) {
-      flash("CLOCK NOT SYNCED");
-      return;
-    }
+    if (!t.timeValid()) { say("CLOCK NOT SYNCED - THE DEADLINE CANNOT BE SET YET"); return; }
     const numbers = entry.trim().replace(/\s+/g, " ");
-    if (!numbers) return;
-    // THE ONE COMMAND THIS ENTIRE PHASE SENDS.
+    if (!numbers) { say(STATIONS.swan.hint); return; }
+    // THE ONE COMMAND THIS ENTIRE PACK SENDS.
     t.send("countdown.execute", numbers);
     pendingExecute = true;
     t.clickSound("exec");
-  }
-
-  function flash(text) {
-    if (!parts) return;
-    parts.status.textContent = text;
-    clearTimeout(flash.t);
-    flash.t = setTimeout(render, 2200);
-  }
-
-  // ---------------------------------------------------------------------
-  function apply() {
-    const want = on();
-    document.documentElement.classList.toggle("protocol-on", want);
-    if (want) {
-      build();
-      render();
-    } else {
-      destroy();
-    }
-  }
-
-  function init() {
-    const t = T();
-    if (!t) return;
-
-    t.on("state", () => { if (on()) render(); })
-     .on("phase", (ph) => {
-       if (ph === "zero") revealLanded = false;
-       // Leaving the failure states is the only thing that stops the flood
-       // (§7.3).  The screen is NOT cleared: `flood` survives, so a second run
-       // continues the same paper rather than starting a fresh one.
-       if (on()) render();
-     })
-     .on("reveal", () => {
-       revealLanded = true;
-       if (on()) render();
-     })
-     .on("cue", (e) => {
-       // The prompt wakes WITH the alarm, because they are the same moment: the
-       // 4-minute cue and countdown.seconds_live_s are the same 240 seconds.
-       if (on() && e && e.name === "warn_4min") render();
-     });
-
-    document.addEventListener("keydown", (e) => {
-      if (!on()) return;
-      const tag = (e.target && e.target.tagName) || "";
-      if (tag === "INPUT" || tag === "TEXTAREA") return;
-      onKey(e);
-    }, true);
-
-    // A result for our own EXECUTE, and only ours - `pendingExecute` is what
-    // makes it ours.  This used to reach for a `SwanBusResultHook` global that
-    // never existed, so the purist terminal silently gave no feedback at all:
-    // press EXECUTE with the wrong Numbers and the screen just carried on
-    // counting.  Found by driving it on the board rather than by reading it.
-    t.on("result", onResult);
-
-    setInterval(() => { if (on()) render(); }, 250);
-    apply();
   }
 
   function onResult(res) {
@@ -378,30 +499,77 @@
     pendingExecute = false;
     if (!res) return;
     if (res.ok) {
-      entry = "";
-      flash("ACCEPTED");
+      clearEntry();
+      say("ACCEPTED");
     } else {
-      flash(res.err === "rejected" ? "INCORRECT" : String(res.err || "REJECTED").toUpperCase());
+      say(res.err === "rejected" ? "INCORRECT - ENTER THE NUMBERS"
+                                 : String(res.err || "REJECTED").toUpperCase());
     }
+  }
+
+  // ---------------------------------------------------------------------
+  function apply() {
+    const want = on();
+    document.documentElement.classList.toggle("protocol-on", want);
+    if (want) { build(); render(); } else { destroy(); }
+  }
+
+  function onStation() {
+    // Switching station resets the screen and touches NO presentation toggle.
+    booted = false;
+    asking = null;
+    entry = "";
+    word = "";
+    clearOut();
+    if (window.SwanPearl && window.SwanPearl.isOpen()) window.SwanPearl.close();
+    if (window.SwanChess && window.SwanChess.isOpen()) window.SwanChess.close();
+    render();
+  }
+
+  function init() {
+    const t = T();
+    if (!t) return;
+
+    t.on("state", () => { if (on()) render(); })
+     .on("phase", (ph) => { if (ph === "zero") revealLanded = false; if (on()) render(); })
+     .on("reveal", () => { revealLanded = true; if (on()) render(); })
+     .on("result", onResult)
+     .on("station", onStation)
+     .on("prefs", apply);
+
+    // Capture phase, so the station screen sees keys before the friendly
+    // terminal's window handler - and stops them there.
+    document.addEventListener("keydown", (e) => {
+      if (!on()) return;
+      const tag = (e.target && e.target.tagName) || "";
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "BUTTON" || tag === "A") return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      // A station feature that has taken the screen owns its own keys.
+      if (window.SwanChess && window.SwanChess.isOpen && window.SwanChess.isOpen()) return;
+      if (window.SwanChat && window.SwanChat.isOpen && window.SwanChat.isOpen()) return;
+      if (window.SwanPearl && window.SwanPearl.isOpen && window.SwanPearl.isOpen()) return;
+      onKey(e);
+    }, true);
+
+    setInterval(() => { if (on()) render(); }, 250);
+    apply();
   }
 
   window.SwanProtocol = {
     apply,
     isOn: on,
     situation,
-    // For the eggs: they may only open from the idle prompt.
     idle: () => situation() === "idle",
-    // Exposed for the JS suite: the flood is a contract, so it is testable
-    // without a browser.
+    station,
+    say,
     _flood: () => flood,
-    _tickFlood: () => {
-      flood += SYSTEM_FAILURE;
-      if (flood.length > FLOOD_MAX) flood = flood.slice(flood.length - FLOOD_MAX);
-      return flood;
-    },
-    _resetForTest: () => { flood = ""; entry = ""; },
+    _entry: () => entry,
+    _finishTeletype: finishTeletype,
+    _resetForTest: () => { flood = ""; entry = ""; word = ""; asking = null; },
     SYSTEM_FAILURE,
-    REPEAT_MS,
+    FLOOD_REPEAT_MS,
+    TELETYPE_CPS,
+    STATIONS,
   };
 
   if (document.readyState === "loading") {

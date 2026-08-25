@@ -43,6 +43,11 @@ html, body {
   flex-direction: column;
   padding: clamp(12px, 2.2vmin, 34px);
   gap: clamp(8px, 1.6vmin, 22px);
+  /* The strip floats over everything, so the content has to keep out from
+     under it.  --foot-h is MEASURED (terminal.js) rather than guessed: the
+     strip wraps to three rows on a 375px phone and one on a kiosk, and a
+     fixed guess covered the mirror dock on the phone. */
+  padding-bottom: calc(var(--foot-h, 3.2em) + clamp(12px, 2.2vmin, 34px));
 }
 
 /* --- CRT effect ---------------------------------------------------------
@@ -84,8 +89,12 @@ html, body {
 }
 
 /* Slight barrel: a shallow perspective tilt plus a scale so the corners read
-   as pulled back.  One composited layer, no filters. */
-.crt .content {
+   as pulled back.  One composited layer, no filters.
+   `.crt-layer` rather than `.content`: EVERY content container carries the
+   class, so the filter wraps whatever is rendering.  Protocol mode used to draw
+   outside it - the purist mode was the one that lost the phosphor, which is
+   backwards. */
+.crt .crt-layer {
   transform: perspective(1500px) rotateX(0.45deg) scale(1.005);
   transform-origin: 50% 45%;
   text-shadow: 0 0 clamp(3px, 0.7vmin, 10px) rgba(110, 224, 110, 0.55);
@@ -339,9 +348,13 @@ html, body {
    restores the working page exactly - nothing that works today is lost.
    ========================================================================== */
 .protocol {
-  position: fixed;
+  /* ABSOLUTE within #screen, not fixed on the body, and z-index 1 so the
+     .crt-glass and .crt-scan layers (z-index 2) paint OVER it.  That is the
+     structural half of rule 1: content renders inside the filter, so every
+     presentation toggle composes with every content choice. */
+  position: absolute;
   inset: 0;
-  z-index: 40;
+  z-index: 1;
   background: #020806;          /* near-black, darker than the normal screen */
   color: var(--p-hot);
   padding: clamp(10px, 2.4vmin, 34px);
@@ -477,3 +490,85 @@ html, body {
      clipped. */
   .pearl-text { font-size: 10px; line-height: 2.2em; }
 }
+
+/* ==========================================================================
+   THE STRIP (rule 2).  A persisted mode with no way out is a trap, and this is
+   a website: a PC user with only a mouse must always be able to leave.  So the
+   strip hides when untouched - the kiosk pattern, a pure screen - and ANY
+   pointer movement, click or tap brings it back for a few seconds.
+   ========================================================================== */
+.foot {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 50;                 /* over the station screen AND the CRT glass */
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5em;
+  align-items: center;
+  padding: clamp(6px, 1.4vmin, 16px);
+  background: linear-gradient(to top, rgba(2, 10, 5, 0.92), rgba(2, 10, 5, 0));
+  opacity: 1;
+  transition: opacity 420ms linear;
+}
+
+/* Hidden only when the page asks for it - never by default, so a browser that
+   drops the JS still shows a way out. */
+.foot.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.foot-set {
+  display: inline-flex;
+  gap: 0.25em;
+  padding-right: 0.5em;
+  border-right: 1px solid var(--p-dim);
+  margin-right: 0.25em;
+}
+
+/* The selected station reads as selected, not merely as another button. */
+.tbtn[data-station].on {
+  background: var(--p-dim);
+  color: #04120a;
+}
+
+/* ==========================================================================
+   The station screen's output area: teletyped lines above the prompt.
+   ========================================================================== */
+.pr-out {
+  flex: 1 1 auto;
+  overflow: hidden;
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.5;
+  color: var(--p-mid);
+  min-height: 1.5em;
+}
+
+.pr-out .said { color: var(--p-hot); }
+
+/* The station name, quiet, top right of the station screen. */
+.pr-head {
+  position: absolute;
+  top: clamp(8px, 2vmin, 26px);
+  right: clamp(10px, 2.4vmin, 34px);
+  color: var(--p-dim);
+  font-size: 0.62em;
+  letter-spacing: 0.34em;
+}
+
+/* MIRROR composes with PROTOCOL (rule 1).  The dock is presentation: with the
+   toggle on it stays visible over the station screen, because it is the
+   feedback the physical flaps give in the room - the thing that would have told
+   the user a countdown had actually started. */
+.protocol-on.mirror-on #dock {
+  display: block;
+  position: absolute;
+  right: clamp(8px, 2vmin, 28px);
+  bottom: calc(var(--foot-h, 3.2em) + clamp(8px, 1.6vmin, 20px));
+  z-index: 45;
+  opacity: 0.92;
+}
+.protocol-on:not(.mirror-on) #dock { display: none; }

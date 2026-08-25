@@ -286,6 +286,36 @@
     }
   }, true);
 
+  // TYPE LOG - THE PEARL'S ONE COMMAND (2026-08-25).
+  //
+  // The station screen handles this itself while it is up; this sniffer is for
+  // the friendly terminal, so selecting PEARL on the strip means the same thing
+  // in both content modes.  It is deliberately the same shape as the Flame's:
+  // a word typed at an idle prompt, scoped to its own station, and off
+  // everywhere else.
+  const LOG_WORD = "LOG";
+  let logTyped = "";
+  let logAt = 0;
+
+  document.addEventListener("keydown", (e) => {
+    if (open || e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
+    const t = global.SwanTerm;
+    if (!t || !t.station || t.station() !== "pearl") return;
+    const p = global.SwanProtocol;
+    if (p && p.isOn && p.isOn()) return;         // the station screen owns the keys
+    if (!e.key || e.key.length !== 1) return;
+    const c = e.key.toUpperCase();
+    if (c < "A" || c > "Z") { logTyped = ""; return; }
+
+    const now = Date.now();
+    if (now - logAt > 2000) logTyped = "";
+    logAt = now;
+    const next = logTyped + c;
+    logTyped = LOG_WORD.indexOf(next) === 0 ? next
+             : (LOG_WORD.indexOf(c) === 0 ? c : "");
+    if (logTyped === LOG_WORD) { logTyped = ""; openLog(); }
+  }, false);
+
   global.SwanPearl = {
     open: openLog,
     close,

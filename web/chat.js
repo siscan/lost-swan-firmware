@@ -81,6 +81,10 @@
   function eggArmed() {
     const t = term();
     if (!t || !t.prefs || !t.prefs.egg) return false;
+    // SWAN'S EGG (2026-08-25).  The Pearl and the Flame have their own screens
+    // and their own openings; a ghost story arriving over either of them would
+    // be another station's content leaking in.
+    if (t.station && t.station() !== "swan") return false;
     // Idle only.  A countdown at 3:12 with people watching it is not the moment
     // to cover the readout with a ghost story.
     return typeof t.phase === "function" && t.phase() === "idle";
@@ -435,7 +439,11 @@
     target.addEventListener("keydown", onKeyMash, false);
   }
 
-  window.SwanChat = { armMasher, open, close, isOpen };
+  // The station screen stops keystrokes at document capture (it owns the
+  // keyboard while it is up), so the masher armed on window never sees them.
+  // It hands letters here instead, which keeps ONE detector rather than a
+  // second copy that could drift.
+  window.SwanChat = { armMasher, open, close, isOpen, feedKey: onKeyMash };
 
   // Armed on window at load, so the page needs nothing but the script tag.  It
   // is not "on": the detector reads prefs.egg at fire time, so the toggle takes

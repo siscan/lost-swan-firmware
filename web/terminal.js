@@ -17,20 +17,52 @@ const PREFS = {
   click: true,
   dock: true,
 
-  // Phase 7, the show-accuracy pack.  ALL DEFAULT OFF: the friendly terminal is
-  // what this page is for the rest of the time, and nothing that works today is
-  // allowed to disappear behind a flourish.  Per browser, in localStorage -
-  // presentation is not device state and has no business in NVS.
-  protocol: false,   // the purist terminal: near-black, inert until 4:00
-  boot: false,       // the Swan logo drawn stroke by stroke on load
-  egg: false,        // the chat easter egg, and CHESS from the idle prompt
+  // CONTENT, as opposed to the presentation toggles above (rule 1): these say
+  // WHAT is on screen, those say how it looks, and the two compose freely.
+  // Per browser, in localStorage - presentation is not device state and has no
+  // business in NVS.
+  protocol: false,   // the purist station screen: near-black, inert until 4:00
+  egg: false,        // the chat easter egg, on Swan
 };
 
+// The station is content too, but it is a name rather than a flag.
+const STATION_KEY = "swan.term.station";
+let stationName = "swan";
+
+// `boot` is NO LONGER A TOGGLE.  It shipped default-off, and that was the whole
+// of "the boot animation never plays on a clean load": playBoot() returned
+// immediately because localStorage was empty on a fresh profile, so the
+// incognito reproduction guaranteed the failure rather than ruling anything
+// out.  It now plays on every load of this page while the station is SWAN
+// (defect 1, 2026-08-25), always skippable, and can be replayed deliberately
+// from the strip or by typing LOGO at the Swan prompt.
+
 function loadPrefs() {
-  for (const k of Object.keys(PREFS)) {
-    const v = localStorage.getItem("swan.term." + k);
-    if (v !== null) PREFS[k] = v === "1";
+  // The WHOLE body is guarded, not just the station read.  A browser with
+  // storage blocked outright throws on the property access itself, and an
+  // exception escaping here stops the module executing - which is a blank page
+  // on a healthy board, the single worst-diagnosing failure this UI has.
+  try {
+    for (const k of Object.keys(PREFS)) {
+      const v = localStorage.getItem("swan.term." + k);
+      if (v !== null) PREFS[k] = v === "1";
+    }
+    const st = localStorage.getItem(STATION_KEY);
+    if (st === "swan" || st === "pearl" || st === "flame") stationName = st;
+  } catch (_) {
+    /* private mode, or storage disabled: the defaults are a working terminal */
   }
+}
+
+// Rule 1: setting the station touches NOTHING else.  It is content; the
+// presentation toggles keep whatever they were.
+function setStation(name) {
+  if (name !== "swan" && name !== "pearl" && name !== "flame") return;
+  if (name === stationName) return;
+  stationName = name;
+  try { localStorage.setItem(STATION_KEY, name); } catch (_) { /* private mode */ }
+  applyPrefs();
+  SwanTerm.emit("station", name);
 }
 
 function savePref(k) {
@@ -47,6 +79,13 @@ function applyPrefs() {
   document.querySelectorAll("[data-toggle]").forEach((b) => {
     b.classList.toggle("on", !!PREFS[b.dataset.toggle]);
   });
+  document.querySelectorAll("[data-station]").forEach((b) => {
+    b.classList.toggle("on", b.dataset.station === stationName);
+  });
+  // The dock is presentation and MUST survive the content choice: with MIRROR
+  // on it stays visible in protocol mode too, because it is the feedback the
+  // physical flaps give in the room.
+  document.documentElement.classList.toggle("mirror-on", !!PREFS.dock);
   // The phase 7 modules own their own DOM, so they have to be told.  Each is
   // optional: a page served without protocol.js must still toggle CRT.
   if (window.SwanProtocol) window.SwanProtocol.apply();
@@ -264,7 +303,6 @@ function bindKeyboard() {
 // State
 // --------------------------------------------------------------------------
 let flap = null;
-let bootPlayedOnce = false;
 let pendingExecute = false;
 
 function mmss(total) {
@@ -346,20 +384,33 @@ function countdownShownS(secondsMode, remainingS, liveS) {
   return Math.ceil(remainingS / step) * step;
 }
 
+// THE READOUT FOLLOWS THE MODE (defect 2, 2026-08-25).
+//
+// It used to follow the COUNTDOWN's state, so a display in clock mode - badge
+// reading CLOCK, flaps correctly showing PM 11:15 - put `101:00` on the CRT
+// under a "CLOCK MODE" caption, because a countdown was running in the
+// background. A countdown number captioned as a clock is worse than either
+// number alone.
+//
+// A run happening behind another mode is surfaced instead as its own chip, so
+// running-but-hidden is visible somewhere at all times.
 function tickReadout() {
   const el = $("clock");
+  updateCountdownChip();
+
+  if (mode === "clock") {
+    el.textContent = timeValid ? realClockFace() : "— — : — —";
+    el.className = "big dim";
+    return;
+  }
+  if (mode === "message") {
+    el.textContent = "— — : — —";
+    el.className = "big dim";
+    return;
+  }
+  // Countdown mode.
   if (!target || phase === "idle") {
-    // 108:00 is the countdown's IDLE FACE, not a statement about the display.
-    // On a prop CRT in a corridor, a clock-mode display showing 108:00 reads as
-    // a stopped countdown - so say what is actually up there instead.
-    if (mode && mode !== "countdown") {
-      el.textContent = mode === "clock"
-          ? (timeValid ? realClockFace() : "— — : — —")
-          : "— — : — —";
-      el.className = "big dim";
-      return;
-    }
-    el.textContent = "108:00";
+    el.textContent = "108:00";      // the idle face, and now only ever in its own mode
     el.className = "big";
     return;
   }
@@ -374,6 +425,22 @@ function tickReadout() {
   const shown = countdownShownS(secondsMode, rem, secondsLive);
   el.textContent = mmss(shown);
   el.className = "big" + (rem <= 60 ? " crit" : rem <= secondsLive ? " warn" : "");
+}
+
+// A countdown running while the display shows something else. Both surfaces
+// carry it - here and on the control panel's Diagnostics - because "running but
+// not on screen" is exactly the state that was invisible.
+function updateCountdownChip() {
+  const chip = $("cd-chip");
+  if (!chip) return;
+  const running = !!target && phase !== "idle" && mode !== "countdown";
+  chip.style.display = running ? "" : "none";
+  if (!running) return;
+  const rem = Math.max(0, target - (Date.now() + skewMs) / 1000);
+  const shown = phase === "running" ? countdownShownS(secondsMode, rem, secondsLive) : 0;
+  chip.textContent = phase === "running"
+      ? "COUNTDOWN " + mmss(shown)
+      : "COUNTDOWN " + phase.toUpperCase();
 }
 
 function onState(s) {
@@ -468,10 +535,6 @@ const bus = new SwanBus({
     // Re-prime on reconnect: snap to the display rather than animating a long
     // catch-up one flap at a time.  A kiosk may have been offline for hours.
     if (!up && flap) flap.primed = false;
-    // Reconnect replays it, per the spec: a kiosk that dropped off the network
-    // and came back should look like it started up, not like it stuttered.
-    if (up && bootPlayedOnce) playBoot();
-    if (up) bootPlayedOnce = true;
   },
 });
 
@@ -554,6 +617,9 @@ const SwanTerm = {
   timeValid: () => timeValid,
   secondsLive: () => secondsLive,
   secondsMode: () => secondsMode,
+  station: () => stationName,
+  setStation,
+  applyPrefs,
   // The spec 7.3 rendering contract, shared with protocol mode and pinned by
   // test/host/test_countdown.js.
   shownS: (remainingS) => countdownShownS(secondsMode, remainingS, secondsLive),
@@ -578,6 +644,68 @@ const SwanTerm = {
 };
 window.SwanTerm = SwanTerm;
 
+// RULE 2: THE ESCAPE.  A persisted mode with no way out is a trap, and this is
+// a website - a PC user with only a mouse must always be able to leave. So the
+// strip hides when untouched (the kiosk pattern) and ANY pointer movement,
+// click or tap brings it back for a few seconds.
+//
+// It is never hidden until the first reveal timer runs, so a browser that drops
+// the JS still shows a way out.
+const STRIP_MS = 5000;
+let stripTimer = 0;
+
+function revealStrip() {
+  const f = $("foot");
+  if (!f) return;
+  f.classList.remove("hidden");
+  clearTimeout(stripTimer);
+  stripTimer = setTimeout(() => {
+    // Only ever auto-hides over the station screen. On the friendly terminal
+    // the strip is part of the page and stays put.
+    if (PREFS.protocol) f.classList.add("hidden");
+  }, STRIP_MS);
+}
+
+// The strip's height, published to CSS.  It wraps to three rows on a 375 px
+// phone and one on a kiosk, and it floats over the page - so without this the
+// mirror dock sits underneath it, which is exactly what it did.
+function measureStrip() {
+  const f = $("foot");
+  if (!f) return;
+  document.documentElement.style.setProperty("--foot-h", f.offsetHeight + "px");
+}
+
+function wireStrip() {
+  // Pointer movement, clicks and taps all count. `pointermove` covers mouse,
+  // pen and touch-drag in one listener; `pointerdown` covers the tap and the
+  // click on dead space.
+  for (const ev of ["pointermove", "pointerdown", "touchstart"]) {
+    document.addEventListener(ev, revealStrip, { passive: true });
+  }
+  // Keyboard users get it too: any key shows the way out exists.
+  document.addEventListener("keydown", revealStrip, true);
+  revealStrip();
+
+  measureStrip();
+  window.addEventListener("resize", measureStrip);
+  if (window.ResizeObserver) {
+    // Rotating a phone, or the strip re-wrapping when a label changes length.
+    new ResizeObserver(measureStrip).observe($("foot"));
+  }
+
+  document.querySelectorAll("[data-station]").forEach((b) => {
+    b.onclick = () => { setStation(b.dataset.station); clickSound("key"); revealStrip(); };
+  });
+  const replay = $("replay");
+  if (replay) {
+    replay.onclick = () => {
+      clickSound("key");
+      revealStrip();
+      if (window.SwanBoot) window.SwanBoot.play({ skipable: true });
+    };
+  }
+}
+
 function wireToggles() {
   document.querySelectorAll("[data-toggle]").forEach((b) => {
     b.onclick = () => {
@@ -600,16 +728,39 @@ applyPrefs();
 buildPad();
 bindKeyboard();
 wireToggles();
+wireStrip();
 renderEntry();
 
-// The boot animation (phase 7), on load and on reconnect.  Behind PREFS.boot,
-// which defaults off; SwanBoot.play resolves immediately when it is, and the
-// whole call is guarded so a missing bootanim.js cannot stop the page.
+// THE BOOT ANIMATION, defined (defect 1, 2026-08-25).
+//
+// It plays on EVERY load of this page while the station is SWAN, in both
+// content modes, always skippable. It is never on the control panel - that
+// page does not load this script. Deliberate replays: the strip's REPLAY LOGO
+// button, and typing LOGO at the Swan prompt.
+//
+// Not on reconnect any more. A dropped socket is not a boot, and replaying a
+// four-second logo over a working display every time a phone's radio naps is a
+// worse behaviour than the one it was meant to soften.
 function playBoot() {
-  if (!PREFS.boot || !window.SwanBoot) return Promise.resolve();
+  if (stationName !== "swan" || !window.SwanBoot) return Promise.resolve();
   return window.SwanBoot.play({ skipable: true }).catch(() => {});
 }
-playBoot();
+
+// DEFERRED, AND THAT IS THE THIRD AND ACTUAL CAUSE OF DEFECT 1.  terminal.html
+// loads this file at script tag 3 and bootanim.js at tag 7, so a top-level
+// call runs before `window.SwanBoot` exists and the guard above returns
+// immediately - on every load, whatever the preferences said.  Two gates were
+// removed before this was found, and neither removal changed anything, which
+// is the lesson: the feature was unreachable by three independent routes and
+// fixing the first two looked exactly like fixing none.
+//
+// DOMContentLoaded is the right moment: classic scripts block the parser, so
+// every module in the page has run by then.
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", playBoot);
+} else {
+  playBoot();
+}
 
 SwanFlap.loadGlyphs("glyphs.svg").then((ok) => {
   if (ok && flap) flap.refresh();

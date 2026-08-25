@@ -598,9 +598,22 @@
     return !!(root.matchMedia && root.matchMedia("(prefers-reduced-motion: reduce)").matches);
   }
   function term() { return root.SwanTerm || null; }
+  // CHESS BELONGS TO THE FLAME (2026-08-25).  It used to hang off the CHAT
+  // toggle, which put two unrelated features behind one switch and let a Swan
+  // prompt answer a Flame command.  It is the Flame station's now, and only
+  // reachable from there - in both content modes, so selecting FLAME on the
+  // strip means the same thing whether or not the station screen is up.
   function eggOn() {
     const t = term();
-    return !!(t && t.prefs && t.prefs.egg);
+    return !!(t && t.station && t.station() === "flame");
+  }
+
+  // In protocol mode the station screen owns the keyboard and runs CHESS
+  // itself, so this sniffer stands down rather than racing it.  Two handlers
+  // reading the same keystroke is the shape of the double-execute defect.
+  function protocolOwnsKeys() {
+    const p = root.SwanProtocol;
+    return !!(p && p.isOn && p.isOn());
   }
   // The host's kinds are "key" and "go" (terminal.js clickSound); anything else
   // falls through to the light click, so an unknown kind is harmless.
@@ -1106,7 +1119,7 @@
       return;                                       // Enter/Space still activate a focused button
     }
 
-    if (ev.repeat || !eggOn() || eggBusy()) return;
+    if (ev.repeat || !eggOn() || protocolOwnsKeys() || eggBusy()) return;
     if (!atIdlePrompt()) { typed = ""; return; }
     if (!ev.key || ev.key.length !== 1) return;
     const c = ev.key.toUpperCase();

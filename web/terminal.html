@@ -16,7 +16,12 @@
   <div class="crt-glass" aria-hidden="true"></div>
   <div class="crt-scan" aria-hidden="true"></div>
 
-  <div class="content">
+  <!-- `crt-layer` is what the CRT filter styles.  ANY content container that
+       renders inside the screen carries it, so a new one (the station screen
+       below) inherits the phosphor instead of punching through it.  That was
+       the bug: protocol mode drew outside the filter and the purist mode was
+       the one that lost the CRT. -->
+  <div class="content crt-layer">
     <header class="head">
       <div class="brand">
         <span class="brand-1">DHARMA INITIATIVE</span>
@@ -25,6 +30,9 @@
       <div class="head-right">
         <span id="rig" class="chip rig" style="display:none">—</span>
         <span id="motion" class="chip warn" style="display:none">—</span>
+        <!-- A countdown running while the display is showing something else
+             must be visible SOMEWHERE at all times (defect 2, 2026-08-25). -->
+        <span id="cd-chip" class="chip warn" style="display:none">—</span>
         <span id="link" class="chip bad">OFFLINE</span>
         <span id="mode" class="chip">—</span>
       </div>
@@ -55,25 +63,36 @@
       <div class="dock-label">DISPLAY MIRROR</div>
     </div>
 
-    <footer class="foot">
-      <button data-toggle="crt" class="tbtn">CRT</button>
-      <button data-toggle="click" class="tbtn">KEY CLICK</button>
-      <button data-toggle="dock" class="tbtn">MIRROR</button>
-      <button data-toggle="protocol" class="tbtn">PROTOCOL</button>
-      <button data-toggle="boot" class="tbtn">BOOT</button>
-      <button data-toggle="egg" class="tbtn">EGGS</button>
-      <button id="full" class="tbtn">FULLSCREEN</button>
-      <a class="tbtn link" href="index.html">CONTROL PANEL</a>
-    </footer>
   </div>
+
+  <!-- THE STRIP, and it is deliberately a sibling of the content rather than a
+       child of it: in protocol mode the station screen covers the content, and
+       this has to stay reachable over the top.  Rule 2 - no persisted mode
+       without an always-available way out, mouse and keyboard both.  It hides
+       itself when untouched (the kiosk pattern) and any pointer movement, click
+       or tap brings it back. -->
+  <footer class="foot" id="foot">
+    <span class="foot-set" role="group" aria-label="station">
+      <button data-station="swan" class="tbtn">SWAN</button>
+      <button data-station="pearl" class="tbtn">PEARL</button>
+      <button data-station="flame" class="tbtn">FLAME</button>
+    </span>
+    <button data-toggle="protocol" class="tbtn">PROTOCOL</button>
+    <button data-toggle="crt" class="tbtn">CRT</button>
+    <button data-toggle="click" class="tbtn">KEY CLICK</button>
+    <button data-toggle="dock" class="tbtn">MIRROR</button>
+    <button data-toggle="egg" class="tbtn">CHAT</button>
+    <button id="full" class="tbtn">FULLSCREEN</button>
+    <button id="replay" class="tbtn">REPLAY LOGO</button>
+    <a class="tbtn link" href="index.html">CONTROL PANEL</a>
+  </footer>
 </div>
 
 <script src="flap.js"></script>
 <script src="bus.js"></script>
 <script src="terminal.js"></script>
-<!-- Phase 7, the show-accuracy pack.  Each loads independently and each is
-     behind a toggle that defaults OFF, so the friendly terminal above keeps
-     working if one of them is missing or broken. -->
+<!-- The station pack.  Each loads independently, so the friendly terminal
+     above keeps working if one of them is missing or broken. -->
 <script src="protocol.js"></script>
 <script src="pearl.js"></script>
 <script src="bootanim_logo.js"></script>
