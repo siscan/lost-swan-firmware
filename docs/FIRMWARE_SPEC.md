@@ -3293,3 +3293,77 @@ numbered section — if you find one that disagrees, fix the section.
   **Post-hardware on purpose**: every effect a script would ask for is a claim
   about drums nobody has turned, against numbers BRINGUP steps 3–7 exist to
   settle.
+
+---
+
+- 2026-08-25 — **STATE OF THE WORLD: the software is done, the mechanism is
+  untouched.**  This is the last entry before the repository goes quiet.  The
+  next session to open it will be holding a motor, so this says where things
+  actually stand rather than what was most recently changed.  **If you read one
+  other file, read `docs/BRINGUP.md` — start at "The first hour, in order".**
+
+  **What exists.**  Phases 1 through 7, delivered and on the board: the motion
+  core with its pure control layer and simulated axes, the ring as runtime data
+  from two manifests, frames and the three modes, the web UI, MQTT with Home
+  Assistant discovery, OTA with rollback proven in both directions,
+  captive-portal provisioning, audio with placeholder cues, the §12 log ring
+  and persistent event journal, the physical button, and the presentation pack
+  with its three stations.  Both board maps build (DevKitC-1 1,529 KB, XIAO
+  1,511 KB, ~40 % of the partition free); 19 C++ and 4 JavaScript host suites
+  pass; Linux CI is green and is the source of truth, because this Windows
+  machine has no node and skips all four JS suites locally.
+
+  **What is verified, and by what.**  Everything since 2026-08-23 has run on
+  real silicon — real WiFi, real LittleFS, real NVS, real heap, the real 1 kHz
+  tick and the real 50 kHz ISR — with **simulated drums**.  That is a genuine
+  and unusually strong software result: `sim all` exercises the entire stack
+  end to end, and it is where every serious bug has been found.
+
+  **What is NOT verified, stated as plainly as it can be: no motor, no driver
+  and no Hall sensor has ever been connected to this board.**  Not once.  So:
+
+  - **The simulated results are not weak evidence about the mechanism; they are
+    no evidence at all.**  `sim_drum.h` was written from the same assumptions as
+    the classifier that reads it, so a clean 66-minute simulated soak proves the
+    plumbing and nothing whatsoever about drums, cards, gears or magnets.
+  - **The numbers most likely to be wrong are the ones nothing has ever pushed
+    back on**: the gear ratio (85/33 here against the stale 68/26 prose in
+    `docs/ref/MECHANICAL_README.md`), `hall_tol`, the jam and slip thresholds
+    (§5.8), the usable flap rate that sets `flaps_s_alarm`, the A3144's active
+    level, and whether a loaded drum creeps with EN released (`en_idle_off`).
+    Fifteen `VERIFY` tags in this document mark the rest.  **A bench measurement
+    beats this spec**: if `revs 0 10` does not report 8242–8243, the spec is
+    wrong and gets corrected, not explained away.
+  - Three checklist items are the *only* work still waiting on hardware, and
+    they are worth naming so nobody hunts for more: **step 20** (the fault
+    thresholds — a Hall unplugged mid-run is *expected* to be misclassified as
+    `jam`), **step 27's real-column soak**, and **step 30b's reveal convergence**
+    on drums whose spin does not stop in the same place every time.  Plus the
+    button, whose read path is verified and which **has never been pressed by a
+    thumb**.
+
+  **Traps that cost time here, so they do not cost it twice.**
+  - On this machine **`idf.py flash` writes a stale `storage.bin`** — Device
+    Guard blocks the littlefs launcher, so the image is built by hand (README).
+    A change under `web/` is not on the board until that command is re-run, and
+    the symptom is a UI that looks like it ignored your fix.
+  - **A raw newline inside a JS string literal is a blank page, not an error.**
+    The board stays perfectly healthy and answers everything; only the browser
+    console says so.  `tools/jscheck.py` runs locally, `node --check` in CI.
+  - **A feature gated in two places fails as silently after the first fix as
+    before it** — the boot animation had three gates.  Reach for a harness that
+    loads the thing fresh and observes it, rather than an inspection.
+  - **pyserial asserts DTR and RTS on open**, which on USB-Serial-JTAG drives EN
+    and the boot pin: a naive open-per-command resets the board between
+    commands.
+  - **Maintenance survives a reboot and releases EN, deliberately.**  BRINGUP
+    tells you to enter it before touching a drum; that is a safety claim and it
+    is kept.  `maint on` from the console persists.
+
+  **What is planned and deliberately not built:** the scriptable zero
+  choreography, in `docs/FUTURE.md`, with the four contracts it must not break
+  already checked against the shipped code.  It is post-hardware on purpose.
+
+  The working agreement for how to behave in this repository is `CLAUDE.md`;
+  the normative behaviour is the numbered sections above, and a numbered
+  section that disagrees with this log is a bug in the spec, not a subtlety.

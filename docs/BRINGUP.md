@@ -115,10 +115,10 @@ ends in a blank to fill in.
 
 | gate | status |
 |---|---|
-| `.\build.ps1 set-target esp32c5` + `.\build.ps1` | **passes** — ESP-IDF v5.5.5, DevKitC-1 **1,528 KB** app (40% of the partition free), zero warnings |
-| `.\build.ps1 -B build-xiao -DSWAN_BOARD=xiao app` | **passes** — **1,509 KB**. Exercises the alternate pin map and its strapping-pin `static_assert`s |
-| LittleFS payload | **198,536 bytes gzipped** of a 256 KB budget on a 2048 KB partition — the UI, the presentation terminal, the glyph sheet, the Phase 7 pack and `ring.json` |
-| host tests (`.\test-host.ps1`) | **19 C++ suites + 2 JavaScript suites pass.** The JS pair (`test_flap.js`, `test_countdown.js`) needs node, which this Windows machine does not have — the runner reports them SKIPPED and Linux CI runs them on every push |
+| `.\build.ps1 set-target esp32c5` + `.\build.ps1` | **passes** — ESP-IDF v5.5.5, DevKitC-1 **1,529 KB** app (40% of the partition free), zero warnings |
+| `.\build.ps1 -B build-xiao -DSWAN_BOARD=xiao app` | **passes** — **1,511 KB**. Exercises the alternate pin map and its strapping-pin `static_assert`s |
+| LittleFS payload | **208,372 bytes** of a 256 KB budget on a 2048 KB partition — the UI, the presentation terminal, the glyph sheet, the Phase 7 pack, the audio placeholders and `ring.json`.  Gzipped EXCEPT the files the firmware itself reads (`ring.json`, the WAVs): `ring_store` opens the path directly and knows nothing about gzip |
+| host tests (`.\test-host.ps1`) | **19 C++ suites + 4 JavaScript suites pass.** The four (`test_flap`, `test_countdown`, `test_logo`, `test_toggles`) need node, which this Windows machine does not have — the runner reports them SKIPPED and Linux CI runs them on every push, so **a green local run is not a green run** |
 | `git diff` empty after `tools/ringgen.py` | **clean** — regeneration is byte-identical |
 | motion cross-task handoff explicit | **done** — spinlock + request mailbox + relaxed atomics + the `AxisCtl::seq` seqlock (`docs/MOTION_SYNC.md`) |
 | chip revision ≥ v1.0 | **v1.2** — production silicon, verified by esptool and the bootloader |
