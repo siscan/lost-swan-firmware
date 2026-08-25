@@ -108,6 +108,8 @@ docs/FIRMWARE_SPEC.md          the spec (source of truth for behaviour)
 docs/BRINGUP.md                bench checklists + results as they come in
 docs/OWNER.md                  living with the display: the owner's manual
 docs/MOTION_SYNC.md            motion ownership/atomics/critical-section contract
+docs/FUTURE.md                 planned-but-not-built shapes (the scriptable zero
+                               choreography), and what shipped code must not break
 docs/ref/                      README.md (mechanical v6), BOM.md, manifest_cols1234.json +
                                manifest_col5.json (the two v3 rings) — supplied by Nico
 .github/workflows/ci.yml       CI: host tests native, both boards in espressif/idf docker

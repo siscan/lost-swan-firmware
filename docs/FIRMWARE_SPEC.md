@@ -3260,3 +3260,36 @@ numbered section — if you find one that disagrees, fix the section.
     guard's job was the display seizure and the spin, not the sound.  Recorded
     in §7.4a so it is not rediscovered as a defect, and distinguished from a
     *resume* with a past deadline, which wakes silently and always has.
+
+- 2026-08-25 — **A scriptable zero choreography is planned, post-hardware, and
+  is written down in `docs/FUTURE.md` rather than built** (Nico).  The zero →
+  reveal sequence becomes an interpreted script — JSON in LittleFS, uploadable
+  like a ring, browser editor later — driving per-column speeds, spins,
+  staggered landings and deliberate slow-throughs, with **today's 3 s hold +
+  6 s spin + land as the built-in default script**.
+
+  Recorded now because the point is to make sure nothing shipped forecloses it.
+  Four contracts were checked against the code, and three already hold:
+  - **`cfg.zero_hold_s` / `cfg.spin_s` stay, and stay meaning "when the reveal
+    lands".**  They are emitted from one call site out of a config snapshot, so
+    a script makes them derived without moving or renaming anything — but a
+    script **must publish equivalents** (those keys, or a total
+    `reveal_delay_s` *in addition to* them), because the terminal prop
+    schedules against them and holds no duplicate.
+  - **The `reveal` announcement is already script-agnostic**: it fires when the
+    columns actually settle on the reveal frame, however they got there.  This
+    is exactly why it is announced rather than estimated.
+  - **The maintenance / EN / OTA hold already covers it**, because the hold
+    gates the modes tick before any countdown machinery.  The interpreter must
+    therefore live on that tick and must not get a task of its own.
+  - **The gap: per-column speed, staggered landing and a slow-through are not
+    primitives.**  The frame scheduler carries one `flaps_s` for all five and
+    `land_on_tick` deliberately *synchronises* landings; a move is
+    `(target − current) mod 50`, so extra revolutions cannot be asked for at
+    all, and `spin` is the only way to exceed one turn — at the cost of the
+    index.  So this is a motion change, not just a scheduling layer, and it
+    must keep `docs/MOTION_SYNC.md` true.
+
+  **Post-hardware on purpose**: every effect a script would ask for is a claim
+  about drums nobody has turned, against numbers BRINGUP steps 3–7 exist to
+  settle.
