@@ -179,7 +179,10 @@ function makeModule(store) {
     eq(touched.length, 1, "pressing " + k + " wrote one key (" + touched + ")");
     eq(touched[0], "swan.term." + k, "pressing " + k + " wrote its own key");
   }
-  for (const st of STATIONS) {
+  // Ordered so every step is a REAL change: setStation returns early when the
+  // station is already selected, and a no-op writing nothing is not the thing
+  // being measured here.
+  for (const st of ["pearl", "flame", "swan"]) {
     const before = JSON.stringify(M.store);
     M.setStation(st);
     const touched = Object.keys(M.store).filter(

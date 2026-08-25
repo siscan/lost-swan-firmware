@@ -135,8 +135,18 @@ for (const mode of ["minutes", "tens", "seconds"]) {
 const proto = fs.readFileSync(path.join(__dirname, "..", "..", "web", "protocol.js"), "utf8");
 check(proto.indexOf('const SYSTEM_FAILURE = "SYSTEM FAILURE";') >= 0,
       "protocol.js carries the exact 14-character literal");
-check(proto.indexOf("const REPEAT_MS = 100;") >= 0,
-      "protocol.js repeats every 100 ms, per the cadence contract");
+check(proto.indexOf("const FLOOD_REPEAT_MS = 100;") >= 0,
+      "protocol.js floods every 100 ms, per the cadence contract");
+
+// RULE 4 (spec 10.2b): the teletype and the flood are SEPARATE cadences.  The
+// flood's 140 characters/second is a cross-repo contract shared with the
+// terminal prop; the teletype is this page's own reading speed.  Folding them
+// together would silently change what the prop is promised, so the test states
+// that they are different numbers on purpose.
+const cps = /const TELETYPE_CPS = (\d+);/.exec(proto);
+check(!!cps, "protocol.js declares one teletype cadence");
+check(cps && Number(cps[1]) !== 140,
+      "the teletype cadence is not the flood's - they are separate contracts");
 check(proto.indexOf('flood += SYSTEM_FAILURE;') >= 0,
       "protocol.js appends with NO separator and NO newline");
 check(!/flood \+= SYSTEM_FAILURE \+ ["'\\ ]/.test(proto),
