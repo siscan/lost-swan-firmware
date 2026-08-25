@@ -248,6 +248,17 @@ egg and, as a stretch, Flame chess. Nothing in it may send a dispatcher command
 or touch the flaps, with one exception: protocol mode's EXECUTE uses the same
 `countdown.execute` path the friendly terminal already uses.
 
+**The Swan mark is reference art, not construction.** `web/bootanim_logo.js`
+is the supplied vector (frame, trigram ring, disc, swan, DHARMA wordmark) in one
+pre-proportioned 200x200 system — do not rescale parts independently.
+`docs/ref/swan_trigrams.md` is the authority for the ring: **Later Heaven (King
+Wen), every trigram inverted so the bottom line faces outward**, clockwise from
+top Li Kun Dui Qian Kan Gen Zhen Xun. `test/host/test_logo.js` asserts the drawn
+ring against that table. **Never re-derive the order from bagua theory** — doing
+exactly that produced a wrong ring that passed review, because the four
+palindromic trigrams read the same inside-out and only Dui, Gen, Zhen and Xun
+show the mistake.
+
 **Cross-repo contracts.** A separate terminal prop (Pi 4, its own repo) codes
 against this firmware as the canonical reference, so four things are no longer
 local decisions. Changing any of them is a change in another repository:

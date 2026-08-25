@@ -21,169 +21,187 @@
   // Beats, ms from the first painted frame.  Three ordered draws then the
   // type-in, ~4.4 s all in: this stands between a viewer and a countdown, so it
   // is a flourish on a budget rather than a title sequence.
-  const T_OCT = 0,    D_OCT = 880,  S_OCT = 140;   // 1. the octagon
-  const T_RING = 780, D_RING = 300, S_RING = 105;  // 2. the trigram ring
-  const T_SWAN = 1760, D_SWAN = 620, S_SWAN = 80;  // 3. the swan
-  const T_TEXT = 2800, D_CHAR = 38;
+  const T_FRAME = 0,    D_FRAME = 520, S_FRAME = 180;  // 1. the frame
+  const T_RING  = 520,  D_RING  = 260, S_RING  = 105;  // 2. the trigram ring
+  const T_DISC  = 1420, D_DISC  = 380;                 // 3. the disc
+  const T_SWAN  = 1680, D_SWAN  = 620, S_SWAN = 26;    // 4. the swan's spines
+  const D_MORPH = 420;                                 // ... then spines -> fill
+  const T_WORD  = 2760, D_WORD  = 420;                 // 5. the wordmark
+  const T_TEXT = 3200, D_CHAR = 38;
   const HOLD_MS = 380;      // the finished logo stands still before it goes
   const FADE_MS = 340;
   const REDUCED_MS = 600;
 
   // ------------------------------------------------------------------------
-  // Geometry, in the 200x200 viewBox.
+  // THE MARK.  Supplied art (web/bootanim_logo.js), adopted wholesale on
+  // 2026-08-25.  It replaced a constructed octagon/trigram/wordmark generator
+  // that was wrong twice over: the ring was Earlier Heaven where the classic
+  // station logos use LATER HEAVEN (King Wen), and it was drawn with the
+  // trigrams' bottom lines facing IN when the DHARMA marks face them OUT.
   //
-  // Vertices sit at 22.5 + k*45 degrees so the octagon's flats are top, bottom,
-  // left and right - the orientation the logo is always drawn in.  The band
-  // between the two octagons is 24 units wide and carries one trigram per edge.
+  // ATTRIBUTION, corrected: an earlier note here said the 90-degree variant was
+  // Earlier Heaven.  It is not.  Lostpedia attributes the quarter-turn to the
+  // ARG-ERA MODERNISED LOGO - "the arrangement of the standard logo was turned
+  // 90 degrees clockwise" - and the classic station ring is the un-rotated
+  // Later Heaven.  Earlier Heaven does not come into it at all; that was my
+  // own construction, and inventing a plausible provenance for a wrong answer
+  // is how it survived review.  docs/ref/swan_trigrams.md is the authority.
+  //
+  // EVERYTHING IS PRE-PROPORTIONED.  The frame, the ring, the disc, the swan
+  // and the wordmark share one 200x200 coordinate system and one scale; no
+  // part may be scaled independently, and the swan here is not
+  // interchangeable with any other.
+  //
+  // fill-rule EVENODD is required, not decorative: the frame's window and the
+  // counters inside the wordmark's letters are holes punched by the rule.
+  // Colour is `currentColor` throughout, so the mark takes the phosphor from
+  // whatever is above it.
+  //
+  // The trigram ring is documented and checked: docs/ref/swan_trigrams.md has
+  // the authoritative sequence, and ringMatchesTable() below asserts the drawn
+  // ring against it at runtime.
   // ------------------------------------------------------------------------
   const CX = 100, CY = 100;
-  const R_OUT = 92, R_IN = 66;
-  const BAR_R = [65.5, 73, 80.5];   // the three bars, innermost first
-  const BAR_HALF = 14;              // half a bar's length, along the edge
-  const GAP_HALF = 4.6;             // half the break in a yin bar
 
-  // ======================================================================
-  // PLACEHOLDER SEQUENCE - THE BAGUA RING.  REPLACE THIS TABLE.
-  // ======================================================================
-  //
-  // THE ORDER BELOW IS WRONG FOR THIS MARK, and is left in place only so the
-  // ring draws while the real one is produced.  It is the second half of the
-  // same correction as the swan silhouette below, and it arrives with it.
-  //
-  // WHAT THE REFERENCE SAYS (Nico, 2026-08-24, from Lostpedia):
-  //   - The CLASSIC STATION LOGOS - which is what this is - use the LATER
-  //     HEAVEN (King Wen) arrangement.
-  //   - Their trigrams are INVERTED INSIDE-TO-OUTSIDE relative to the usual
-  //     drawing convention.  That is a second change, not a restatement of the
-  //     first: it means index 0 is the trigram's TOP line rather than its
-  //     bottom one, because BAR_R[0] is the innermost bar.  Swapping the
-  //     sequence without also settling this would produce eight correct
-  //     trigrams drawn upside down.
-  //   - EARLIER HEAVEN belongs to the LATER-ERA DHARMA logo only, and sits 90
-  //     degrees away from this one.  Which is what the table below currently
-  //     is, so it is wrong twice over: wrong arrangement, wrong rotation.
-  //
-  // AND THE RULE THAT MATTERS MOST, because it is how this went wrong in the
-  // first place: THE ORDER IS REFERENCE-DERIVED, NOT DERIVED FROM BAGUA
-  // THEORY.  I reasoned the previous table out from first principles - "each
-  // trigram opposite its exact complement, which is what Earlier Heaven means"
-  // - and produced something internally consistent and not the mark.  A
-  // property being true of an arrangement does not make it true of THIS one.
-  // Do not re-derive it; copy it from the reference.
-  //
-  // TO REPLACE: put the authoritative clockwise-from-top sequence in the array,
-  // in whatever bit order the inside-to-outside question settles on, and say in
-  // one line where it came from.  Nothing else in this file changes - the
-  // geometry is one authored group rotated eight times and does not care what
-  // the bits say.
-  //
-  // Written index-0-innermost, 1 = solid (yang), 0 = broken (yin).
-  const TRIGRAMS_ARE_PLACEHOLDER = true;
-  const TRIGRAMS = ["111", "110", "101", "100", "000", "001", "010", "011"];
-
-  // ======================================================================
-  // PLACEHOLDER ART - THE SWAN SILHOUETTE.  REPLACE THIS BLOCK.
-  // ======================================================================
-  //
-  // Everything else in this file is constructed geometry: the octagons are
-  // computed from a radius and an angle, and the trigrams are one authored
-  // group rotated eight times.  The swan is not, and cannot honestly be - the
-  // real mark's silhouette is a specific drawing, and constructing one from a
-  // description produces something that reads as a duck.  Rather than pass that
-  // off as the logo it is fenced off here and labelled.
-  //
-  // TO REPLACE: drop in the vector art the same way the flap glyphs arrived
-  // (spec 17, 2026-08-23 - an original vector, not a traced screengrab), as
-  // paths in this same 200x200 viewBox with the mark centred on (100, 100).
-  // Nothing outside these two constants needs to change: the draw-on animation
-  // walks the array in order, so authoring the paths in the order a hand draws
-  // them is all the staging it needs.
-  //
-  // What the pose should be, for whoever draws it: a long recurved neck, the
-  // head carried low and forward over the back, and a body made of sweeping
-  // strokes rather than an outline.
-  //
-  // Until then this stands in - deliberately simple, and deliberately not
-  // pretending to be the mark.
-  const SWAN_IS_PLACEHOLDER = true;
-  const SWAN = [
-    // Body: one sweeping stroke, tail high at the left, breast low at the right.
-    ["swan", "M62 128C66 108 84 96 106 96C124 96 138 104 144 116C136 124 120 130 " +
-             "102 131C86 132 70 131 62 128Z"],
-    // Neck: the recurve - up from the breast, back over the body, head low.
-    ["swan", "M120 99C122 86 118 74 108 68C100 63 90 65 87 72C85 78 89 84 96 84"],
-    // Head and beak, carried low and forward.
-    ["swan", "M96 84C90 84 85 81 84 77C83 73 86 70 90 70L78 66"],
-    // Water.
-    ["swan wake", "M58 137H104"],
-    ["swan wake", "M114 140H146"],
-  ];
-
-  // The DHARMA wordmark, centred under the mark.  It is set as text rather than
-  // outlined because the page's own terminal face is already loaded and an
-  // outlined wordmark would be several kB of path for six letters.
-  const WORDMARK = "DHARMA";
+  function logo() {
+    return (typeof SWAN_LOGO !== "undefined" && SWAN_LOGO) ||
+           (typeof window !== "undefined" && window.SWAN_LOGO) || null;
+  }
 
   const r2 = (v) => Math.round(v * 100) / 100;
 
-  function octagonPath(r) {
+  // --- the swan's variable-width spines ------------------------------------
+  // The art supplies each spine as a polyline plus a WIDTH PER VERTEX, because
+  // a swan drawn with a brush is not one weight throughout.  SVG cannot vary a
+  // stroke along a path, so each segment becomes its own short path carrying
+  // the mean of its two endpoint widths.  Round caps and joins make the joins
+  // between segments invisible, which is the whole trick.
+  function spineSegments(line) {
+    const nums = String(line.d).match(/-?\d+(?:\.\d+)?/g) || [];
     const pts = [];
-    for (let k = 0; k < 8; k++) {
-      const a = (22.5 + k * 45) * Math.PI / 180;
-      pts.push(r2(CX + r * Math.cos(a)) + " " + r2(CY + r * Math.sin(a)));
+    for (let i = 0; i + 1 < nums.length; i += 2) {
+      pts.push([parseFloat(nums[i]), parseFloat(nums[i + 1])]);
     }
-    return "M" + pts.join("L") + "Z";
+    const w = line.widths || [];
+    const segs = [];
+    for (let i = 0; i + 1 < pts.length; i++) {
+      const a = pts[i], b = pts[i + 1];
+      const wa = typeof w[i] === "number" ? w[i] : 6;
+      const wb = typeof w[i + 1] === "number" ? w[i + 1] : wa;
+      segs.push({
+        d: "M" + r2(a[0]) + " " + r2(a[1]) + "L" + r2(b[0]) + " " + r2(b[1]),
+        width: r2((wa + wb) / 2),
+        len: Math.hypot(b[0] - a[0], b[1] - a[1]),
+      });
+    }
+    return segs;
   }
 
-  function bar(x, y1, y2) {
-    return '<line class="bar" x1="' + x + '" y1="' + r2(y1) +
-           '" x2="' + x + '" y2="' + r2(y2) + '"/>';
-  }
+  // --- the ring check ------------------------------------------------------
+  // Reads the DRAWN bars back out of the data and compares them to
+  // docs/ref/swan_trigrams.md.  A solid line is one path, a broken line is two,
+  // so clustering the bars by distance from the centre recovers the three lines
+  // inner->outer.
+  //
+  // The four NON-PALINDROMIC trigrams are what this is really for: Li, Kun,
+  // Qian and Kan read the same in either direction, so an inside-out ring looks
+  // perfectly fine until you check Dui, Gen, Zhen and Xun.  That is exactly the
+  // mistake the previous constructed ring made.
+  const RING_TABLE = {
+    li: "101", kun: "000", dui: "011", qian: "111",
+    kan: "010", gen: "100", zhen: "001", xun: "110",
+  };
+  const RING_ORDER = ["li", "kun", "dui", "qian", "kan", "gen", "zhen", "xun"];
+  const RING_TELLS = ["dui", "gen", "zhen", "xun"];
 
-  // One trigram, authored at 0 degrees (bars vertical, on the right-hand edge)
-  // and rotated into place.  Rotating one authored group is the only way this
-  // stays auditable - eight hand-computed copies would drift.
-  function trigram(bits, deg) {
-    let s = '<g class="tri" transform="rotate(' + deg + ' ' + CX + ' ' + CY + ')">';
-    for (let i = 0; i < 3; i++) {
-      const x = r2(CX + BAR_R[i]);
-      if (bits.charAt(i) === "1") {
-        s += bar(x, CY - BAR_HALF, CY + BAR_HALF);
-      } else {
-        s += bar(x, CY - BAR_HALF, CY - GAP_HALF);
-        s += bar(x, CY + GAP_HALF, CY + BAR_HALF);
+  function ringMatchesTable() {
+    const L = logo();
+    const out = { ok: true, drawn: {}, order: [], notes: [] };
+    if (!L || !L.trigrams) { out.ok = false; out.notes.push("no trigram data"); return out; }
+    for (const t of L.trigrams) {
+      out.order.push(t.name);
+      const dists = t.bars.map((d) => {
+        const n = (d.match(/-?\d+(?:\.\d+)?/g) || []).map(Number);
+        let sx = 0, sy = 0, c = 0;
+        for (let i = 0; i + 1 < n.length; i += 2) { sx += n[i]; sy += n[i + 1]; c++; }
+        return Math.hypot(sx / c - CX, sy / c - CY);
+      });
+      const idx = dists.map((_, i) => i).sort((a, b) => dists[a] - dists[b]);
+      const bands = [[idx[0]]];
+      for (let i = 1; i < idx.length; i++) {
+        if (dists[idx[i]] - dists[idx[i - 1]] > 2.5) bands.push([idx[i]]);
+        else bands[bands.length - 1].push(idx[i]);
+      }
+      const bits = bands.length === 3
+          ? bands.map((b) => (b.length === 1 ? "1" : "0")).join("")
+          : "?".repeat(bands.length);
+      out.drawn[t.name] = bits;
+      if (bits !== RING_TABLE[t.name]) {
+        out.ok = false;
+        out.notes.push(t.name + ": drawn " + bits + ", table " + RING_TABLE[t.name] +
+                       (RING_TELLS.indexOf(t.name) >= 0 ? " (a non-palindrome - this is the tell)" : ""));
       }
     }
-    return s + "</g>";
+    if (out.order.join(",") !== RING_ORDER.join(",")) {
+      out.ok = false;
+      out.notes.push("sequence " + out.order.join(" ") + ", table " + RING_ORDER.join(" "));
+    }
+    return out;
   }
 
-  // The finished markup, with no animation state on it.  Exposed privately so
-  // the logo can be reused - a header mark, the Pearl printout - without
-  // replaying anything.
+  // --- the markup ----------------------------------------------------------
+  // Draw order is the art's own: frame, ring, disc, swan, wordmark.
   function svgMarkup() {
+    const L = logo();
+    if (!L) return "";
     const out = [];
-    out.push('<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg"');
-    out.push(' role="img" aria-label="Dharma Initiative Station 3, the Swan">');
-    out.push('<g class="beat-oct">');
-    out.push('<path class="ring" d="' + octagonPath(R_OUT) + '"/>');
-    out.push('<path class="ring" d="' + octagonPath(R_IN) + '"/>');
-    out.push('</g><g class="beat-ring">');
-    // k = 0 is the top edge; rotate() measures from +x, and +y is down.
-    for (let k = 0; k < 8; k++) out.push(trigram(TRIGRAMS[k], k * 45 - 90));
-    out.push('</g>');
-    // Scaled about the centre so the beak and the tail clear the inner octagon
-    // with room to spare; the paths above are authored at full size.
-    out.push('<g class="swan-g" transform="translate(100 100) scale(0.82) translate(-100 -100)">');
-    for (let i = 0; i < SWAN.length; i++) {
-      out.push('<path class="' + SWAN[i][0] + '" d="' + SWAN[i][1] + '"/>');
+    out.push('<svg viewBox="' + (L.viewBox || "0 0 200 200") + '" xmlns="http://www.w3.org/2000/svg"');
+    out.push(' fill="currentColor" role="img"');
+    out.push(' aria-label="Dharma Initiative Station 3, the Swan">');
+
+    out.push('<g class="beat-frame">');
+    for (const d of (L.frame && L.frame.paths) || []) {
+      out.push('<path class="part" fill-rule="evenodd" d="' + d + '"/>');
     }
     out.push('</g>');
-    // THE WORDMARK, part of the mark rather than a caption: it sits inside the
-    // octagon, centred, below the swan.  It draws with the swan beat because
-    // text cannot be stroke-revealed the way a path can - a dasharray on a
-    // <text> would animate its outline, which is not the same gesture.
-    out.push('<text class="wordmark" x="100" y="152" text-anchor="middle">' +
-             WORDMARK + '</text>');
+
+    out.push('<g class="beat-ring">');
+    for (const t of L.trigrams || []) {
+      out.push('<g class="tri" data-name="' + t.name + '">');
+      // Inner -> outer, as the data supplies them.
+      for (const d of t.bars) out.push('<path class="part" d="' + d + '"/>');
+      out.push('</g>');
+    }
+    out.push('</g>');
+
+    if (L.disc) {
+      out.push('<circle class="part disc" cx="' + L.disc.cx + '" cy="' + L.disc.cy +
+               '" r="' + L.disc.r + '"/>');
+    }
+
+    // The swan: spines first (stroked, drawn), then the fill crossfaded over.
+    out.push('<g class="beat-swan">');
+    out.push('<g class="spines">');
+    for (const line of (L.swan && L.swan.centerlines) || []) {
+      for (const seg of spineSegments(line)) {
+        out.push('<path class="spine" data-len="' + r2(seg.len) +
+                 '" style="stroke-width:' + seg.width + '" d="' + seg.d + '"/>');
+      }
+    }
+    out.push('</g>');
+    if (L.swan && L.swan.fill) {
+      out.push('<path class="swan-fill" fill-rule="evenodd" d="' + L.swan.fill + '"/>');
+    }
+    out.push('</g>');
+
+    // The wordmark is part of the mark - the Swan patch carries DHARMA across
+    // the centre - not a caption under it.
+    out.push('<g class="beat-word">');
+    for (const d of (L.wordmark && L.wordmark.paths) || []) {
+      out.push('<path class="part" fill-rule="evenodd" d="' + d + '"/>');
+    }
+    out.push('</g>');
+
     out.push('</svg>');
     return out.join("");
   }
@@ -213,21 +231,31 @@
     // in the document, so without this the whole logo flashes complete for one
     // frame before the reveal starts.  1000 is comfortably past the longest
     // path here (the outer octagon, ~563).
-    s.push("#" + OVERLAY_ID + " .ring,#" + OVERLAY_ID + " .bar,#" + OVERLAY_ID + " .swan{");
-    s.push("fill:none;stroke-linecap:round;stroke-linejoin:round;");
-    s.push("stroke-dasharray:1000;stroke-dashoffset:1000}");
-    s.push("#" + OVERLAY_ID + " .ring{stroke:var(--p-mid,var(--p,#43c25e));stroke-width:2.6}");
-    s.push("#" + OVERLAY_ID + " .bar{stroke:var(--p-mid,var(--p,#43c25e));stroke-width:3.6}");
-    s.push("#" + OVERLAY_ID + " .swan{stroke:var(--p-hot,#7CFF9B);stroke-width:2.8}");
-    // After .swan on purpose: same specificity, so the water reads as water.
-    s.push("#" + OVERLAY_ID + " .wake{stroke:var(--p-mid,var(--p,#43c25e));stroke-width:2.2}");
-    // The wordmark is FILLED, not stroked: it is type, and it fades up with the
-    // swan beat rather than being drawn, because a dasharray on <text> animates
-    // the letterforms' outlines, which is a different gesture entirely.
-    s.push("#" + OVERLAY_ID + " .wordmark{fill:var(--p-hot,#7CFF9B);stroke:none;");
-    s.push("font-family:inherit;font-size:15px;letter-spacing:3.2px;");
-    s.push("opacity:0;transition:opacity 420ms linear}");
-    s.push("#" + OVERLAY_ID + ".mark-on .wordmark{opacity:1}");
+    // THE MARK IS FILLED, not stroked - it is artwork, not a diagram - so the
+    // parts arrive by revealing rather than by dasharray.  `currentColor` on
+    // the <svg> means one colour declaration drives the whole thing.
+    s.push("#" + OVERLAY_ID + " svg{color:var(--p-hot,#7CFF9B)}");
+    s.push("#" + OVERLAY_ID + " .part{opacity:0;transition:opacity 260ms linear}");
+    s.push("#" + OVERLAY_ID + " .part.on{opacity:1}");
+    // The frame and the ring sit a shade back from the swan, which is the
+    // hierarchy the artwork has: the mark is the swan, in a frame.
+    s.push("#" + OVERLAY_ID + " .beat-frame .part,#" + OVERLAY_ID +
+           " .beat-ring .part{color:var(--p-mid,var(--p,#43c25e))}");
+    s.push("#" + OVERLAY_ID + " .disc{color:var(--p-mid,var(--p,#43c25e));opacity:0;");
+    s.push("transform-box:fill-box;transform-origin:50% 50%;transform:scale(0.82);");
+    s.push("transition:opacity 380ms linear,transform 380ms ease-out}");
+    s.push("#" + OVERLAY_ID + " .disc.on{opacity:1;transform:scale(1)}");
+
+    // THE SWAN IS ACTUALLY DRAWN.  The art carries centreline spines with a
+    // width per vertex precisely so it can be: each segment is stroked with a
+    // dasharray, round-capped so the joins vanish, and then the whole spine
+    // group crossfades into the filled silhouette.  Drawn, then inked.
+    s.push("#" + OVERLAY_ID + " .spine{fill:none;stroke:currentColor;");
+    s.push("stroke-linecap:round;stroke-linejoin:round;opacity:0.92}");
+    s.push("#" + OVERLAY_ID + " .spines{transition:opacity " + D_MORPH + "ms linear}");
+    s.push("#" + OVERLAY_ID + ".inked .spines{opacity:0}");
+    s.push("#" + OVERLAY_ID + " .swan-fill{opacity:0;transition:opacity " + D_MORPH + "ms linear}");
+    s.push("#" + OVERLAY_ID + ".inked .swan-fill{opacity:1}");
     // The title is typed over a hidden full-length copy of itself, so the line
     // does not re-centre on every character.
     s.push("#" + OVERLAY_ID + " .cap{position:relative;display:inline-block;");
@@ -243,9 +271,11 @@
     s.push("background:var(--p-hot,#7CFF9B);animation:swanboot-blink 1.06s steps(1,end) infinite}");
     // Namespaced: terminal.css already owns a keyframe called "blink".
     s.push("@keyframes swanboot-blink{0%,49%{opacity:1}50%,100%{opacity:0}}");
-    s.push("#" + OVERLAY_ID + ".still .ring,#" + OVERLAY_ID + ".still .bar,#" +
-           OVERLAY_ID + ".still .swan{stroke-dasharray:none;stroke-dashoffset:0}");
-    s.push("#" + OVERLAY_ID + ".still .wordmark{opacity:1;transition:none}");
+    // `still` is the reduced-motion and skip state: the finished mark, at once.
+    s.push("#" + OVERLAY_ID + ".still .part{opacity:1;transition:none}");
+    s.push("#" + OVERLAY_ID + ".still .disc{opacity:1;transform:none;transition:none}");
+    s.push("#" + OVERLAY_ID + ".still .spines{opacity:0;transition:none}");
+    s.push("#" + OVERLAY_ID + ".still .swan-fill{opacity:1;transition:none}");
     s.push("@media (prefers-reduced-motion:reduce){#" + OVERLAY_ID +
            "{transition:none}#" + OVERLAY_ID + " .cur{animation:none}}");
     s.push("</style>");
@@ -271,7 +301,7 @@
       const root = document.createElement("div");
       root.id = OVERLAY_ID;
       root.setAttribute("aria-hidden", "true");   // decorative; the page below is the content
-      if (reduced) root.className = "still";
+      if (reduced) root.className = "still inked";
       root.innerHTML = styleTag() + svgMarkup() +
           '<div class="cap"><span class="ghost">' + TITLE +
           '</span><span class="typed"></span></div>' +
@@ -286,6 +316,26 @@
       const after = (ms, fn) => { timers.push(setTimeout(fn, ms)); };
       const typed = root.querySelector(".typed");
       const prompt = root.querySelector(".prompt");
+
+      // A FILLED part: it arrives by opacity, on a timer.  The mark is artwork
+      // rather than a diagram, so most of it cannot be dash-drawn - only the
+      // swan's spines can, and they have their own helper below.
+      function reveal(el, delay) {
+        if (!el) return;
+        timers.push(setTimeout(() => { el.classList.add("on"); }, delay));
+      }
+
+      // One spine segment, dash-drawn.  `data-len` is measured from the data
+      // rather than from getTotalLength, so a browser that will not measure an
+      // SVG path still draws it correctly - and these are straight segments, so
+      // the arithmetic is exact rather than an approximation.
+      function armSpine(el, delay, dur) {
+        const len = parseFloat(el.getAttribute("data-len")) || 8;
+        el.style.strokeDasharray = len + " " + len;
+        el.style.strokeDashoffset = String(len);
+        el.style.transition = "stroke-dashoffset " + dur + "ms ease-out " + delay + "ms";
+        drawn.push(el);
+      }
 
       function arm(el, delay, dur) {
         let len = 0;
@@ -305,6 +355,9 @@
           drawn[i].style.strokeDasharray = "none";
           drawn[i].style.strokeDashoffset = "0";
         }
+        // `still` finishes every filled part and puts the swan straight to ink;
+        // one class rather than a walk over a few hundred elements.
+        root.classList.add("still", "inked");
         if (typed) typed.textContent = TITLE;
         if (prompt) prompt.classList.add("on");
       }
@@ -356,24 +409,37 @@
         snap();
         after(REDUCED_MS, () => end(false));
       } else {
-        const rings = root.querySelectorAll(".ring");
-        for (let i = 0; i < rings.length; i++) arm(rings[i], T_OCT + i * S_OCT, D_OCT);
+        // 1. the frame, outer then inner.
+        const frame = root.querySelectorAll(".beat-frame .part");
+        for (let i = 0; i < frame.length; i++) reveal(frame[i], T_FRAME + i * S_FRAME);
 
-        // Staggered per TRIGRAM, not per bar: thirty-six individually timed
-        // strokes reads as static, not as a ring being drawn.
+        // 2. the ring, clockwise from the top, and INNER TO OUTER within each
+        // trigram - the order the bars are supplied in, and the order a hand
+        // draws them.  Staggered per trigram rather than per bar: thirty-six
+        // individually timed reveals reads as static, not as a ring arriving.
         const tris = root.querySelectorAll(".tri");
         for (let i = 0; i < tris.length; i++) {
           const bars = tris[i].children;
-          for (let j = 0; j < bars.length; j++) arm(bars[j], T_RING + i * S_RING, D_RING);
+          for (let j = 0; j < bars.length; j++) {
+            reveal(bars[j], T_RING + i * S_RING + j * 26);
+          }
         }
 
-        const swan = root.querySelectorAll(".swan-g > *");
-        for (let i = 0; i < swan.length; i++) arm(swan[i], T_SWAN + i * S_SWAN, D_SWAN);
-        // The wordmark fades up as the last swan stroke finishes, so the mark
-        // completes as one gesture rather than gaining a caption afterwards.
-        timers.push(setTimeout(() => {
-          if (root) root.classList.add("mark-on");
-        }, T_SWAN + swan.length * S_SWAN + D_SWAN * 0.5));
+        // 3. the disc.
+        const disc = root.querySelector(".disc");
+        if (disc) reveal(disc, T_DISC);
+
+        // 4. the swan, drawn along its spines and then inked.
+        const spines = root.querySelectorAll(".spine");
+        for (let i = 0; i < spines.length; i++) armSpine(spines[i], T_SWAN + i * S_SWAN, D_SWAN);
+        const inkAt = T_SWAN + spines.length * S_SWAN + D_SWAN;
+        after(inkAt, () => { if (root) root.classList.add("inked"); });
+
+        // 5. the wordmark, last, as the ink settles.  It is part of the mark -
+        // the Swan patch carries DHARMA across the centre - so it belongs
+        // inside the frame rather than under it as a caption.
+        const word = root.querySelectorAll(".beat-word .part");
+        for (let i = 0; i < word.length; i++) reveal(word[i], T_WORD + i * 24);
 
         // Two frames: one for the browser to take the armed values as the
         // starting style, one to transition away from them.
@@ -412,5 +478,10 @@
   global.SwanBoot = {
     play,
     _logoSvg: svgMarkup,   // private: the logo without the performance
+    // The ring, checked against docs/ref/swan_trigrams.md.  Public because the
+    // JS suite asserts on it and because a wrong ring is invisible to everyone
+    // who has not memorised the bagua: the four palindromic trigrams read the
+    // same inside-out, so only Dui, Gen, Zhen and Xun ever show the mistake.
+    checkRing: ringMatchesTable,
   };
 })(window);

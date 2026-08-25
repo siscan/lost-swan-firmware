@@ -2898,3 +2898,38 @@ numbered section — if you find one that disagrees, fix the section.
     `countdown.set_target` writes a journal line (it does not, and that absence
     is documented); and that a partial journal line could be served and then
     concatenated (the writer appends whole records under one open).
+
+- 2026-08-25 — **The Swan mark is reference art.**  The boot logo's constructed
+  octagon/trigram/wordmark generator is deleted; `web/bootanim_logo.js` carries
+  the supplied vector — frame, trigram ring, disc, swan and the DHARMA wordmark
+  — in one pre-proportioned 200×200 system, `currentColor`, fill-rule
+  **evenodd** (the frame's window and the wordmark's counters are holes punched
+  by the rule).  Parts must not be rescaled independently.
+
+  - **The ring is Later Heaven (King Wen), inverted inside-to-outside** — the
+    bottom line faces *outward*, so the trigram's top line is the innermost bar
+    — clockwise from top **Li Kun Dui Qian Kan Gen Zhen Xun**.
+    `docs/ref/swan_trigrams.md` is the authority and
+    `test/host/test_logo.js` asserts the drawn ring against it, parsing the
+    table out of the document so the two cannot drift.
+  - **Attribution, corrected twice.**  The 90° quarter-turn belongs to the
+    ARG-era modernised logo, not to Earlier Heaven; Earlier Heaven does not
+    come into the station marks at all.  The previous ring was *derived from
+    bagua theory* rather than copied from reference, produced something
+    internally consistent, and survived a review — because **four of the eight
+    trigrams are palindromes and read identically inside-out.**  Only Dui, Gen,
+    Zhen and Xun ever show the error, which is why they are what the test
+    names.
+  - **The swan is drawn, then inked.**  The art supplies centreline spines with
+    a width per vertex; each segment is stroked round-capped with the mean of
+    its endpoint widths and dash-drawn, then the spine group crossfades into
+    the filled silhouette.  Measured on the board: 0 % at 1.6 s, 100 % at
+    2.75 s, whole run 4.76 s, and the overlay leaves nothing in the DOM.
+  - **A repair the delivery needed.**  The 25 per-vertex widths arrived wrapped
+    in a numpy scalar constructor.  That form **parses** as JavaScript — it
+    reads as a member call — and throws `ReferenceError` the instant the file
+    is evaluated: a clean `node --check` and a blank page, which is this
+    project's recurring failure mode.  `tools/jscheck.py` and `node --check`
+    both miss it by construction; the logo suite greps for it explicitly.
+  - LittleFS: **201,223 B gzipped** of a 256 KB budget, +2,687 B against the
+    constructed generator it replaced.

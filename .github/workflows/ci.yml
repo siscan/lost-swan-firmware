@@ -52,6 +52,8 @@ jobs:
         run: node test/host/test_flap.js
       - name: Countdown rendering contract (spec 7.3, the JS port)
         run: node test/host/test_countdown.js
+      - name: Swan mark trigram ring (docs/ref/swan_trigrams.md)
+        run: node test/host/test_logo.js
       - name: Simulator traces are current
         run: |
           ./build_host/gen_traces data/ring.json /tmp/traces.js

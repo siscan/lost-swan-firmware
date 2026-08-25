@@ -114,7 +114,7 @@ for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
         # machine, so say so plainly rather than passing silently; Linux CI
         # runs it on every push.
         $node = Get-Command node -ErrorAction SilentlyContinue
-        $jsSuites = @('test_flap', 'test_countdown')
+        $jsSuites = @('test_flap', 'test_countdown', 'test_logo')
         foreach ($suite in $jsSuites) {
             $pad = ('.' * (33 - $suite.Length))
             if ($node) {

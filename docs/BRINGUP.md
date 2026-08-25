@@ -1125,13 +1125,17 @@ board at 375x812 and 1920x1080, with no horizontal overflow at either.
 - [x] **Chess: 27/27 self-test in a browser on the board**, including perft
       20 / 400 / 8902 from the initial position, kiwipete 48 / 2039, and
       checkmate detection (which is what opens the Chang menu).
-- [ ] **The boot logo is not finished art.** Two clearly-marked placeholder
-      blocks in `web/bootanim.js`: the swan silhouette, and the bagua sequence -
-      the classic station logos use LATER HEAVEN (King Wen) with the trigrams
-      inverted inside-to-outside, and the table in the file is neither. Both
-      arrive together as a drop-in; the constructed geometry around them does
-      not change. **Do not re-derive the trigram order from bagua theory** -
-      that is how the current wrong one was produced.
+- [x] **The boot logo is finished art** (2026-08-25). The supplied vector
+      replaced the constructed generator wholesale: frame, Later-Heaven trigram
+      ring, disc, swan and the DHARMA wordmark, all pre-proportioned in one
+      200x200 system. The swan is genuinely stroke-drawn along centreline
+      spines carrying a width per vertex, then crossfaded to the fill; measured
+      on the board, the spines go 0% at 1.6 s to 100% at 2.75 s.
+      `test/host/test_logo.js` checks the drawn ring against
+      `docs/ref/swan_trigrams.md` on every push, and **the four non-palindromic
+      trigrams - Dui, Gen, Zhen, Xun - are what it is really checking**: the
+      other four read the same inside-out, which is why the wrong ring survived
+      a review. **Do not re-derive the order from bagua theory.**
 
 ## Notes
 
