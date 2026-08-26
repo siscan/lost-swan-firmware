@@ -190,6 +190,67 @@ more than once.
 On a machine without Device Guard, none of that applies: `idf.py flash` does the
 lot.
 
+## Restoring a released build — no toolchain needed
+
+Tagged states are published as flashable images on the
+[Releases page](https://github.com/siscan/lost-swan-firmware/releases), built in
+CI from exactly the tagged tree (`.github/workflows/release.yml`).  Restoring one
+needs `esptool` and nothing else — no ESP-IDF, no build directory, no Python
+environment beyond `pip install esptool`.
+
+`v1.0-software-quiet` is the state the repository went quiet in: phases 1–7
+delivered, CI green, and **no motor, driver or Hall sensor ever connected**.
+
+**Two files** refresh a board that is already running this project — the app and
+the filesystem:
+
+```bash
+python -m esptool --chip esp32c5 -p COM3 write_flash 0x20000 lost-swan-v1.0-software-quiet-devkitc1-app.bin 0x520000 lost-swan-v1.0-software-quiet-storage.bin
+```
+
+**That is enough only if the board is currently booting slot `ota_0`.**  After an
+OTA it is not: the bootloader follows `otadata`, so it would keep running the
+other slot and quietly ignore the image you just wrote — the display would come
+back looking restored and be running something else.  `sys.ota_partition` in
+`GET /api/state` says which slot is live.  For a restore that is correct
+regardless, use the full set from the board's zip, which adds the bootloader,
+the partition table and `ota_data_initial.bin`:
+
+```bash
+python -m esptool --chip esp32c5 -p COM3 --flash_mode dio --flash_freq 80m --flash_size 8MB write_flash 0x2000 bootloader.bin 0x8000 partition-table.bin 0xf000 ota_data_initial.bin 0x20000 app.bin 0x520000 storage.bin
+```
+
+Notes worth having before you use either:
+
+- **Pick the app image for your board.**  `devkitc1` and `xiao` differ only in
+  the pin map, every IDF-level check passes for the wrong one, and it will
+  cheerfully drive STEP on the wrong GPIOs.  The OTA path refuses a wrong-board
+  image; a direct `write_flash` cannot.
+- **`storage.bin` is board-independent** — one file serves both — and the
+  release workflow *fails* rather than shipping it if the two board builds ever
+  disagree.
+- **Settings survive**, because none of this touches the `nvs` partition:
+  calibration, per-column modes, WiFi credentials, MQTT and a live countdown
+  deadline all come back.  To start clean, add `erase-flash` first and expect to
+  re-provision WiFi from the captive portal.
+- **The web assets go back to the tagged set.**  Anything added to `web/` after
+  the tag — including `/qa.html`, which was added afterwards — is not in that
+  `storage.bin`.  Rebuild and reflash the filesystem to get current assets back:
+
+```bash
+python tools/webpack.py
+```
+
+- The published images are the **simulated-axis** flavour (`0.4.0+<board>.sim`),
+  which is what the bench runs and what `docs/BRINGUP.md` assumes.  A release
+  build cannot carry the simulation at all — CI proves that gate fires on every
+  push.
+
+Checksums for every published file are in `SHA256SUMS.txt` on the release.
+`GET /api/state` reports `sys.version` and `sys.ota_partition`, which together
+with those checksums identify what is actually on a board; the firmware does
+**not** expose a build hash today.
+
 ## Activating the toolchain
 
 This is a **Windows** machine. `install.sh` / `export.sh` do not work here —
