@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LOST Swan · acceptance pass</title>
+<style>
+:root {
+  --bg: #04120a; --panel: #071a0f; --line: #143a20;
+  --p: #6ee06e; --p-dim: #3e8a4e; --amber: #d8b04a; --red: #e0563f;
+  --ok: #6ee06e;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--p); }
+body {
+  font: 15px/1.5 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  padding: 0 0 4em;
+}
+a { color: var(--amber); }
+header {
+  position: sticky; top: 0; z-index: 5;
+  background: linear-gradient(to bottom, #04120a 70%, rgba(4,18,10,0.86));
+  border-bottom: 1px solid var(--line);
+  padding: 0.9em clamp(0.7em, 3vw, 2em) 0.7em;
+}
+h1 { font-size: 1.05rem; letter-spacing: 0.18em; margin: 0 0 0.2em; font-weight: 600; }
+.sub { color: var(--p-dim); font-size: 0.82rem; letter-spacing: 0.06em; }
+.bar { display: flex; flex-wrap: wrap; gap: 0.5em; align-items: center; margin-top: 0.7em; }
+button {
+  background: none; border: 1px solid var(--line); color: var(--p-dim);
+  font: inherit; font-size: 0.82rem; padding: 0.3em 0.8em; cursor: pointer;
+  letter-spacing: 0.08em;
+}
+button:hover { color: var(--p); border-color: var(--p-dim); }
+.tally { color: var(--p-dim); font-size: 0.82rem; margin-left: auto; }
+.tally b { color: var(--p); font-weight: 600; }
+main { padding: 0 clamp(0.7em, 3vw, 2em); max-width: 62rem; }
+section { margin: 1.8em 0 0; }
+h2 {
+  font-size: 0.85rem; letter-spacing: 0.16em; color: var(--amber);
+  border-bottom: 1px solid var(--line); padding-bottom: 0.35em; margin: 0 0 0.2em;
+  font-weight: 600;
+}
+.secnote { color: var(--p-dim); font-size: 0.8rem; margin: 0.4em 0 0.9em; }
+.row {
+  border: 1px solid var(--line); border-left-width: 3px; background: var(--panel);
+  margin: 0.55em 0; padding: 0.7em 0.85em;
+}
+.row.pass    { border-left-color: var(--ok); }
+.row.fail    { border-left-color: var(--red); }
+.row.partial { border-left-color: var(--amber); }
+.row.known   { border-left-color: var(--red); opacity: 0.95; }
+.rid { color: var(--p-dim); font-size: 0.72rem; letter-spacing: 0.12em; }
+.rtitle { font-weight: 600; margin: 0.12em 0 0.45em; }
+.lbl {
+  color: var(--amber); font-size: 0.7rem; letter-spacing: 0.14em;
+  display: block; margin: 0.6em 0 0.15em;
+}
+.exp { color: var(--p); }
+ol.steps { margin: 0.2em 0 0; padding-left: 1.4em; color: var(--p-dim); }
+ol.steps li { margin: 0.12em 0; }
+ol.steps li b { color: var(--p); font-weight: 600; }
+.ref { color: var(--p-dim); font-size: 0.75rem; margin-top: 0.55em; }
+.verdicts { display: flex; flex-wrap: wrap; gap: 0.4em; margin-top: 0.7em; }
+.v { padding: 0.28em 0.9em; }
+.v.on[data-v="PASS"]    { background: var(--ok); color: #04120a; border-color: var(--ok); }
+.v.on[data-v="FAIL"]    { background: var(--red); color: #180604; border-color: var(--red); }
+.v.on[data-v="PARTIAL"] { background: var(--amber); color: #191204; border-color: var(--amber); }
+.v.on[data-v="N/A"]     { background: var(--p-dim); color: #04120a; border-color: var(--p-dim); }
+textarea {
+  width: 100%; margin-top: 0.5em; background: #030d07; color: var(--p);
+  border: 1px solid var(--line); font: inherit; font-size: 0.86rem;
+  padding: 0.45em 0.6em; resize: vertical; min-height: 2.4em;
+}
+textarea:focus { outline: none; border-color: var(--p-dim); }
+#exportwrap { display: none; margin-top: 1.4em; }
+#exportwrap.on { display: block; }
+#exportmd { min-height: 22em; font-size: 0.78rem; }
+.warn { color: var(--amber); }
+footer { color: var(--p-dim); font-size: 0.76rem; padding: 2em clamp(0.7em, 3vw, 2em) 0; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>LOST SWAN · ACCEPTANCE PASS</h1>
+  <div class="sub" id="ident">reading /api/state&hellip;</div>
+  <div class="bar">
+    <button id="export">EXPORT REPORT</button>
+    <button id="jump">NEXT UNTESTED</button>
+    <button id="reset">CLEAR ALL</button>
+    <span class="tally" id="tally"></span>
+  </div>
+</header>
+
+<main>
+  <p class="secnote" style="margin-top:1.2em">
+    Every row below is written from <b>docs/FIRMWARE_SPEC.md</b> — what the
+    firmware is supposed to do — not from what the code appears to do. A row
+    that fails is the point of the exercise, so mark it and move on; nothing
+    here gets fixed until the whole pass is done. Verdicts and comments are
+    saved in this browser as you go and survive closing the tab.
+  </p>
+  <div id="rows"></div>
+
+  <div id="exportwrap">
+    <h2>REPORT</h2>
+    <p class="secnote">Copy this and paste it back into the session.</p>
+    <div class="bar">
+      <button id="copy">COPY TO CLIPBOARD</button>
+      <button id="download">DOWNLOAD .md</button>
+      <button id="hide">HIDE</button>
+    </div>
+    <textarea id="exportmd" readonly></textarea>
+  </div>
+</main>
+
+<footer>
+  <span id="fwnote"></span>
+</footer>
+
+<script src="qa.js"></script>
+</body>
+</html>
