@@ -1,0 +1,184 @@
+# Publish flashable images for a tag, built in CI rather than on a laptop.
+#
+# The point is that a marked state is restorable with no build environment:
+# download, run esptool, done.  So the images have to come from a clean
+# container build of exactly the tagged tree - not from whatever happened to be
+# in someone's build/ directory.
+#
+# It is `workflow_dispatch` rather than `on: push: tags`, deliberately.  A tag
+# push only runs workflows that exist AT THAT TAG, and this file was written
+# after v1.0-software-quiet was cut.  Dispatching from the default branch and
+# checking the tag out explicitly builds the tagged source with the current
+# workflow, which is what is actually wanted.
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "tag (or commit) to build and publish"
+        required: true
+        default: v1.0-software-quiet
+
+permissions:
+  contents: write
+
+jobs:
+  images:
+    strategy:
+      fail-fast: false
+      matrix:
+        board: [devkitc1, xiao]
+    runs-on: ubuntu-latest
+    container:
+      image: espressif/idf:v5.5.5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Build (${{ matrix.board }})
+        shell: bash
+        run: |
+          # The runner checks out as a different uid than the container user.
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          . $IDF_PATH/export.sh
+          idf.py -DSWAN_BOARD=${{ matrix.board }} set-target esp32c5
+          idf.py -DSWAN_BOARD=${{ matrix.board }} build
+
+      # storage.bin is the LittleFS image: web assets, glyph sheet, ring.json
+      # and the audio placeholders.  None of it is board-specific, and the
+      # collect step below proves that rather than assuming it.
+      - name: Collect
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          cp build/bootloader/bootloader.bin            out/
+          cp build/partition_table/partition-table.bin  out/
+          cp build/ota_data_initial.bin                 out/
+          cp build/lost_swan_firmware.bin               out/app.bin
+          cp build/storage.bin                          out/
+          cp build/flash_args                           out/
+          sha256sum out/* | sed 's|out/||' > out/SHA256SUMS.txt
+          cat out/SHA256SUMS.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: images-${{ matrix.board }}
+          path: out/
+          if-no-files-found: error
+
+  publish:
+    needs: images
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: art
+
+      - name: Assemble, and prove the LittleFS image is board-independent
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ inputs.ref }}"
+          mkdir -p rel
+
+          a=$(sha256sum art/images-devkitc1/storage.bin | cut -d' ' -f1)
+          b=$(sha256sum art/images-xiao/storage.bin     | cut -d' ' -f1)
+          if [ "$a" != "$b" ]; then
+            echo "FAIL: the two boards produced different storage.bin"
+            echo "  devkitc1 $a"
+            echo "  xiao     $b"
+            echo "It is shipped once, as one file, on the claim that it is"
+            echo "board-independent.  That claim is now false - ship it per"
+            echo "board and fix the notes."
+            exit 1
+          fi
+          echo "storage.bin identical across both boards: $a"
+          cp art/images-devkitc1/storage.bin "rel/lost-swan-$TAG-storage.bin"
+
+          for board in devkitc1 xiao; do
+            cp "art/images-$board/app.bin" "rel/lost-swan-$TAG-$board-app.bin"
+            ( cd "art/images-$board" && zip -q -r "../../rel/lost-swan-$TAG-$board-full.zip" . )
+          done
+
+          ( cd rel && sha256sum ./* > SHA256SUMS.txt )
+          ls -l rel
+          cat rel/SHA256SUMS.txt
+
+      - name: Notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ inputs.ref }}"
+          {
+            echo "Flashable images for \`$TAG\`, built in CI from that tree."
+            echo
+            echo "**The software is done; the mechanism is untouched.** No motor, driver or"
+            echo "Hall sensor has ever been connected to this board. See the \`STATE OF THE"
+            echo "WORLD\` entry at the end of §17 in \`docs/FIRMWARE_SPEC.md\`, then"
+            echo "\`docs/BRINGUP.md\`."
+            echo
+            echo '## Restore, without a build environment'
+            echo
+            echo 'Two files refresh a board that is already running this project:'
+            echo
+            echo '```'
+            echo "python -m esptool --chip esp32c5 -p <PORT> write_flash 0x20000 lost-swan-$TAG-devkitc1-app.bin 0x520000 lost-swan-$TAG-storage.bin"
+            echo '```'
+            echo
+            echo 'That is enough **only if the board is currently booting slot ota_0.** After'
+            echo 'an OTA it is not: the bootloader follows `otadata`, so it would keep running'
+            echo 'the other slot and ignore the image you just wrote. For a guaranteed restore'
+            echo 'use the full set from the zip, which includes `ota_data_initial.bin`:'
+            echo
+            echo '```'
+            echo 'python -m esptool --chip esp32c5 -p <PORT> --flash_mode dio --flash_freq 80m --flash_size 8MB write_flash 0x2000 bootloader.bin 0x8000 partition-table.bin 0xf000 ota_data_initial.bin 0x20000 app.bin 0x520000 storage.bin'
+            echo '```'
+            echo
+            echo 'Pick the zip matching your board. `flash_args` inside each zip carries the'
+            echo 'same offsets as produced by the build.'
+            echo
+            echo '## Assets'
+            echo
+            echo '| file | what |'
+            echo '|---|---|'
+            echo "| \`lost-swan-$TAG-devkitc1-app.bin\` | app image, ESP32-C5-DevKitC-1 pin map |"
+            echo "| \`lost-swan-$TAG-xiao-app.bin\` | app image, XIAO ESP32-C5 pin map |"
+            echo "| \`lost-swan-$TAG-storage.bin\` | LittleFS image: web UI, presentation terminal, glyph sheet, \`ring.json\`, placeholder audio. Board-independent, and the workflow fails if the two board builds disagree |"
+            echo "| \`lost-swan-$TAG-<board>-full.zip\` | everything above plus bootloader, partition table, \`ota_data_initial.bin\` and \`flash_args\` |"
+            echo "| \`SHA256SUMS.txt\` | checksums of the published files |"
+            echo
+            echo 'The app images are the **simulated-axis** flavour (`.sim`), which is what the'
+            echo 'bench runs and what `docs/BRINGUP.md` assumes: real WiFi, real filesystem,'
+            echo 'real control core, modelled Hall input. A release build refuses to carry the'
+            echo 'simulation at all, and CI proves that gate fires on every push.'
+            echo
+            echo '### Checksums'
+            echo
+            echo '```'
+            cat rel/SHA256SUMS.txt
+            echo '```'
+          } > notes.md
+          cat notes.md
+
+      - name: Publish
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="${{ inputs.ref }}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --notes-file notes.md
+            gh release upload "$TAG" rel/* --clobber
+          else
+            gh release create "$TAG" rel/* \
+              --title "$TAG — the software is done, the mechanism is untouched" \
+              --notes-file notes.md
+          fi
