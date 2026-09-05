@@ -56,6 +56,10 @@ jobs:
         run: node test/host/test_logo.js
       - name: Toggle matrix (content and presentation are orthogonal)
         run: node test/host/test_toggles.js
+      - name: Simulator traces are current
+        run: |
+          ./build_host/gen_traces data/ring.json /tmp/traces.js
+          diff /tmp/traces.js web/sim/traces.js
 
   # The stand-in bench image (BRINGUP 28b gate 3).  Built in CI because its
   # whole value is a cap that cannot be configured away, and a cap that stops
@@ -89,10 +93,6 @@ jobs:
             exit 1
           fi
           echo "gate fired as expected"
-      - name: Simulator traces are current
-        run: |
-          ./build_host/gen_traces data/ring.json /tmp/traces.js
-          diff /tmp/traces.js web/sim/traces.js
 
   firmware:
     runs-on: ubuntu-latest
