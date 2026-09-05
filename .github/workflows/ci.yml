@@ -72,8 +72,14 @@ jobs:
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           . $IDF_PATH/export.sh
           idf.py -B build_bench -DSWAN_BOARD=devkitc1 -DSWAN_BENCH=ON set-target esp32c5
-          idf.py -B build_bench -DSWAN_BOARD=devkitc1 -DSWAN_BENCH=ON build 2>&1 | tee out.txt
-          grep -q "LOST Swan version: 0.4.0+devkitc1.bench" out.txt
+          idf.py -B build_bench -DSWAN_BOARD=devkitc1 -DSWAN_BENCH=ON build
+          # Assert on the ARTIFACT, not on log text: the version banner is
+          # printed at configure time, so grepping a `build` that had nothing to
+          # reconfigure fails for the wrong reason.  project_description.json is
+          # what the image was actually stamped with.
+          v=$(python -c "import json;print(json.load(open('build_bench/project_description.json'))['project_version'])")
+          echo "built version: $v"
+          test "$v" = "0.4.0+devkitc1.bench"
       - name: A bench image is not a release image
         shell: bash
         run: |
