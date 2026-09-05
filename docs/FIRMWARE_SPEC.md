@@ -28,10 +28,10 @@ Columns are physically grouped 3 + 2 with a band between (no colon column).
 | Item | Spec | Notes |
 |---|---|---|
 | MCU | **ESP32-C5-DevKitC-1-N8R8**, board V1.2 — **on the bench since 2026-08-23**. Pin map in §2.2. | 8 MB flash, 8 MB PSRAM, USB-Serial-JTAG + USB-UART bridge. **Chip revision v1.2, verified** (§2.0) — production silicon; the revision risk is closed. XIAO ESP32-C5 is the spare / project-#2 board; Pico 2 W remains plan B. |
-| Motors | 5 × NEMA 17, 17HS4401-class, 1.8° (200 full steps/rev) | `VERIFY` step angle on the motors actually bought. |
+| Motors | 5 × NEMA 17, 17HS4401-class, 1.8° (200 full steps/rev) | `VERIFY` step angle on the motors actually bought. Run current **0.7 A RMS**, hold ~0.35 A via standstill reduction (§5.7a). Sealed inside a PLA drum, so heat is a hard requirement rather than a preference. |
 | Drivers | 5 × TMC2209 modules, **standalone (no UART)** | MS1 = MS2 = high → 1/16 microstep, internal 256 interpolation. `VERIFY` against the vendor's silkscreen/doc; a different default pull changes every motion constant. Vref set for ~1.1–1.2 A RMS. Standstill current reduction left enabled. |
-| Drive | 33T pinion on motor → 85T gear cut into spool disc rim | Ratio **85/33 = 2.5758:1**, not 2.6. `VERIFY` teeth counts against BUILD/README v6. |
-| Rotation | **One direction only** (the rings are *descending* since v3, §4: one forward flip decrements). Reverse is mechanically forbidden (flaps jam on the bezel lip). | **DIR is tied to a rail at the drivers** (no GPIO — the XIAO can't spare one; DJ Harrigan's build does the same). Which rail is decided in Phase 1 bench step 3. EN is a single ganged GPIO. |
+| Drive | **DIRECT, 1:1** — the NEMA 17 sits stationary INSIDE the drum and turns it directly (2026-09-06, `docs/ref/DRIVE_CHANGE.md`) | The 85T rim gear is dead: with 50 flaps loaded the pinion collided with the card edges at every angular position and a mesh sweep found no collision-free angle. 64 µsteps/flap, 3200/revolution, both exact. |
+| Rotation | **One direction only** (the rings are *descending* since v3, §4: one forward flip decrements). Reverse is mechanically forbidden (flaps jam on the bezel lip). | **DIR is a ganged GPIO again** on boards with a spare non-strapping pin — GPIO24 on the DevKitC-1, absent on the XIAO (§2.1). The motor now faces the other way inside the drum, so which level gives the descending sense is a bench measurement (step 3), and `motion.dir_invert` settles it without a soldering iron. EN is a single ganged GPIO. |
 | Home sensor | 5 × A3144 digital Hall (TO-92), Ø6×3 N35 magnet at R52 on the idler disc, one per column | A3144 supply is 4.5–24 V → must be fed **5 V**; output is open-collector, pull it up to **3V3** (10 k) so the GPIO sees 3.3 V logic. `VERIFY` the hall JST carries 5 V. Output is active-LOW when the magnet is present (`VERIFY`). One operate edge per spool revolution. |
 | Audio | MAX98357A I2S mono amp + 40 mm 4 Ω 3 W speaker | 3 GPIOs (BCLK, LRCLK, DIN). Gain pin left at default 9 dB. `VERIFY` SD/shutdown pin handling on the module. No hardware volume → software gain. |
 | Power | 12 V 6 A PSU → drivers; 12→5 V buck → logic, halls, amp | All five spinning ≈ 4–5 A on 12 V. |
@@ -167,8 +167,14 @@ What the XIAO exposes (Seeed pin map):
 | onboard | USER LED | 27 | **yes** | active low |
 | onboard | ADC_BAT / ADC_CRL | 6 / 26 | — | battery circuit; not usable |
 
-Non-strapping pins available: 9 on headers + 2 pads = **11**, which is
-exactly STEP×5 + EN + HALL×5. I2S goes on strapping pins (fine, high-Z). So
+**The XIAO cannot have a DIR GPIO.**  Non-strapping pins available: 9 on
+headers + 2 pads = **11**, which is exactly STEP×5 + EN + HALL×5 — every one
+spoken for.  The only free pins are GPIO2 and GPIO26, both strapping, and a
+TMC2209 module's pull on DIR would hold the strap at reset.  So `PIN_DIR` is
+`-1` here, `HAS_DIR_GPIO` is false, and both the dispatcher and the Settings
+page say DIR is tied at the drivers rather than offering a control that cannot
+work.  Direction on this board is a wiring change.  Recorded rather than solved:
+the XIAO is the spare board (§2.0). I2S goes on strapping pins (fine, high-Z). So
 the XIAO needs **four back-pad solder joints** (GPIO5, GPIO4, one of GPIO3/2,
 and BOOT) on ~1 mm test pads. Doable, fragile; strain-relieve on the carrier
 perfboard. External JTAG is lost, which costs nothing — the C5 debugs over
@@ -188,7 +194,7 @@ Proposed map:
 | BUTTON | BOOT pad | 28 |
 | LED | onboard | 27 |
 | spare | MTMS pad | 2 (strapping; high-Z loads only) |
-| DIR | — | tied at the drivers |
+| DIR | — | **tied at the drivers — no pin available**, see below |
 
 Power the XIAO from the 5 V buck via its 5V pin. `VERIFY` in Seeed's
 schematic whether USB VBUS and the 5V pin are diode-isolated before plugging in
@@ -223,9 +229,12 @@ Proposed map, everything on headers, nothing on strapping pins except I2S:
 | I2S BCLK / LRCLK / DIN | 7, 25, 26 |
 | BUTTON | 28 (onboard BOOT; external button in parallel) |
 | LED | 27 (WS2812 RGB — colour-coded status) |
-| spare, non-strapping | 24 |
+| **DIR (ganged, all five drivers)** | **24** |
 | spare, strapping | 2, 3 (high-Z loads only) |
-| DIR | tied at the drivers (a GPIO is affordable here but buys nothing — reverse is forbidden) |
+
+**There is no spare non-strapping GPIO left on this map.**  GPIO24 was the one,
+and DIR now has it.  That is the pin Plan B in §5.7a (UART/IHOLD) would need,
+which is part of why 0.7 A standalone is the plan of record.
 
 Two USB-C ports (native USB-Serial-JTAG and a USB-to-UART bridge); either
 works for the console. PCB antenna on the module (the `U` variant has u.FL).
@@ -270,46 +279,73 @@ route is the one to avoid.
 
 ## 3. Derived constants
 
+**DIRECT DRIVE, 1:1, since 2026-09-06** (`docs/ref/DRIVE_CHANGE.md`).  The
+motor sits stationary inside the drum and turns it directly.  Every number
+below is an exact integer, which none of them were under the rim gear.
+
 ```
 STEPS_PER_MOTOR_REV   = 200                     // VERIFY
 MICROSTEPS            = 16                      // VERIFY (MS1=MS2=high)
 USTEPS_PER_MOTOR_REV  = 3200
-GEAR_DRIVEN_TEETH     = 85                      // VERIFY
-GEAR_DRIVE_TEETH      = 33                      // VERIFY
+DRIVE_REDUCTION       = 1 : 1                   // no gear train at all
 N_RING                = 50
-USTEPS_PER_SPOOL_REV  = 3200 * 85 / 33 = 272000/33 = 8242.4242…   (NOT an integer)
-USTEPS_PER_FLAP       = 272000 / (33*50) = 5440/33 = 164.8485…     (NOT an integer)
+USTEPS_PER_SPOOL_REV  = 3200                    // EXACT
+USTEPS_PER_FLAP       = 3200 / 50 = 64          // EXACT
 ```
 
 Integer target for ring index *i* (0..49) relative to the home edge:
 
 ```
-T(i) = round(i * 5440 / 33) = (2*i*5440 + 33) / 66      // integer division
+T(i) = round(i * 64 / 1) = 64 * i               // exact; no rounding to do
 ```
 
-Speeds (µsteps/s = flaps/s × 164.85):
+**The fractional machinery is KEPT** (`ring/geometry.h` still carries a
+numerator and a denominator, and `T(i)` is still the rounding form), and so are
+the edge-relative targeting and mid-move re-basing of §5.3.  Exactness is a
+bonus, not a licence to delete them: they exist to absorb a drum that has
+physically slipped, not merely to absorb arithmetic, and a geometry that is
+integral today is not a guarantee about the next one.  Two host tests exercise
+the rounding path at the ratio the machine used to have, so it cannot rot into
+untested code.
+
+Speeds (µsteps/s = flaps/s × 64):
 
 | flaps/s | µsteps/s | note |
 |---|---|---|
-| 8 | 1319 | homing / calibration |
-| 15 | 2473 | default normal `[default]` |
-| 20 | 3297 | |
-| 25 | 4121 | default alarm spin `[default]`; ~20.6 k steps/s across five columns |
+| 8 | 512 | homing / calibration |
+| 15 | 960 | default normal `[default]` |
+| 20 | 1280 | |
+| 25 | 1600 | default alarm spin `[default]` |
+| **400** | **25 600** | the **show spin** — see §5.2, this is the number that decided the step-gen architecture |
 
-Flap fall is gravity-limited at roughly 20–25 flaps/s regardless of motor.
-The real ceiling is measured in Phase 1, not assumed.
+Flap fall is gravity-limited at roughly 20–25 flaps/s regardless of motor, so
+the flaps do not settle above that; the show spin is a deliberate blur and does
+not ask them to.  The real ceiling is measured on the bench, not assumed.
+
+**One consequence worth stating because nothing else will say it.**  The same
+`motion.accel` now produces **2.6× the drum angular acceleration** it used to:
+the constant is in µsteps/s² and a µstep is 2.58× more drum angle, so 0 → alarm
+speed takes ~20 ms rather than ~50.  Reflected torque demand rose at the same
+time (no gear reduction: ~9.1 N·cm against ~2).  `motion.accel` is therefore
+**open again** and bench step 5 re-derives it; the default is unchanged only
+because nothing has measured a better one.
 
 Transition costs on the **descending** v3 rings (cost one way + cost the other
 = 50).  Ring A is columns 1–4, ring B is column 5 with its two digit blocks;
 see §4.  All measured from the manifests, not estimated.
 
+**Flip counts are a property of the RING and did not change with the drive.**
+The times are the same too — a flap is a flap per second whatever the gearing —
+so this table stands exactly as it was.  What changed underneath it is only how
+many µsteps a flap costs (64, not 164.85).
+
 | transition | ring A | ring B | time @ 20 flaps/s (ring A) |
 |---|---|---|---|
-| countdown decrement (any digit −1) | **1** | **1** | 0.09 s |
-| clock increment (any digit +1) | 49 | 24 | 2.45 s / 1.22 s |
-| digit 0 → 9 (wrap) | 41 | **16** | 2.05 s / 0.84 s |
+| countdown decrement (any digit −1) | **1** | **1** | 0.05 s |
+| clock increment (any digit +1) | 49 | 24 | 2.45 s / 1.20 s |
+| digit 0 → 9 (wrap) | 41 | **16** | 2.05 s / 0.80 s |
 | tens-of-seconds 0 → 5 (minute rollover) | 45 | — | 2.25 s |
-| blank → wifi glyph | 1 | n/a — no wifi on ring B | 0.09 s |
+| blank → wifi glyph | 1 | n/a — no wifi on ring B | 0.05 s |
 
 The decrement being one flip on **every** column is the point of the redesign:
 it is the show's single-flap tick, and it is what makes live seconds possible
@@ -408,6 +444,33 @@ UNHOMED → HOMING → IDLE ⇄ MOVING
 - Why not RMT / LEDC / PCNT: peripheral counts on the C5 (`VERIFY` in the TRM —
   believed 2 GPTimers, 2 RMT TX channels, 4 PCNT units) don't cover five axes.
 
+**THE STEP BUDGET, AND THE DECISION IT DECIDES — re-validated at the direct
+drive's numbers, 2026-09-06.**
+
+The DDA emits at most one step per ISR tick, so the hard ceiling is `TICK_HZ`
+**per axis**: 50 000 µsteps/s each, 250 000 aggregate across five.  The worst
+case is the show spin at 400 flaps/s:
+
+| drive | per column | aggregate | against a 50 k/axis ceiling |
+|---|---:|---:|---|
+| 85T/33T rim gear (dead) | ~66 000 | ~330 000 | **impossible** |
+| **1:1 direct** | **25 600** | **128 000** | **51.2 % duty** |
+
+**This reverses a pending architectural change, and that is the largest single
+consequence of the drive swap for firmware.**  `docs/HARDWARE_PLAN_2.md` §3
+states, correctly for the rim gear, that 330 k steps/s aggregate *"forecloses
+software step generation"* and that the firmware would need hardware pulse
+generation — LEDC, MCPWM or RMT, one channel per column — with the warning that
+those peripherals would then constrain which pins can carry STEP.
+
+That migration is **cancelled, not deferred.**  It was never actually available:
+the C5 has two RMT TX channels for five axes, so the rim gear's show spin
+exceeded both the ISR ceiling *and* the peripheral count — a requirement with no
+solution on this MCU.  At 1:1 the GPTimer ISR and DDA that this section already
+specifies carry the show spin with 49 % headroom, five axes on one timer, and
+the GPIO map stays free of peripheral channel assignment.  `geometry.h` carries
+a `static_assert` on the 25 600 figure so the budget cannot drift silently.
+
 ### 5.3 Position model (the non-integer ratio, handled)
 
 Per axis: `pos_abs` (int64, µsteps ever issued, monotonic), `hall_abs` (pos_abs
@@ -431,16 +494,25 @@ currently displayed).
 
 ### 5.4 Edge verification (every revolution)
 
-At each operate edge: `expected = hall_abs_prev + 8242 (or 8243)`,
-`err = actual − expected`.
+At each operate edge: `expected = hall_abs_prev + 3200`, `err = actual −
+expected`.  **Exactly 3200 — there is no "or 3201".**  The rim gear's 0.42
+µstep-per-revolution residue is gone with the gear, so a healthy direct-drive
+column reports a flat `hall_to_hall` and any spread at all is a finding.
 
 | `|err|` | action |
 |---|---|
-| ≤ `HALL_TOL_SILENT` (¼ flap ≈ 41 µsteps `[default]`) | accept, `resync_minor++` |
-| ¼ flap < err ≤ 1 flap | accept, `resync_major++`, log warning |
-| > 1 flap, or no edge within 8242 + 1 flap of steps | → FAULT routine |
+| ≤ `HALL_TOL_SILENT` (¼ flap = **16** µsteps `[default]`) | accept, `resync_minor++` |
+| ¼ flap < err ≤ 1 flap (**64** µsteps) | accept, `resync_major++`, log warning |
+| > 1 flap, or no edge within 1.5 revolutions | → FAULT routine |
 
-`HALL_TOL_SILENT` must be set after measuring edge repeatability in Phase 1.
+**Both tolerances are DERIVED from a flap, not written out.**  `HALL_TOL_SILENT`
+was the literal 41 — a quarter of the rim gear's 165-µstep flap — and left alone
+it would have become 64 % of a flap when a flap became 64 µsteps, widening the
+silent band until it swallowed real slips.  A tolerance that stops meaning what
+its own comment says is worse than one that is merely wrong.
+
+`HALL_TOL_SILENT` is still set from measured edge repeatability (bench step 6);
+16 is the geometric default, not a measurement.
 
 FAULT routine: stop the column, attempt re-home up to `REHOME_RETRIES = 3`;
 on success resume the current frame; on failure mark FAULT, apply the fault
@@ -469,13 +541,72 @@ blank this would change, but it is not worth touching the mechanics for.
 column; nudge ±1 / ±10 µsteps live until the blank card hangs flat against the
 bezel lip and the next card is fully retained; save. Then step through indices
 0..49 to confirm the mapping. Per-column `hall_to_hall` measured count is shown
-for diagnostics (expect 8242–8243).
+for diagnostics (expect **3200, exactly** — see the pedigree in §3 and `ring/geometry.h`: a spread is itself a finding).
 
-### 5.7 Idle current `[default]`
+### 5.7 Holding is a contract, not a setting
 
-Drivers stay enabled at rest, relying on TMC2209 standstill reduction. Phase 1
-bench test: with EN released, does a loaded drum creep over 10 min? If it holds,
-`motion.en_idle_off` can default to true (cooler motors). Until then, false.
+**The coils stay energised at rest.  There is no option, and `motion.en_idle_off`
+is gone** (2026-09-06).
+
+Under the rim gear this was an open trade: the gear train was a brake of sorts,
+so releasing EN at rest *might* have been free cooling, and the setting existed
+waiting for a bench test to say whether a loaded drum crept.  The direct drive
+settled it without the test.  The drum's **static imbalance is 3.92 N·cm against
+a detent torque of 2.2 N·cm**, so an unpowered drum does not creep — it slews to
+its heavy side and stops there.  Releasing EN at rest is therefore not a cooling
+strategy, it is a guarantee that the display loses its position.
+
+Consequences, all of them now load-bearing rather than defensive:
+
+- **Standstill current reduction stays enabled**, and is now part of the thermal
+  budget rather than a nicety (§2.6).  Holding is ~50 % of run current in
+  standalone mode, which is what makes an always-energised motor affordable
+  inside a sealed PLA drum.
+- **`motion.params` REFUSES `en_idle_off`** rather than ignoring it.  A peer
+  still sending it is asking for de-energised drums; answering `ok` would be the
+  reply-means-receipt failure the 2026-08-24 sweep existed to remove.
+- **Every EN drop invalidates position, and re-asserting EN re-homes** (§5.8).
+  That rule already existed and was written as prudence about drums that "have
+  been sitting de-energized".  It is now a statement about physics: the drums
+  *will* have moved.  It must not be weakened.
+- The NVS key `m_en_idle` is retired in place — not read, not written, not
+  erased.  An inert record beats a write on every boot of an image with no use
+  for it.
+
+### 5.7a Current and thermal contract
+
+**Plan of record: 0.7 A RMS run current, standalone, standstill reduction on.**
+Hold is then ~0.35 A.  Torque margin at 1:1 is ~2× against a reflected demand of
+~9.1 N·cm.  This is both the stand-in bench setting and the provisional
+production setting.
+
+The problem it answers: the motor is now sealed inside a PLA drum that softens
+at 55–60 °C, and the clock holds position ~99 % of the day.  A TMC2209 in
+**standalone** mode can only reduce standstill current to ~50 % of run current,
+so at 1.2 A the sealed motor lands somewhere around 35–48 °C depending on the
+loss model — at the flag.  Dropping run current to 0.7 A puts the hold at 0.35 A
+and the heat becomes uninteresting, at the cost of torque margin that 1:1 can
+afford.
+
+**Vref is set by MEASUREMENT, not by a formula.**  The FYSETC modules' sense
+resistor value is unverified, and the usual `Vref = I_RMS × 2.5 × R_sense`
+arithmetic is only as good as that number.  BRINGUP §28b gate 3 step 2 has the
+procedure and a blank for the measured value on driver #1.
+
+**Plan B, adopted only if the thermal soak fails: UART mode.**  Wire PDN_UART to
+the C5 and set `IHOLD` ≈ 15 % with `IRUN` as needed; this also unlocks StallGuad
+and CoolStep.  **Pin cost, stated so the choice is honest:** the TMC2209 has two
+address bits, so five drivers need either two UART buses or one bus with the
+fifth driver on its own — one or two more GPIOs on a DevKitC-1 map that has
+exactly **one** spare non-strapping pin left (GPIO24), and that pin is now DIR.
+So Plan B on the DevKitC-1 costs a pin the map does not have, and would mean
+giving something up or moving to the strapping pins with a bench check.  On the
+XIAO it is not available at all.  This is why 0.7 A standalone is the plan of
+record and not merely the simpler option.
+
+Either way, **the hold current is a firmware/hardware contract rather than a
+driver default.**  Mechanical gives the motor a conductive path through the
+steel/aluminium support tube but is not relying on it.
 
 ---
 
@@ -532,6 +663,13 @@ four more pins that do not exist.  Consequences, which are real:
   against the obstruction, just not being driven further into it.
 - `drop_enable` is the **only** true de-energize, and it necessarily takes the
   whole display with it.
+- **And since 2026-09-06 it MOVES THE DRUMS.**  The direct-drive drum is
+  statically unbalanced 3.92 N·cm against a 2.2 N·cm detent, so every column
+  swings to its heavy side the moment EN goes down.  Two rules that were
+  written as prudence are therefore now statements about physics and must not
+  be weakened: **a dropped EN invalidates every column's position**, and
+  **re-asserting EN re-homes every non-disabled column**.  Under the rim gear a
+  de-energized drum might have held; under this one it will not.
 - Therefore "stop everything" is the correct response to any signal that
   something structural may be wrong, and the firmware prefers it over trying to
   isolate a column it cannot actually isolate.
@@ -583,6 +721,25 @@ time.  The banner names which columns are out and why.
 - Leaving re-arms everything and re-homes all five, because the drums have been
   moved by hand and nothing knows where they are.
 
+**THE PARK PIN, AND WHY IT IS PAIRED WITH THIS MODE** (mechanical, 2026-09-06).
+Service gains a **park pin through the idler wall that physically locks a drum**.
+The procedure is therefore stated in one order everywhere it appears — BRINGUP,
+`docs/OWNER.md`, and here:
+
+> **Pin in ⇒ maintenance mode ON first.**
+
+A commanded move against a pinned drum is a *deliberate* jam.  The classifier
+will catch it — that is what §5.8's `jam` cause is for, and it stops at once
+without retrying — but it should not have to.  A jam in the journal that a
+person caused on purpose is noise in the one record that is supposed to mean
+something, and the pin is a better brake than a fault path.
+
+No firmware change: maintenance already stops frame scheduling, holds cues,
+disables automatic re-homing and releases EN, which is exactly the state a
+pinned drum wants.  The coupling is a documented procedure, not a sensor — there
+is nothing to detect a pin with, and inventing one would be a worse answer than
+telling the person the order to do two things in.
+
 The two compose, which is the intent: one real column and four simulated during
 build-out; one disabled and four real during a repair.
 
@@ -595,8 +752,9 @@ which is the point - modes, frames, ring, countdown, scheduler and the whole
 web UI are the same code on the same path.
 
 The model is honest where it matters: 272000/33 usteps per revolution as an
-integer DDA (8242 + 14/33, so the 0.42 residue accumulates exactly as the real
-drum does), the Hall window at the correct position, edge jitter, and therefore
+integer DDA — 3200 exactly at the 1:1 direct drive, where the residue is zero.
+The fractional carry is kept rather than deleted so a non-integral geometry does
+not land on a path nothing has ever executed, the Hall window at the correct position, edge jitter, and therefore
 a homing pass that takes the real ~7.5 s at homing speed.  It is division-free
 so it is safe to call from the IRAM ISR.  Fault injection - `sim <col> slip
 <+-usteps>`, `sim <col> miss <n edges>`, `sim <col> clear`, or
@@ -1223,7 +1381,7 @@ set, which was implemented across Phases 3–5 and never written down here; the
 
 | command | payload | effect |
 |---|---|---|
-| `motion.params` | `{flaps_s_normal?, flaps_s_alarm?, flaps_s_home?, accel?, hall_tol?, en_idle_off?, hall_active_low?}` | live motion tuning, no persistence (`motion.save` commits) |
+| `motion.params` | `{flaps_s_normal?, flaps_s_alarm?, flaps_s_home?, accel?, hall_tol?, hall_active_low?, dir_invert?}` | live motion tuning, no persistence (`motion.save` commits). `en_idle_off` is **refused** — the coils must stay energised (§5.7). `dir_invert` is refused on a board with no DIR pin and on a moving axis |
 | `motion.save` | — | persist calibration **and** speeds (one NVS record) |
 | `motion.ramp` / `ramp_stop` | `{column, from, to, step, dwell_s}` | the Calibrate index walk |
 | `config.set` | any of §11's mode keys, plus `tz`, `ntp`, `reveal` | live apply |
@@ -1363,8 +1521,10 @@ axes are Idle at zero velocity (or maintenance is on); suspend frame
 scheduling; hold cues; and reject `motion.rehome` / `motion.spin` /
 `display.frame` / `preset.set` at the dispatcher for the duration.  It does
 **not** mean dropping EN: that de-energizes all five (ganged, §2.2) and a loaded
-drum may creep — `motion.en_idle_off` is false precisely because that has never
-been measured.  The hold is transient, **never persisted**: a hold that survived
+drum may creep.  Since 2026-09-06 that is understated: the direct-drive drum is
+unbalanced past its detent torque, so a de-energized drum does not creep, it
+slews (§5.7).  Dropping EN during an OTA would guarantee five columns needing a
+re-home afterwards.  The hold is transient, **never persisted**: a hold that survived
 a reboot would be maintenance's brick-loop shape all over again.
 
 Rollback covers a crash-reboot, a power cycle **and now a hang**:
@@ -1394,8 +1554,18 @@ motion.flaps_s_normal    default 15
 motion.flaps_s_alarm     default 25
 motion.flaps_s_home      default 8
 motion.accel             default 82000
-motion.hall_tol          default 41
-motion.en_idle_off       default false
+motion.hall_tol          default 16 (a quarter flap; DERIVED from the flap, not
+                         a literal - see 5.4)
+motion.dir_invert        default false.  Which level on the ganged DIR pin turns
+                         the drum in the DESCENDING sense (§4).  The motor sits
+                         inside the drum facing the opposite way to the old gear
+                         drive, so this is a bench measurement (step 3), not
+                         something the spec can state.  Ganged: all five or none;
+                         a single deviant column is a wiring change.  Refused on
+                         a board with no DIR pin, and refused while a column is
+                         MOVING - the driver samples DIR on the next STEP edge,
+                         so flipping it mid-move walks the drum backwards.
+                         NVS key m_dir_inv
 motion.hall_active_low   default true.  The A3144's output is active-LOW with a
                          3V3 pull-up (§2, tagged VERIFY).  Settable live with
                          motion.params, persisted by motion.save, and on the
@@ -1551,13 +1721,27 @@ watchdog cannot see it stop.  §17, 2026-08-24.
    forward flip must DECREMENT the displayed digit (the v3 rings, §4). If not,
    move that driver's DIR tie to the other rail. DIR is tied per driver, so
    this is a per-column fix; coil order on the JSTs does not need to match.
-4. `home 0`, then `revs 0 10` — record hall_to_hall; expect 8242 ± a few.
-   A consistently different value means the microstep setting or gear teeth
-   differ from §3.
+4. `home 0`, then `revs 0 10` — record hall_to_hall.  **Expect 3200, with no
+   spread**, and note that this single number identifies which machine was
+   actually built:
+
+   | reading | machine |
+   |---|---|
+   | **3200 exactly** | the 1:1 direct drive — what is being built |
+   | ~8242 | an 85T/33T rim-gear drum (the original bridge) |
+   | ~7555 | an 85T/36T rim-gear drum (designed, never built) |
+   | ~8369 | 68T/26T (the stale MECHANICAL_README prose) |
+
+   A direct-drive drum has no residue to alternate, so *any* spread is a
+   finding — a slipping coupling, a marginal magnet, or a microstep setting
+   that is not 1/16.
 5. `spin 0 …` sweep 10 → 25 flaps/s with flaps installed; note the rate where
    flaps stop clearing cleanly. That number sets `flaps_s_alarm`.
 6. Edge repeatability: 20 revolutions, report max |err|. Sets `hall_tol`.
-7. `en 0` for 10 min with a loaded drum; does it creep? Decides `en_idle_off`.
+7. ~~`en 0` for 10 min with a loaded drum; does it creep?~~ **OBSOLETE.**  The
+   direct-drive drum is unbalanced 3.92 N·cm against a 2.2 N·cm detent, so it
+   slews rather than creeps and there is nothing to decide — the coils stay
+   energised (§5.7).  What replaces it is the thermal soak, BRINGUP §28b gate 3.
 8. `cal 0 ±n` until blank sits right; `save`; `go 0 <i>` for every index.
 
 ---
@@ -1609,6 +1793,16 @@ Each phase ends with a flashable build and a bench checklist.
    rather than a prop), the chat easter egg and Flame chess.  Nothing in it
    sends a dispatcher command or touches the flaps, except Swan's EXECUTE,
    which uses the same `countdown.execute` path the friendly terminal does.
+
+8. **The stand-in bench build** — the first firmware in this project that drives
+   a real motor.  One real column on a real TMC2209 at 0.7 A measured Vref,
+   standstill reduction on, 64 µsteps/flap, Hall homing: a one-hour
+   clock-cadence heat soak ending in a hand on the motor case, a slow
+   continuous spin for runout and wire routing, and live direction selection.
+   Built as its own flavour (`-DSWAN_BENCH=ON`, reported as
+   `0.4.0+<board>.bench`) because **the show spin is locked out in code**: the
+   stand-in axle is printed PLA and the ≤1 drum rev/s cap is a safety contract,
+   not a config default.  BRINGUP §28b gate 3 is the session.
 
 Toolchain `[Q1, default]`: ESP-IDF 5.5.x (latest patch), C++17, `idf.py`.
 Arduino-as-IDF-component is the fallback if a specific Arduino library is
@@ -3332,8 +3526,17 @@ numbered section — if you find one that disagrees, fix the section.
     (§5.8), the usable flap rate that sets `flaps_s_alarm`, the A3144's active
     level, and whether a loaded drum creeps with EN released (`en_idle_off`).
     Fifteen `VERIFY` tags in this document mark the rest.  **A bench measurement
-    beats this spec**: if `revs 0 10` does not report 8242–8243, the spec is
-    wrong and gets corrected, not explained away.
+    beats this spec**: if `revs 0 10` does not report the expected figure, the
+    spec is wrong and gets corrected, not explained away.
+
+    > **SUPERSEDED IN PART, 2026-09-06.**  This entry was written against the
+    > 85T/33T rim gear.  The drive is now **1:1 direct** and the expected
+    > `hall_to_hall` is **3200 exactly**, not 8242–8243; `en_idle_off` no longer
+    > exists; and DIR is a GPIO on the DevKitC-1.  The paragraph above is left
+    > as it was written because the log is history — see the entry at the end of
+    > this section for what changed.  Everything it says about the MECHANISM
+    > being unverified is still true, and more so: the machine described here
+    > was never built.
   - Three checklist items are the *only* work still waiting on hardware, and
     they are worth naming so nobody hunts for more: **step 20** (the fault
     thresholds — a Hall unplugged mid-run is *expected* to be misclassified as
@@ -3367,3 +3570,119 @@ numbered section — if you find one that disagrees, fix the section.
   The working agreement for how to behave in this repository is `CLAUDE.md`;
   the normative behaviour is the numbered sections above, and a numbered
   section that disagrees with this log is a bug in the spec, not a subtlety.
+
+---
+
+- 2026-09-06 — **DRIVE ARCHITECTURE CHANGED: the rim gear is dead, the motor
+  sits inside the drum, 1:1 direct.**  `docs/ref/DRIVE_CHANGE.md` is the
+  handoff.  With 50 flaps loaded the pinion collided with the card edges at
+  every angular position — a mesh sweep found no collision-free angle — so the
+  motor moved inside the drum and drives it directly.  Gated on a printed
+  stand-in axle before any purchase (§15 phase 8).
+
+  **WHICH CONSTANTS ERA THE TREE ACTUALLY HELD, since the answer decides how
+  much of this was a two-step change: 33T, throughout.**  The 36T revision never
+  reached this repository.  Every `1360/9`, `7555` and `151.1` in the tree was
+  in the new handoff describing them as the "was", or coincidental digits in
+  vendor files and the logo vector data.  So the firmware went straight from
+  85T/33T to direct drive, and **the handoff's "was" column does not describe
+  what was replaced** — a reader comparing it against git history would
+  otherwise conclude a commit had gone missing.  It had not; the report had.
+
+  | | was (in this repo) | now |
+  |---|---|---|
+  | reduction | 85/33 = 2.5758 | **1 : 1** |
+  | µsteps/flap | 5440/33 = 164.85 | **64, exact** |
+  | µsteps/drum rev | 272000/33 = 8242.42 | **3200, exact** |
+  | hall-to-hall | 8242 **or** 8243, alternating | **3200, flat** |
+
+  - **The fractional machinery is KEPT, and so is the edge re-basing.**
+    Exactness is a bonus, not a licence to delete them: §5.3's mid-move rebase
+    absorbs a drum that has physically slipped, not merely arithmetic.  Two
+    host tests now exercise the rounding path at the ratio the machine used to
+    have, so the kept code is not code nothing runs.
+  - **Two defaults were literals that silently changed meaning.**
+    `HALL_TOL_SILENT` was 41 — a quarter of the rim gear's 165-µstep flap — and
+    would have become 64 % of a flap, widening the silent band until it
+    swallowed real slips; it derives from a flap now and is 16.  The simulated
+    drum's Hall window was 60 µsteps, an angle of ~2.6°, and would have modelled
+    a magnet almost three times wider than the one on the disc; it derives too,
+    and is 23.  Both are the same failure: a constant whose comment stops being
+    true.
+  - **The wrong-drum signature changed character, and improved.**  A rim-gear drum
+    against direct-drive firmware is out by 5042 µsteps a revolution, so it runs
+    past the missed-edge window and FAULTS instead of resyncing Major every
+    revolution and carrying on.  Firmware built for the wrong machine now stops
+    rather than running wrong.
+
+  **THE STEP BUDGET REVERSES A PENDING ARCHITECTURAL CHANGE**, and this is the
+  largest consequence for firmware.  `docs/HARDWARE_PLAN_2.md` §3 states, and
+  was right for the rim gear, that the show spin at ~400 flaps/s needs ~66 k
+  steps/s per column and ~330 k aggregate, that this *"forecloses software step
+  generation"*, and that the firmware would have to move to LEDC/MCPWM/RMT with
+  the GPIO map constrained by peripheral channels.  At 1:1 the same show spin is
+  **25 600 per column, 128 000 aggregate, against a 50 k-per-axis ISR ceiling —
+  51.2 % duty**.  The migration is **cancelled, not deferred**, and it was never
+  actually available: the C5 has two RMT TX channels for five axes, so the rim
+  gear's show spin exceeded the ISR ceiling *and* the peripheral count, a
+  requirement with no solution on this MCU.  §5.2 carries the table and a
+  `static_assert` guards the figure.
+
+  **Holding became a contract** (§5.7).  The drum's static imbalance is
+  3.92 N·cm against a 2.2 N·cm detent, so an unpowered drum does not creep, it
+  slews to its heavy side.  `motion.en_idle_off` is therefore **deleted** rather
+  than defaulted — the key is retired in NVS, the state field is gone, the
+  Settings toggle is replaced by a statement, and `motion.params` *refuses* the
+  key rather than ignoring it.  Two rules in §5.8 that were written as prudence
+  are now statements about physics and must not be weakened: **a dropped EN
+  invalidates every position**, and **re-asserting EN re-homes**.  Standstill
+  current reduction stays on and is now part of the thermal budget.
+
+  **Current and thermal** (§5.7a).  Plan of record: **0.7 A RMS run, standalone,
+  hold ~0.35 A**, ~2× torque margin at 1:1 — the stand-in setting and the
+  provisional production setting.  Vref is set by MEASUREMENT on driver #1
+  (BRINGUP §28b gate 3 step 2 has the procedure and the blank); the FYSETC sense
+  resistor is unverified, so the usual arithmetic is only as good as a number
+  nobody has checked.  **Plan B is UART/IHOLD at ~15 % hold**, adopted only if
+  the soak fails, and its pin cost is stated rather than glossed: five TMC2209s
+  have two address bits, so it needs one or two more GPIOs on a DevKitC-1 map
+  whose last spare non-strapping pin has just gone to DIR — and on the XIAO it
+  is not available at all.
+
+  **DIR is a GPIO again** (§2.2), ganged, GPIO24.  The 2026-08-21 rejection was
+  right for the bridge design — the motor hung outside, the gear train fixed the
+  sense, and the pin was one the XIAO could not spare — and is obsolete now that
+  the motor faces the other way inside the drum.  The ring is descending, so
+  getting the sense backwards makes every countdown count up; settling it in
+  firmware beats settling it with a soldering iron.  **The XIAO cannot have it**:
+  eleven non-strapping pins, all eleven used, and the only free pins are
+  strapping.  `PIN_DIR = -1` there and both the dispatcher and the UI say so
+  rather than offering a control that cannot work.
+
+  **Decel**: energy per drum is unchanged (~2.1 J at show speed) but the motor
+  turns 2.36× slower for the same flap rate, so back-EMF at show speed is 2.36×
+  lower.  **The 2 s ramp floor is KEPT until the bench measures it.**  It very
+  likely relaxes — the shunt sees less, and windage still bleeds most of it —
+  but "likely" is not a number, and the thing being protected is a driver rail.
+  Recorded so the relaxation is a measurement rather than an assumption.
+  (`docs/HARDWARE_PLAN_2.md` quotes 0.8 J/drum and ~1 s against the 2.1 J and
+  2 s used here; both are estimates from different inertia assumptions and the
+  bench settles it.)
+
+  Also: the same `motion.accel` now gives **2.6× the drum angular acceleration**
+  it did, because a µstep is 2.58× more drum angle, while reflected torque
+  demand rose to ~9.1 N·cm.  `motion.accel` is open again and bench step 5
+  re-derives it; the default is unchanged only because nothing has measured a
+  better one.  §14.1 step 7 (the EN-creep test) is struck out as obsolete.
+
+- 2026-09-06 — **The park pin is paired with maintenance mode, in the docs**
+  (mechanical).  Service gains a pin through the idler wall that physically
+  locks a drum, and the procedure is stated in one order everywhere it appears:
+  **pin in ⇒ maintenance mode on first**.  A commanded move against a pinned
+  drum is a deliberate jam; §5.8's classifier will catch it and stop without
+  retrying, but it should not have to, and a jam somebody caused on purpose is
+  noise in the one record meant to mean something.  No firmware change —
+  maintenance already stops the frame layer, holds cues, disables re-homing and
+  releases EN, which is the state a pinned drum wants.  There is nothing to
+  detect a pin with and inventing a sensor would be a worse answer than telling
+  a person the order to do two things in.  §5.9, BRINGUP and `docs/OWNER.md`.

@@ -21,6 +21,8 @@
 #include "hal/pins.h"
 #include "modes/mode_manager.h"
 #include "motion/motion.h"
+#include "motion/bench.h"
+#include "motion/bench_policy.h"
 #include "motion/soak.h"
 #include "ring/ring.h"
 #include "ring/ring_store.h"
@@ -82,7 +84,13 @@ int cmd_pins(int, char**) {
     for (int i = 0; i < N_COLUMNS; ++i) {
         std::printf("  col %d  STEP=GPIO%-2d  HALL=GPIO%-2d\n", i, PIN_STEP[i], PIN_HALL[i]);
     }
-    std::printf("  EN=GPIO%d (ganged, active low)   DIR: tied at the drivers, no GPIO\n", PIN_EN);
+    std::printf("  EN=GPIO%d (ganged, active low)\n", PIN_EN);
+    if (HAS_DIR_GPIO) {
+        std::printf("  DIR=GPIO%d (ganged) dir_invert=%d\n", PIN_DIR,
+                    motion::params().dir_invert ? 1 : 0);
+    } else {
+        std::printf("  DIR: tied at the drivers - no spare non-strapping pin here\n");
+    }
     std::printf("  I2S BCLK=GPIO%d LRCLK=GPIO%d DIN=GPIO%d\n", PIN_I2S_BCLK, PIN_I2S_LRCLK,
                 PIN_I2S_DIN);
     std::printf("  BUTTON=GPIO%d  LED=GPIO%d (%s)\n", PIN_BUTTON, PIN_LED,
@@ -169,7 +177,7 @@ int cmd_dir(int argc, char** argv) {
         std::printf("this board has no DIR GPIO; DIR is tied at the drivers\n");
         return 1;
     }
-    motion::MotionParams p = motion::params();
+    MotionParams p = motion::params();
     if (argc == 1) {
         std::printf("dir_invert = %d  (GPIO%d, ganged across all five drivers)\n",
                     p.dir_invert ? 1 : 0, swan::PIN_DIR);
@@ -190,6 +198,79 @@ int cmd_dir(int argc, char** argv) {
     p.dir_invert = (v != 0);
     motion::set_params(p);
     std::printf("dir_invert = %d\n", p.dir_invert ? 1 : 0);
+    return 0;
+}
+
+// The stand-in bench session (BRINGUP 28b gate 3).  Present in every build so
+// the refusal is legible: on a normal image `bench` explains that it is not a
+// bench image rather than reporting an unknown command.
+int cmd_bench(int argc, char** argv) {
+    if (!motion::BENCH_BUILD) {
+        const esp_app_desc_t* d = esp_app_get_description();
+        std::printf("not a bench image (this is %s)\n", d != nullptr ? d->version : "?");
+        std::printf("the stand-in session needs a capped build:\n");
+        std::printf("  .\\build.ps1 -B build-bench -DSWAN_BENCH=ON app\n");
+        return 1;
+    }
+    if (argc >= 2 && std::strcmp(argv[1], "stop") == 0) {
+        motion::bench_stop("stopped from the console");
+        std::printf("stopping\n");
+        return 0;
+    }
+    if (argc >= 2 && std::strcmp(argv[1], "spin") == 0) {
+        if (argc != 5) {
+            std::printf("usage: bench spin <col> <flaps_s> <seconds>   (cap %d flaps/s)\n",
+                        static_cast<int>(motion::BENCH_MAX_FLAPS_S));
+            return 1;
+        }
+        long col, fs, secs;
+        if (!parse_long(argv[2], col) || !parse_long(argv[3], fs) ||
+            !parse_long(argv[4], secs)) {
+            return 1;
+        }
+        return motion::bench_spin_start(static_cast<int>(col), static_cast<int32_t>(fs),
+                                        static_cast<int>(secs))
+                   ? 0
+                   : 1;
+    }
+    if (argc >= 2 && std::strcmp(argv[1], "soak") == 0) {
+        if (argc < 3 || argc > 5) {
+            std::printf("usage: bench soak <col> [minutes] [tick_s]\n");
+            std::printf("  default 60 minutes, one flap a second\n");
+            return 1;
+        }
+        long col, mins = 60, tick = 1;
+        if (!parse_long(argv[2], col)) return 1;
+        if (argc >= 4 && !parse_long(argv[3], mins)) return 1;
+        if (argc >= 5 && !parse_long(argv[4], tick)) return 1;
+        motion::BenchSchedule sch;
+        sch.total_s = static_cast<uint32_t>(mins * 60);
+        sch.tick_s = static_cast<uint32_t>(tick);
+        if (!motion::bench_soak_start(static_cast<int>(col), sch)) return 1;
+        std::printf("soak started: column %ld, %ld min, one flap every %ld s\n", col,
+                    mins, tick);
+        std::printf("leave it alone.  `bench` for progress, `bench stop` to abort.\n");
+        return 0;
+    }
+    // Status.
+    const motion::BenchStats st = motion::bench_report();
+    std::printf("bench image, cap %d flaps/s (1 drum rev/s); show spin (%d) is absent\n",
+                static_cast<int>(motion::BENCH_MAX_FLAPS_S),
+                static_cast<int>(motion::SHOW_SPIN_FLAPS_S));
+    if (!motion::bench_running() && st.total_s == 0) {
+        std::printf("no run yet.  `bench soak <col>` starts the hour.\n");
+        return 0;
+    }
+    std::printf("  column %d  %u/%u s  flaps=%u revs=%u\n", st.column,
+                static_cast<unsigned>(st.elapsed_s), static_cast<unsigned>(st.total_s),
+                static_cast<unsigned>(st.flaps), static_cast<unsigned>(st.edges));
+    std::printf("  h2h %d..%d  worst err %d  minor=%u major=%u faults=%u\n",
+                static_cast<int>(st.h2h_min), static_cast<int>(st.h2h_max),
+                static_cast<int>(st.err_abs_max),
+                static_cast<unsigned>(st.resync_minor),
+                static_cast<unsigned>(st.resync_major),
+                static_cast<unsigned>(st.faults));
+    std::printf("  %s\n", motion::bench_running() ? "RUNNING" : st.stopped_because);
     return 0;
 }
 
@@ -334,9 +415,9 @@ int cmd_revs(int argc, char** argv) {
                     static_cast<unsigned long>(seen), static_cast<long>(lo),
                     static_cast<long>(hi), static_cast<double>(sum) / seen,
                     static_cast<long>(hi - lo));
-        std::printf("expected %lld for the %d/%d gearing; set motion.hall_tol from the spread\n",
-                    static_cast<long long>(USTEPS_PER_SPOOL_REV_NOMINAL), GEAR_DRIVEN_TEETH,
-                    GEAR_DRIVE_TEETH);
+        std::printf("expected %lld EXACTLY at the 1:1 direct drive; set motion.hall_tol\n",
+                    static_cast<long long>(USTEPS_PER_SPOOL_REV_NOMINAL));
+        std::printf("from the spread - which should be zero, so any spread is a finding\n");
     }
     std::printf("index is now unknown - re-home before `go`\n");
     return 0;
@@ -979,6 +1060,8 @@ esp_err_t start() {
     reg("button", "button [seconds] - live BOOT/button level, and edges", cmd_button);
     reg("en", "en 0|1 - driver enable (ganged)", cmd_en);
     reg("dir", "dir [0|1] - ganged direction; bench step 3 sets it", cmd_dir);
+    reg("bench", "bench [soak <col> [min] [tick] | spin <col> <fs> <s> | stop] - stand-in session",
+        cmd_bench);
     reg("step", "step <col> <usteps> - open loop", cmd_step);
     reg("home", "home <col>|all", cmd_home);
     reg("go", "go <col> <index|token>", cmd_go);

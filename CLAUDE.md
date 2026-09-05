@@ -32,10 +32,28 @@ and open question is there. This file is the working agreement.
 ## Hard technical constraints
 
 - Rotation is one direction only. Every move is `(target − current) mod 50`
-  flips forward. DIR is tied in hardware; there is no DIR GPIO.
-- µsteps per spool revolution is **8242.42 — not an integer**. Positions are
-  expressed relative to the most recent Hall edge using
-  `T(i) = (2*i*5440 + 33) / 66`. Do not accumulate per-flap step counts.
+  flips forward. **DIR is a ganged GPIO** (GPIO24 on the DevKitC-1) since
+  2026-09-06 — one pin, five drivers, `motion.dir_invert`. The XIAO has no
+  spare non-strapping pin, so `PIN_DIR = -1` there and DIR is tied at the
+  drivers; code must handle `HAS_DIR_GPIO == false` rather than assume.
+- **DIRECT DRIVE, 1:1** (2026-09-06, `docs/ref/DRIVE_CHANGE.md`). The motor
+  sits stationary inside the drum. **64 µsteps per flap, 3200 per drum
+  revolution, both exact**; `hall_to_hall` is a flat 3200 and any spread is a
+  finding. The rim gear is dead — the pinion collided with the loaded flaps at
+  every angle.
+  **The fractional machinery and the edge re-basing STAY** even though the
+  arithmetic is now exact: they absorb a drum that physically slipped, not
+  rounding. Two host tests exercise the rounding path at the old ratio so it is
+  not untested code. Do not accumulate per-flap step counts.
+- **The coils stay energised.** `en_idle_off` is gone. The drum is unbalanced
+  3.92 N·cm against a 2.2 N·cm detent, so an unpowered drum *slews*. Every EN
+  drop invalidates position and re-asserting EN re-homes — physics now, not
+  caution, and not to be weakened.
+- **Constants that mean "a fraction of a flap" must DERIVE from a flap.** Two
+  literals silently changed meaning at the drive swap: `hall_tol` (41 was ¼ of
+  the old flap, would have become 64% of the new one) and the sim drum's Hall
+  window. Both derive now. A constant whose comment stops being true is worse
+  than one that is merely wrong.
 - The pin map lives in one header (`components/swan_hal/include/hal/pins.h`)
   selected by a board define (`-DSWAN_BOARD=devkitc1|xiao`), so XIAO vs
   DevKitC-1 is a build flag, not a code change.
@@ -118,6 +136,8 @@ main/                          app_main.cpp, task wiring
 components/swan_hal/           pin map, GPIO bank writes, I2S init, LED (ESP-IDF owns the name `hal`)
 components/motion/             axis_control.{h,cpp}: pure control core (host-tested);
                                soak.{h,cpp}: overnight wrap test (spec 15 phase 6);
+                               bench_policy.h + bench.{h,cpp}: the stand-in bench
+                               session and its compiled-in speed cap (phase 8);
                                fault_policy.{h,cpp} + column_mode.h: fault causes,
                                escalation, per-column real/sim/disabled (pure);
                                sim_drum.h: modelled drum for simulated axes;
@@ -229,6 +249,22 @@ Spec §5.8–§5.10 and §7.4. Rules that later phases must keep:
   to enter it before touching a drum. That is a safety claim; keep it true.
 
 ## Current phase
+
+**2026-09-06: THE DRIVE ARCHITECTURE CHANGED** — see the two bullets above and
+spec §3/§5.7/§5.2. The largest firmware consequence is that the **step-generation
+migration is cancelled**: `docs/HARDWARE_PLAN_2.md` §3 said the rim gear's show
+spin (~66 k steps/s per column) forecloses software step generation and forces
+LEDC/MCPWM/RMT. At 1:1 it is 25.6 k per column, 128 k aggregate, 51.2 % of the
+ISR ceiling — the GPTimer + DDA in §5.2 stands, and it was never really an
+option anyway (two RMT TX channels for five axes).
+
+**The stand-in bench build is the current work** (`-DSWAN_BENCH=ON`, reported as
+`0.4.0+<board>.bench`, BRINGUP §28b gate 3). It is the first firmware here that
+drives a real motor. **The show spin is locked out in code**: every commanded
+speed is clamped to 1 drum rev/s at the one place speeds enter the motion layer,
+because the stand-in axle is printed PLA and the cap is a safety contract rather
+than a config default. `bench soak` refuses a simulated column, for the same
+reason. Do not add a way to lift the cap.
 
 **Phases 4, 5 and 6 done and verified on the board.** Phase 4/5: MQTT with HA
 discovery, OTA with rollback (survival proven in both directions, BRINGUP §23),

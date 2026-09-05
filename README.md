@@ -190,6 +190,45 @@ more than once.
 On a machine without Device Guard, none of that applies: `idf.py flash` does the
 lot.
 
+## The stand-in bench build
+
+The first firmware here that drives a real motor (BRINGUP §28b gate 3, spec §15
+phase 8). One real column, one real TMC2209, on a **printed PLA stand-in axle**.
+
+```bash
+.\build.ps1 -B build-bench -DSWAN_BENCH=ON set-target esp32c5
+```
+
+```bash
+.\build.ps1 -B build-bench -DSWAN_BENCH=ON -p COM3 app-flash monitor
+```
+
+It reports itself as `0.4.0+devkitc1.bench` everywhere a version is read, so an
+OTA cannot put a capped image on the wall by accident.
+
+**The show spin is absent from this image, and cannot be turned back on.** Every
+commanded speed is clamped to **50 flaps/s — one drum revolution per second** at
+`motion::set_params`, the single place speeds enter the motion layer, so a value
+from NVS, a Settings slider or an MQTT peer cannot lift it. `bench spin` above
+the cap is refused outright rather than quietly run slower, because a spin asks
+for a speed for a reason. The axle is printed; the cap is a safety contract, not
+a config default.
+
+Console commands in this build:
+
+| command | what |
+|---|---|
+| `bench soak <col> [min] [tick_s]` | the one-hour clock-cadence heat soak; ends by asking for the hand-on-the-case verdict |
+| `bench spin <col> <flaps_s> <s>` | slow continuous spin for runout and wire routing, ≤ 50 flaps/s |
+| `bench` | progress and the cap |
+| `bench stop` | abort a soak |
+| `dir [0|1]` | ganged direction — bench step 3 sets it |
+
+`bench soak` **refuses a simulated column.** Everything in this repository since
+2026-08-23 has run against modelled drums; this session exists to put current
+through a real coil, and a modelled drum would produce a beautiful hour of logs
+and answer nothing.
+
 ## Restoring a released build — no toolchain needed
 
 Tagged states are published as flashable images on the

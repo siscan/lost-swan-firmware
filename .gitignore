@@ -13,5 +13,12 @@ build-xiao/
 build_xiao/
 build_release/
 build_gate/
+build-bench/
+build_bench/
+# Any future out-of-tree build directory. The named entries above stay so the
+# common ones are obvious, but a new -B name must not be able to add 100k
+# lines of CMake scratch to a commit, which is exactly what build-bench did.
+build-*/
+build_*/
 sdkconfig
 compile_commands.json

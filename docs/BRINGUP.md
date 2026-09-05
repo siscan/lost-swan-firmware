@@ -4,6 +4,41 @@ Results go in this file as they come in. If a bench result contradicts the spec,
 the spec is wrong: fix `docs/FIRMWARE_SPEC.md` and append to its §17 decision log
 (CLAUDE.md).
 
+## THE DRIVE CHANGED — read this before anything else
+
+**2026-09-06: the rim gear is dead.  The motor sits stationary INSIDE the drum
+and turns it directly, 1:1** (`docs/ref/DRIVE_CHANGE.md`, spec §3).  With 50
+flaps loaded the pinion collided with the card edges at every angular position,
+so there was no version of the gear drive that worked.
+
+Three things follow that change what you do at the bench:
+
+1. **`revs 0 10` must read 3200, exactly.**  It is now the single number that
+   identifies which machine was built, and the candidates are far apart:
+
+   | reading | machine |
+   |---|---|
+   | **3200, no spread** | the 1:1 direct drive — what is being built |
+   | ~8242 | an 85T/33T rim-gear drum (the original bridge) |
+   | ~7555 | an 85T/36T rim-gear drum (designed, never built, never in firmware) |
+   | ~8369 | 68T/26T (the stale MECHANICAL_README prose) |
+
+   A direct-drive drum has no residue to alternate, so **any spread at all is a
+   finding** — a slipping coupling, a marginal magnet, or a microstep setting
+   that is not 1/16.
+
+2. **The coils stay energised, always.**  The drum is unbalanced 3.92 N·cm
+   against a 2.2 N·cm detent, so an unpowered drum does not creep — it *slews*
+   to its heavy side.  `en_idle_off` is gone.  Every EN drop invalidates
+   position and re-asserting EN re-homes; that is now physics, not caution.
+
+3. **THE PARK PIN: pin in ⇒ maintenance mode ON FIRST.**  Service has a pin
+   through the idler wall that physically locks a drum.  Enter maintenance
+   before the pin goes in, every time.  A commanded move against a pinned drum
+   is a deliberate jam — the classifier will catch it and stop without retrying,
+   but it should not have to, and a jam you caused on purpose is noise in the
+   one record that is supposed to mean something.
+
 ## Before you connect the first motor — read this
 
 A cold read of these documents on 2026-08-24 found three things a first-time
@@ -115,10 +150,10 @@ ends in a blank to fill in.
 
 | gate | status |
 |---|---|
-| `.\build.ps1 set-target esp32c5` + `.\build.ps1` | **passes** — ESP-IDF v5.5.5, DevKitC-1 **1,529 KB** app (40% of the partition free), zero warnings |
+| `.\build.ps1 set-target esp32c5` + `.\build.ps1` | **passes** — ESP-IDF v5.5.5, DevKitC-1 **1,530 KB** app (40% of the partition free), zero warnings |
 | `.\build.ps1 -B build-xiao -DSWAN_BOARD=xiao app` | **passes** — **1,511 KB**. Exercises the alternate pin map and its strapping-pin `static_assert`s |
 | LittleFS payload | **208,372 bytes** of a 256 KB budget on a 2048 KB partition — the UI, the presentation terminal, the glyph sheet, the Phase 7 pack, the audio placeholders and `ring.json`.  Gzipped EXCEPT the files the firmware itself reads (`ring.json`, the WAVs): `ring_store` opens the path directly and knows nothing about gzip |
-| host tests (`.\test-host.ps1`) | **19 C++ suites + 4 JavaScript suites pass.** The four (`test_flap`, `test_countdown`, `test_logo`, `test_toggles`) need node, which this Windows machine does not have — the runner reports them SKIPPED and Linux CI runs them on every push, so **a green local run is not a green run** |
+| host tests (`.\test-host.ps1`) | **20 C++ suites + 4 JavaScript suites pass.** The four (`test_flap`, `test_countdown`, `test_logo`, `test_toggles`) need node, which this Windows machine does not have — the runner reports them SKIPPED and Linux CI runs them on every push, so **a green local run is not a green run** |
 | `git diff` empty after `tools/ringgen.py` | **clean** — regeneration is byte-identical |
 | motion cross-task handoff explicit | **done** — spinlock + request mailbox + relaxed atomics + the `AxisCtl::seq` seqlock (`docs/MOTION_SYNC.md`) |
 | chip revision ≥ v1.0 | **v1.2** — production silicon, verified by esptool and the bootloader |
@@ -126,6 +161,10 @@ ends in a blank to fill in.
 | unwired homing fails cleanly | **done** — all five latch FAULT after 3 re-homes; no hang |
 | pin map, no strapping conflict | **done** — `pins` matches §2.2 |
 | the physical button (GPIO28) | **partly** — the read path, the boot log and `button` verified on the board; **a real press needs a thumb** and has never happened |
+| the stand-in bench image | **builds**, reports `0.4.0+devkitc1.bench`, and CI proves the cap compiles and that it refuses to also be a release image |
+| the DIRECT DRIVE geometry | **unverified against any drum.** `revs 0 10` must read 3200 exactly; nothing has turned a direct-drive drum |
+| Vref / 0.7 A run current | **not measured.** The FYSETC sense resistor is unverified, so the arithmetic is not a substitute (28b gate 3 step 2) |
+| the thermal question | **open, and it is the gate.** A NEMA 17 sealed in a PLA drum holding current all day — 28b gate 3 step 6 |
 | every bench step needing mechanics | **not run** — needs motors, drivers and Halls |
 
 Three things on that list are **the only work in this file still waiting on
@@ -267,7 +306,7 @@ order on the JSTs does not need to match.
 
 - Result: DIR rail = ______
 
-### 4. `home 0`, then `revs 0 10` — the gear ratio question
+### 4. `home 0`, then `revs 0 10` — which machine is this?
 
 This is the step that settles the 85T/33T vs 68T/26T conflict between
 `FIRMWARE_HANDOFF.md` §1 and `MECHANICAL_README.md:67`.
@@ -310,7 +349,19 @@ ceiling is measured here, not assumed.
 
 - Result: spread = ______ → hall_tol = ______
 
-### 7. `en 0` for 10 minutes with a loaded drum
+### 7. ~~`en 0` for 10 minutes with a loaded drum~~ — OBSOLETE
+
+**Struck out 2026-09-06.**  The question was whether a loaded drum creeps with
+EN released, so that `en_idle_off` could default true and run the motors cooler.
+The direct drive answered it without the test: static imbalance 3.92 N·cm
+against a 2.2 N·cm detent means the drum *slews*, not creeps.  `en_idle_off` no
+longer exists (spec §5.7).
+
+What replaces it is the thermal question in the other direction — the motor is
+now sealed inside a PLA drum and holds current all day — and that is **§28b
+gate 3**, below.
+
+### 7-obsolete. (original text kept for the record)
 
 - [ ] Does it creep? If it holds, `motion.en_idle_off` can default true (cooler
       motors). Until measured it stays false.
@@ -1158,3 +1209,204 @@ board at 375x812 and 1920x1080, with no horizontal overflow at either.
   moves the Hall edge; it cannot detect a card fluttering, bouncing or failing
   to seat, because the drum position stays correct while the display looks
   wrong.  Anything about flap behaviour is watched, not logged.
+
+
+---
+
+## 28b gate 3 — THE STAND-IN BENCH SESSION
+
+**This is the first firmware in this project that will drive a real motor.**
+Everything since 2026-08-23 has run on real silicon against modelled drums; this
+session puts current through a coil and ends with a hand on a warm motor case.
+
+**What it is gating.** Mechanical will not buy parts for the in-drum motor
+design until this passes. The question is narrow and physical: *a NEMA 17 is
+sealed inside a PLA drum that softens at 55–60 °C, and the clock holds position
+99 % of the day — does it cook?*
+
+**What you need on the bench**
+
+- one column: drum on the **printed PLA stand-in axle**, one NEMA 17 inside it,
+  one **FYSETC TMC2209**, one A3144 Hall and its magnet at R52
+- the ESP32-C5 board, 12 V to the driver, USB to the PC
+- a multimeter with a fine probe or a clip
+- a small screwdriver for the driver's trimpot
+- **a timer, and an hour you are not going to need the bench for**
+
+**The build is its own flavour, and it is not optional.**
+
+```bash
+.\build.ps1 -B build-bench -DSWAN_BENCH=ON set-target esp32c5
+```
+
+```bash
+.\build.ps1 -B build-bench -DSWAN_BENCH=ON app
+```
+
+```bash
+.\build.ps1 -B build-bench -DSWAN_BENCH=ON -p COM3 app-flash monitor
+```
+
+It reports itself as `0.4.0+devkitc1.bench` in the boot log, in `sys.version`
+and to an OTA. **The show spin is absent from this image.** Every commanded
+speed is clamped to **50 flaps/s = 1 drum rev/s** at the one place speeds enter
+the motion layer, so a value from NVS, a Settings slider or an MQTT peer cannot
+lift it; `bench spin` above the cap is refused outright rather than quietly run
+slower. The stand-in axle is printed and the cap is a safety contract, not a
+config default. A build that can exceed it is a different build.
+
+---
+
+### Step 1 — wire it, and check the Hall before the motor moves
+
+- [ ] `pins` — confirm the map, and that **DIR=GPIO24** appears
+- [ ] `hall` — wave the magnet past the sensor; `magnet=YES` when present.
+      If it reads inverted, `motion.params {"hall_active_low": false}` and
+      `save`. Do this before homing, or homing hunts for an edge that reads
+      backwards.
+- [ ] `col 0 real` — the bench soak **refuses a simulated column**, on purpose.
+      A modelled drum would produce a beautiful hour of logs and answer nothing.
+
+### Step 2 — SET VREF BY MEASUREMENT — 0.7 A RMS
+
+**Do this before enabling the driver, with the motor unplugged.** The usual
+`Vref = I_RMS × 2.5 × R_sense` arithmetic is only as good as `R_sense`, and the
+FYSETC modules' sense resistor value is **unverified** — that is the whole
+reason this is a measurement and not a calculation.
+
+1. Power the driver from 12 V with **the motor disconnected** and EN released
+   (`en 0`).
+2. Put the meter's negative on driver GND. Touch the positive to the **trimpot
+   wiper** — on a FYSETC TMC2209 that is the metal screw head itself. Do not
+   short it to the neighbouring pads; a slipped probe here kills the driver.
+3. Turn the pot and read Vref directly.
+4. Target, for **0.7 A RMS** with the common 0.11 Ω sense resistor:
+   `Vref ≈ 0.7 × 2.5 × 0.11 = 0.193 V`. If the module is 0.15 Ω it is 0.263 V.
+   **Which it is, is what you are about to find out** — set the pot to the 0.11 Ω
+   figure, then confirm the actual current in step 5 and adjust.
+5. Record it here, because the next session cannot re-derive it:
+
+   ```
+   driver #1 serial / marking : ______________________
+   sense resistor (if legible): ______________ ohm
+   Vref set                   : ______________ V
+   measured phase current     : ______________ A RMS   (step 5)
+   date / who                 : ______________________
+   ```
+
+- [ ] Vref set and **written down above**
+
+### Step 3 — direction: the drum must turn the DESCENDING way
+
+The motor now faces the opposite way inside the drum, so which DIR level gives
+the show's sense is not knowable on paper.
+
+- [ ] `en 1`, `home 0`
+- [ ] `go 0 1` and watch: **one forward flip must DECREMENT the displayed
+      digit** (spec §4 — the rings are descending).
+- [ ] If it increments: `dir 1`, `home 0`, try again.
+- [ ] `save` — persists with the calibration.
+
+Refused while a column is moving, deliberately: the driver samples DIR on the
+next STEP edge, so flipping it mid-move walks the drum backwards.
+
+### Step 4 — homing and the machine's identity
+
+- [ ] `home 0` completes without a fault
+- [ ] `revs 0 10` — record it:
+
+   ```
+   hall_to_hall (10 revolutions): ______________
+   spread (hi − lo)             : ______________   <- should be ZERO
+   ```
+
+**Expect 3200 with no spread.** Anything else, stop and read the table at the
+top of this file — the number tells you which machine you are holding. A spread
+on a direct drive is a slipping coupling, a marginal magnet, or a microstep
+setting that is not 1/16.
+
+### Step 5 — confirm the current you actually set
+
+- [ ] With the motor connected and a move running, measure one phase current
+      (clamp meter, or a low-side shunt if you have one rigged).
+- [ ] Compare against the 0.7 A RMS target and adjust Vref; **re-record both
+      numbers in step 2's block.**
+
+If your meter cannot do this honestly, say so in the block rather than writing
+a number you inferred. An unverified current invalidates the thermal result,
+which is the only thing this session exists to produce.
+
+### Step 6 — THE ONE-HOUR HEAT SOAK
+
+```
+bench soak 0
+```
+
+Sixty minutes, one flap per second, on column 0. Leave it alone. `bench` prints
+progress; `bench stop` aborts.
+
+**Why one flap a second, when the clock moves every fifteen minutes.** The heat
+is almost entirely **holding** current: a flap at 15 flaps/s occupies ~67 ms, so
+even at one flap a second the coils are holding for >93 % of the hour, and at
+the clock's real cadence >99.99 %. Those are the same thermal question. What the
+faster tick buys is *motion* data — 3600 flaps and 72 drum revolutions of Hall
+edges, resyncs and edge errors — so the hour answers two things instead of one.
+If you want the literal clock duty, `bench soak 0 60 900`.
+
+- [ ] soak ran the **full hour** — a short run is not a shorter answer, it is no
+      answer, and the firmware says so rather than printing a verdict prompt
+
+**At the end the firmware stops and asks.** Put a hand on the motor case:
+
+```
+comfortable to hold           -> well inside margin
+hot but you can keep it there -> around 45-50 C, marginal
+you snatch your hand away     -> FAIL, go to UART/IHOLD (spec 5.7a Plan B)
+```
+
+Record the verdict — an unrecorded verdict is an hour that has to happen twice:
+
+```
+hand-on-case verdict : ______________________________________
+drum exterior (also) : ______________________________________
+flaps / revs         : ______________  /  ______________
+hall_to_hall min..max: ______________  worst edge err: ________
+resyncs minor/major  : ______________  faults: ________
+heap start / min     : ______________  /  ______________
+date / who           : ______________________
+```
+
+### Step 7 — the slow spin: runout and wire routing
+
+```
+bench spin 0 25 20
+```
+
+Twenty seconds at 25 flaps/s (half the cap). Then, if that looked right:
+
+```
+bench spin 0 50 20
+```
+
+One drum revolution per second — the fastest this image will go.
+
+- [ ] no visible wobble or runout at the drum rim
+- [ ] the motor leads exiting the Ø6 support-tube bore do not snag, chafe or
+      wind up (fixed motor, no slip ring — the leads should simply sit there)
+- [ ] nothing rubs the flaps
+- [ ] `bench spin 0 400 5` is **REFUSED**, with the reason. Try it once so you
+      have seen the refusal work rather than trusting that it does.
+
+### What passing means, and what it does not
+
+Passing gates the **purchase**. It does not verify the machine: this is a
+printed stand-in axle, one column, and an hour. It says the motor survives its
+duty cycle sealed in a drum at 0.7 A, that the drum turns true at 1 rev/s, and
+that the geometry reads 3200.
+
+It says **nothing** about the show spin, which this image cannot produce, about
+five columns' thermal behaviour in a shared enclosure, or about the aluminium
+faceplate. Those come after the real axle.
+
+**If it fails:** spec §5.7a Plan B — UART mode, `IHOLD` ≈ 15 %. Read the pin
+cost there first; it is not free on either board map.

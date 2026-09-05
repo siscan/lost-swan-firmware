@@ -11,6 +11,8 @@
 
 #include "motion/motion.h"
 
+#include "motion/bench_policy.h"
+
 #include "driver/gpio.h"
 #include "driver/gptimer.h"
 #include "esp_attr.h"
@@ -549,21 +551,34 @@ esp_err_t init(const MotionParams& p) {
 }
 
 void set_params(const MotionParams& p) {
+    MotionParams q = p;
+    // THE BENCH CAP IS APPLIED HERE, at the one place every speed enters the
+    // motion layer, and it CLAMPS rather than trusts.  A bench image can be
+    // handed speeds from NVS written by another build, from the Settings
+    // sliders, or from a peer over MQTT; none of those may put the show spin
+    // through a printed axle.  In a normal build bench_clamp_flaps_s is the
+    // identity and this costs nothing.
+    q.flaps_s_normal = bench_clamp_flaps_s(q.flaps_s_normal);
+    q.flaps_s_alarm = bench_clamp_flaps_s(q.flaps_s_alarm);
+    q.flaps_s_home = bench_clamp_flaps_s(q.flaps_s_home);
     portENTER_CRITICAL(&g_lock);
-    g_params = p;
+    g_params = q;
     // g_hall_invert is read by the step ISR, so it is published inside the
     // spinlock like everything else in that group.
-    g_hall_invert = p.hall_active_low ? HALL_MASK_ALL : 0u;
+    // Everything below reads `q`, not `p`.  They are identical for fields the
+    // cap does not touch, but reading the argument here would silently bypass
+    // the clamp the day another field joins it.
+    g_hall_invert = q.hall_active_low ? HALL_MASK_ALL : 0u;
     portEXIT_CRITICAL(&g_lock);
     // DIR takes effect immediately, which is the point: bench step 3 is a
     // person watching a drum and typing `dir` until it turns the descending
     // way.  The pin is a level the driver samples on the next STEP edge, so
     // changing it between moves is safe; changing it DURING one would reverse
     // mid-move, which is why the dispatcher refuses it on a moving axis.
-    g_dir_invert.store(p.dir_invert, RLX);
+    g_dir_invert.store(q.dir_invert, RLX);
     apply_dir_level();
     for (int i = 0; i < N_COLUMNS; ++i) {
-        g_ctl[i].cal_offset.store(normalize_cal(p.cal[i]), RLX);
+        g_ctl[i].cal_offset.store(normalize_cal(q.cal[i]), RLX);
     }
 }
 

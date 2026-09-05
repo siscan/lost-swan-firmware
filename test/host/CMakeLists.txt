@@ -70,7 +70,7 @@ else()
 endif()
 
 # test name -> optional data-file argument (argv[1], g_argv1 in check.h)
-set(SWAN_TESTS test_ring test_motion_math test_axis_sim test_ring_json test_tz test_frame test_modes test_wear test_fault_policy test_fault_matrix test_mqtt_bridge test_ha_discovery test_ota test_portal test_audio test_journal test_ring_stream test_button test_api)
+set(SWAN_TESTS test_ring test_motion_math test_axis_sim test_ring_json test_tz test_frame test_modes test_wear test_fault_policy test_fault_matrix test_mqtt_bridge test_ha_discovery test_ota test_portal test_audio test_journal test_ring_stream test_button test_api test_bench_policy)
 set(test_ring_json_ARGS ${SWAN_ROOT}/data/ring.json)
 set(test_ring_stream_ARGS ${SWAN_ROOT}/data/ring.json)
 # Sniffed against the REAL built binary when there is one; the suite says so

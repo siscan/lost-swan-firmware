@@ -32,6 +32,9 @@ message(STATUS "LOST Swan board: ${SWAN_BOARD}")
 # in is exactly the thing that could be mistaken for the real display.
 option(SWAN_SIM_AXES "Compile the simulated-drum axes in (runtime-selectable)" ON)
 option(SWAN_RELEASE "Release build: refuse anything that could fake the mechanism" OFF)
+# The stand-in bench build (BRINGUP 28b gate 3).  One real column on a PRINTED
+# PLA axle: the speed cap is compiled in and there is no key that lifts it.
+option(SWAN_BENCH "Stand-in bench build: hard speed cap, no show spin" OFF)
 
 if(SWAN_RELEASE AND SWAN_SIM_AXES)
     message(FATAL_ERROR
@@ -39,8 +42,19 @@ if(SWAN_RELEASE AND SWAN_SIM_AXES)
         "simulated axes. Build with -DSWAN_SIM_AXES=OFF.")
 endif()
 
+# A bench image is a BENCH image.  It caps every commanded speed at one drum
+# revolution per second because the axle is printed, so it must never be
+# mistaken for something that can drive the finished machine.
+if(SWAN_BENCH AND SWAN_RELEASE)
+    message(FATAL_ERROR
+        "SWAN_BENCH=1 with SWAN_RELEASE=1: a capped bench image is not a "
+        "release image. Pick one.")
+endif()
+
 idf_build_set_property(COMPILE_DEFINITIONS
                        "SWAN_SIM_AXES=$<BOOL:${SWAN_SIM_AXES}>" APPEND)
+idf_build_set_property(COMPILE_DEFINITIONS
+                       "SWAN_BENCH=$<BOOL:${SWAN_BENCH}>" APPEND)
 if(SWAN_RELEASE)
     idf_build_set_property(COMPILE_DEFINITIONS "SWAN_RELEASE=1" APPEND)
 endif()
@@ -59,7 +73,12 @@ message(STATUS "LOST Swan simulated axes: ${SWAN_SIM_AXES}  release: ${SWAN_RELE
 #
 # Set before project(), which is where IDF reads it.
 set(SWAN_VERSION "0.4.0")
-if(SWAN_RELEASE)
+if(SWAN_BENCH)
+    # First in the chain deliberately: a capped image must announce itself
+    # as one wherever a version string is read - the boot log, sys.version,
+    # and an OTA that would otherwise put a capped image on the wall.
+    set(SWAN_FLAVOUR "bench")
+elseif(SWAN_RELEASE)
     set(SWAN_FLAVOUR "rel")
 elseif(SWAN_SIM_AXES)
     set(SWAN_FLAVOUR "sim")
