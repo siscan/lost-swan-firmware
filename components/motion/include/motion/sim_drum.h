@@ -11,7 +11,10 @@
 //      cache and the ISR stalls, dropping steps.
 //
 // So the edge position advances INCREMENTALLY, with the same integer DDA the
-// step generator uses: one revolution is 272000/33 = 8242 usteps plus 14/33.
+// step generator uses.  At the 1:1 direct drive one revolution is 3200 usteps
+// exactly and the fractional carry is always zero; the carry is KEPT because
+// the drive ratio is data (ring/geometry.h) and a future non-integral geometry
+// would otherwise land on a path nothing had ever executed.
 // The hot path is a bool test and two comparisons; the once-per-revolution
 // advance is integer adds.  No division anywhere the ISR can reach.
 //
@@ -30,7 +33,15 @@ struct SimDrum {
     int32_t rev_int = static_cast<int32_t>(USTEPS_PER_SPOOL_REV_NUM / USTEPS_PER_SPOOL_REV_DEN);
     int32_t rev_frac = static_cast<int32_t>(USTEPS_PER_SPOOL_REV_NUM % USTEPS_PER_SPOOL_REV_DEN);
     int32_t rev_den = static_cast<int32_t>(USTEPS_PER_SPOOL_REV_DEN);
-    int32_t window = 60;   // operate window width in usteps
+    // Operate window width.  A property of the MAGNET, not of the drive, so it
+    // is expressed as a fixed drum angle: the model has always assumed ~2.6
+    // degrees, which was 60 usteps under the rim gear and is 23 at 1:1.  Left
+    // at 60 it would have silently modelled a magnet almost three times wider
+    // than the one on the disc - a model that flatters homing.  VERIFY: the
+    // real arc is set by the A3144 and the 6x3 N35 at R52, and has never been
+    // measured.
+    int32_t window = static_cast<int32_t>(USTEPS_PER_SPOOL_REV_NUM /
+                                          (USTEPS_PER_SPOOL_REV_DEN * 137));
     int32_t jitter = 0;    // max +- per-edge jitter, usteps; does NOT accumulate
 
     // --- state, advanced by the ISR ---

@@ -167,28 +167,34 @@ SlipResult run_slip(int64_t slip) {
 }
 
 void test_slip_classification() {
-    // 30 usteps: within HALL_TOL_SILENT -> minor, nothing else.
-    SlipResult r30 = run_slip(30);
-    CHECK(r30.minor >= 1);
-    CHECK_EQ(r30.major, 0);
-    CHECK_EQ(r30.faults, 0);
-    CHECK(r30.err_at_slip >= 28 && r30.err_at_slip <= 32);
-    CHECK(r30.recovered_idle);
+    // THE BANDS MOVED WITH THE DRIVE.  A flap is 64 usteps at 1:1 rather than
+    // 165, so the silent band is 16 and a fault starts at 65.  The slips below
+    // are the same THREE CASES as before - inside silent, inside a flap, past a
+    // flap - re-expressed in the new geometry rather than left at numbers that
+    // would quietly all come out as "fault".
+    //
+    // 10 usteps: within HALL_TOL_SILENT -> minor, nothing else.
+    SlipResult r10 = run_slip(10);
+    CHECK(r10.minor >= 1);
+    CHECK_EQ(r10.major, 0);
+    CHECK_EQ(r10.faults, 0);
+    CHECK(r10.err_at_slip >= 8 && r10.err_at_slip <= 12);
+    CHECK(r10.recovered_idle);
 
-    // 100 usteps: major resync, accepted, no fault.
+    // 40 usteps: past silent, inside one flap -> major resync, accepted.
+    SlipResult r40 = run_slip(40);
+    CHECK_EQ(r40.major, 1);
+    CHECK_EQ(r40.faults, 0);
+    CHECK(r40.err_at_slip >= 38 && r40.err_at_slip <= 42);
+    CHECK(r40.recovered_idle);
+
+    // 100 usteps: > one flap -> FAULT, then the automatic re-home succeeds.
     SlipResult r100 = run_slip(100);
-    CHECK_EQ(r100.major, 1);
-    CHECK_EQ(r100.faults, 0);
-    CHECK(r100.err_at_slip >= 98 && r100.err_at_slip <= 102);
+    CHECK_EQ(r100.faults, 1);
+    CHECK(r100.rehomes >= 1);
+    CHECK_EQ(r100.gave_up, 0);
     CHECK(r100.recovered_idle);
-
-    // 200 usteps: > one flap -> FAULT, then the automatic re-home succeeds.
-    SlipResult r200 = run_slip(200);
-    CHECK_EQ(r200.faults, 1);
-    CHECK(r200.rehomes >= 1);
-    CHECK_EQ(r200.gave_up, 0);
-    CHECK(r200.recovered_idle);
-    CHECK_EQ(r200.final_index, RING_HOME_SLOT);  // re-home landed on index 0
+    CHECK_EQ(r100.final_index, RING_HOME_SLOT);  // re-home landed on index 0
 }
 
 // ---------------------------------------------------------------------------
@@ -197,51 +203,76 @@ void test_slip_classification() {
 void test_cal_normalisation() {
     CHECK_EQ(normalize_cal(0), 0);
     CHECK_EQ(normalize_cal(100), 100);
-    CHECK_EQ(normalize_cal(-100), 8142);            // negative
-    CHECK_EQ(normalize_cal(8242), 0);               // exactly one rev
-    CHECK_EQ(normalize_cal(8242 * 2 + 5), 5);       // > 1 rev
-    CHECK_EQ(normalize_cal(-8242 - 3), 8239);       // < -1 rev
-    CHECK_EQ(normalize_cal(8241), 8241);
+    CHECK_EQ(normalize_cal(-100), 3100);            // negative
+    CHECK_EQ(normalize_cal(3200), 0);               // exactly one rev
+    CHECK_EQ(normalize_cal(3200 * 2 + 5), 5);       // > 1 rev
+    CHECK_EQ(normalize_cal(-3200 - 3), 3197);       // < -1 rev
+    CHECK_EQ(normalize_cal(3199), 3199);
 
-    // Behavioural: homing with a normalised negative offset lands 8142 usteps
+    // Behavioural: homing with a normalised negative offset lands 3100 usteps
     // past the edge - most of a revolution forward, never a reverse move.
     SimAxis ax;
     setup_axis(ax, -100, 2000);
-    CHECK_EQ(ax.ctl.cal_offset.load(RLX), 8142);
+    CHECK_EQ(ax.ctl.cal_offset.load(RLX), 3100);
     ax.post_home();
     CHECK(ax.run_until_idle());
     CHECK_EQ(ax.index(), RING_HOME_SLOT);
-    CHECK(offset_close(ax, 8142));
+    CHECK(offset_close(ax, 3100));
 }
 
 // ---------------------------------------------------------------------------
-// A 68T/26T drum (8369.23 usteps/rev) against firmware built for 85/33: a
-// major resync every revolution, never a fault.  This is the exact signature
-// bench step 4 discriminates on.
+// THE RIGHT DRUM: 3200 usteps a revolution, exactly, every revolution.  The
+// positive control for bench step 4, and a stronger assertion than anything
+// available under the rim gear, where each revolution carried a 0.42 ustep
+// residue and h2h legitimately alternated between 8242 and 8243.
 // ---------------------------------------------------------------------------
-void test_wrong_gearing_signature() {
+void test_direct_drive_signature() {
     SimAxis ax;
     setup_axis(ax, 40, 700);
-    ax.drum.rev_num = 108800;  // 217600/26 reduced
-    ax.drum.rev_den = 13;
+    // drum.rev_num / rev_den default to the geometry: 3200 / 1.
 
     ax.post_home();
     CHECK(ax.run_until_idle());
     CHECK_EQ(ax.index(), RING_HOME_SLOT);
 
-    // 20 revolutions open loop.
-    ax.post_step_open(20 * 8370, 25);
-    CHECK(ax.run_until_idle(20'000'000));
+    ax.post_step_open(20 * 3200, 25);
+    CHECK(ax.run_until_idle(20000000));
 
     const uint32_t revs = ax.ctl.revs.load(RLX);
-    const uint32_t major = ax.ctl.resync_major.load(RLX);
     CHECK(revs >= 19 && revs <= 21);
-    CHECK(major >= revs - 1 && major <= revs);  // every classified rev is major
-    CHECK_EQ(ax.ctl.faults.load(RLX), 0);
+    CHECK_EQ(ax.ctl.resync_major.load(RLX), 0u);    // nothing to resync
+    CHECK_EQ(ax.ctl.faults.load(RLX), 0u);
     CHECK_EQ(ax.gave_up_events, 0);
-    // h2h reads the real drum, not the assumption:
+    CHECK_EQ(ax.ctl.hall_to_hall.load(RLX), 3200);  // exact, not a range
+}
+
+// ---------------------------------------------------------------------------
+// THE WRONG DRUM.  The realistic mis-build is no longer a near-miss tooth
+// count - it is a different machine: a drum still on the 85T/33T rim gear,
+// 8242 usteps a revolution, read by firmware built for direct drive.
+//
+// The signature changed character with the drive, and for the better.  Under
+// the rim gear a wrong drum resynced Major every revolution and kept running,
+// which took 20 revolutions and a careful look at h2h to notice.  Now the
+// expected edge is 5042 usteps early, so the axis runs past the missed-edge
+// window at 1.5 nominal revolutions and FAULTS long before the real edge
+// arrives.  Firmware built for the wrong machine stops rather than running
+// wrong, which is the behaviour worth having.
+// ---------------------------------------------------------------------------
+void test_wrong_drum_faults_immediately() {
+    SimAxis ax;
+    setup_axis(ax, 40, 700);
+    ax.drum.rev_num = 272000;   // the dead 85T/33T rim gear
+    ax.drum.rev_den = 33;
+
+    ax.post_home();
+    ax.run_until_idle(20000000);
+
+    // It must NOT quietly report clean revolutions of the wrong length.
+    CHECK(ax.ctl.faults.load(RLX) >= 1u || ax.gave_up_events >= 1);
+    CHECK(ax.ctl.revs.load(RLX) < 2u);
     const int32_t h2h = ax.ctl.hall_to_hall.load(RLX);
-    CHECK(h2h >= 8368 && h2h <= 8371);
+    CHECK(h2h == 0 || h2h > 3200);   // never a plausible-looking 3200
 }
 
 // ---------------------------------------------------------------------------
@@ -418,7 +449,11 @@ void test_slip_during_go_is_absorbed() {
     ax.post_go(5);
     ax.run(20'000);  // mid-move, before the edge
     CHECK(ax.state() == AxisState::Moving);
-    ax.drum.slip_usteps += 30;
+    // Inside the silent band, which is 16 usteps at 1:1 rather than the rim
+    // gear's 41 - the point of the test is that the REBASE absorbs it, so the
+    // slip has to stay small enough that the classifier is not the thing
+    // reacting.
+    ax.drum.slip_usteps += 10;
 
     CHECK(ax.run_until_idle());
     CHECK_EQ(ax.index(), 5);
@@ -496,7 +531,8 @@ void run_tests() {
     test_slip_classification();
     test_early_edge_classifies_as_fault();
     test_slip_during_go_is_absorbed();
-    test_wrong_gearing_signature();
+    test_direct_drive_signature();
+    test_wrong_drum_faults_immediately();
     test_edge_jitter();
     test_no_magnet_faults();
     test_stop_during_homing_aborts_cleanly();

@@ -82,9 +82,17 @@ struct EdgeTolerances {
     int32_t major;   // one flap
 };
 
+// The silent band is a QUARTER FLAP (spec 5.4), and it is derived rather than
+// written out: it used to be the literal 41, which was a quarter of the rim
+// gear's 165-ustep flap and would have silently become 64% of a flap when the
+// drive went 1:1 and a flap became 64 usteps.  A tolerance that stops meaning
+// what its comment says is worse than one that is merely wrong.
+//
+// Both are still VERIFY: bench step 6 measures edge repeatability over 20
+// revolutions and `motion.hall_tol` is set from the result.
 inline constexpr EdgeTolerances DEFAULT_EDGE_TOLERANCES{
-    41,                                          // 1/4 flap [default], spec 5.4
-    static_cast<int32_t>(ring_target_usteps(1)),  // 165 usteps
+    static_cast<int32_t>(ring_target_usteps(1) / 4),  // 1/4 flap = 16 usteps
+    static_cast<int32_t>(ring_target_usteps(1)),      // one flap = 64 usteps
 };
 
 constexpr int64_t edge_error(int64_t hall_abs_prev, int64_t hall_abs_now) {

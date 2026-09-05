@@ -5,8 +5,9 @@
 // that it runs for HOURS and remembers.  A resync every few hundred revolutions
 // is invisible in a five-second bench test and obvious after a night; heap that
 // falls by a few hundred bytes an hour is a leak you cannot see any other way;
-// and hall_to_hall drifting away from 8242 is the drum telling you the geometry
-// in spec 3 is wrong.
+// and hall_to_hall drifting away from 3200 is the drum telling you the geometry
+// in spec 3 is wrong.  At the 1:1 direct drive that number is EXACT, so a soak
+// that reports anything but a flat 3200 is saying something.
 //
 // It drives motion:: directly, one flip at a time, closed loop - which is the
 // path that has the edge verification in it.  It is deliberately NOT a mode:

@@ -13,38 +13,87 @@ namespace {
 // T(i) and the non-integer ratio (spec 3)
 // --------------------------------------------------------------------------
 void test_geometry_constants() {
+    // DIRECT DRIVE, 1:1 (docs/ref/DRIVE_CHANGE.md).  Every one of these is now
+    // an exact integer; under the old 85T/33T rim gear none of them were.
     CHECK_EQ(USTEPS_PER_MOTOR_REV, 3200);
-    CHECK_EQ(USTEPS_PER_FLAP_NUM, 5440);
-    CHECK_EQ(USTEPS_PER_FLAP_DEN, 33);
-    CHECK_EQ(USTEPS_PER_SPOOL_REV_NUM, 272000);
-    CHECK_EQ(USTEPS_PER_SPOOL_REV_DEN, 33);
-    CHECK_EQ(USTEPS_PER_SPOOL_REV_NOMINAL, 8242);
+    CHECK_EQ(USTEPS_PER_FLAP_NUM, 64);
+    CHECK_EQ(USTEPS_PER_FLAP_DEN, 1);
+    CHECK_EQ(USTEPS_PER_SPOOL_REV_NUM, 3200);
+    CHECK_EQ(USTEPS_PER_SPOOL_REV_DEN, 1);
+    CHECK_EQ(USTEPS_PER_SPOOL_REV_NOMINAL, 3200);
 
     // The speed table in spec 3, recomputed rather than copied.
-    CHECK_EQ(flaps_s_to_usteps_s(8), 1319);
-    CHECK_EQ(flaps_s_to_usteps_s(15), 2473);
-    CHECK_EQ(flaps_s_to_usteps_s(20), 3297);
-    CHECK_EQ(flaps_s_to_usteps_s(25), 4121);
+    CHECK_EQ(flaps_s_to_usteps_s(8), 512);
+    CHECK_EQ(flaps_s_to_usteps_s(15), 960);
+    CHECK_EQ(flaps_s_to_usteps_s(20), 1280);
+    CHECK_EQ(flaps_s_to_usteps_s(25), 1600);
+
+    // The show spin, which is the number that decided the step-gen
+    // architecture (spec 5.2).  At the old ratio this was ~66k usteps/s per
+    // column against a hard TICK_HZ ceiling of 50k - not reachable from a
+    // timer ISR, and not reachable with peripherals either, because the C5 has
+    // two RMT TX channels for five axes.  At 1:1 it fits with room to spare.
+    CHECK_EQ(flaps_s_to_usteps_s(400), 25600);
+    // The ceiling that matters is PER AXIS: the DDA emits at most one step per
+    // ISR tick, so no axis can exceed TICK_HZ however many axes there are.
+    // 25,600 of a 50,000 ceiling: 51.2% duty.  Comfortable, but NOT the 2x
+    // margin it would be tempting to claim - the test says so rather than the
+    // comment, because the honest number is what the bench has to live with.
+    CHECK(flaps_s_to_usteps_s(400) <= TICK_HZ);
+    CHECK(flaps_s_to_usteps_s(400) * 100 / TICK_HZ == 51);
 }
 
 void test_ring_target() {
     CHECK_EQ(ring_target_usteps(0), 0);
-    CHECK_EQ(ring_target_usteps(1), 165);   // round(164.8485)
-    CHECK_EQ(ring_target_usteps(50), 8242);  // round(8242.4242)
+    CHECK_EQ(ring_target_usteps(1), 64);     // exact at 1:1
+    CHECK_EQ(ring_target_usteps(50), 3200);  // exact at 1:1
 
-    // Strictly increasing, and never more than half a ustep from the true value:
-    // |T(i) - i*5440/33| <= 1/2  <=>  |66*T(i) - 2*i*5440| <= 33.
+    // Strictly increasing, and never more than half a ustep from the true
+    // value.  Written against the CONSTANTS rather than against 5440/33, so it
+    // keeps its meaning through a geometry change:
+    //   |T(i) - i*NUM/DEN| <= 1/2   <=>   |2*DEN*T(i) - 2*i*NUM| <= DEN.
     for (int64_t i = 1; i <= 200; ++i) {
         CHECK(ring_target_usteps(i) > ring_target_usteps(i - 1));
-        const int64_t resid = 66 * ring_target_usteps(i) - 2 * i * USTEPS_PER_FLAP_NUM;
-        CHECK(resid <= 33 && resid >= -33);
+        const int64_t resid = 2 * USTEPS_PER_FLAP_DEN * ring_target_usteps(i) -
+                              2 * i * USTEPS_PER_FLAP_NUM;
+        CHECK(resid <= USTEPS_PER_FLAP_DEN && resid >= -USTEPS_PER_FLAP_DEN);
     }
 
-    // A revolution is 8242 or 8243 usteps depending on phase - the 0.42 residue
-    // shows up here and is absorbed at every Hall edge (spec 5.3).
+    // At 1:1 every revolution is EXACTLY 3200 usteps and the residue that the
+    // rim gear carried is identically zero.
+    for (int64_t i = 0; i < 50; ++i) {
+        CHECK_EQ(ring_target_usteps(i + 50) - ring_target_usteps(i), 3200);
+    }
+}
+
+// The rounding machinery is kept although 1:1 makes it exact (spec 3: exactness
+// is a bonus, not a licence to delete it).  Kept code that nothing exercises is
+// how a future geometry change lands on an untested path - so it is exercised
+// here with the ratio it actually used to have, 85T/33T, where the answers are
+// known and were checked against the bench plan.
+void test_fractional_machinery_still_works() {
+    // The same expression as ring_target_usteps, with the ratio as parameters.
+    const auto target_with = [](int64_t i, int64_t num, int64_t den) {
+        return (2 * i * num + den) / (2 * den);
+    };
+    constexpr int64_t NUM = 5440, DEN = 33;   // the dead 85T/33T rim gear
+
+    CHECK_EQ(target_with(0, NUM, DEN), 0);
+    CHECK_EQ(target_with(1, NUM, DEN), 165);    // round(164.8485)
+    CHECK_EQ(target_with(50, NUM, DEN), 8242);  // round(8242.4242)
+
+    // Half-ustep bound holds under a genuinely fractional ratio.
+    for (int64_t i = 1; i <= 200; ++i) {
+        CHECK(target_with(i, NUM, DEN) > target_with(i - 1, NUM, DEN));
+        const int64_t resid = 2 * DEN * target_with(i, NUM, DEN) - 2 * i * NUM;
+        CHECK(resid <= DEN && resid >= -DEN);
+    }
+
+    // And the 0.42-ustep-per-rev residue alternates 8242/8243 exactly as it did
+    // - the behaviour spec 5.3's edge re-basing exists to absorb.
     bool saw_8242 = false, saw_8243 = false;
     for (int64_t i = 0; i < 50; ++i) {
-        const int64_t rev = ring_target_usteps(i + 50) - ring_target_usteps(i);
+        const int64_t rev = target_with(i + 50, NUM, DEN) - target_with(i, NUM, DEN);
         CHECK(rev == 8242 || rev == 8243);
         if (rev == 8242) saw_8242 = true;
         if (rev == 8243) saw_8243 = true;
@@ -58,15 +107,30 @@ void test_ring_target() {
 // guard on that whole decision.
 void test_no_accumulation() {
     constexpr int64_t FLAPS = 2500;  // 50 revolutions
+
+    // At 1:1 accumulation and computation agree exactly, because a flap is a
+    // whole number of usteps.  Asserted so the equality is a stated property
+    // rather than a coincidence nobody checked.
     const int64_t exact = ring_target_usteps(FLAPS);
-    CHECK_EQ(exact, 412121);
-
+    CHECK_EQ(exact, FLAPS * 64);
     int64_t naive = 0;
-    for (int64_t i = 0; i < FLAPS; ++i) naive += ring_target_usteps(1);  // 165 each
-    CHECK_EQ(naive, 412500);
+    for (int64_t i = 0; i < FLAPS; ++i) naive += ring_target_usteps(1);
+    CHECK_EQ(naive, exact);
 
-    // Naive accumulation is already off by more than two flaps after 50 revs.
-    CHECK(naive - exact > 2 * ring_target_usteps(1));
+    // AND THE RULE STILL HAS TEETH.  The direct drive made this particular
+    // failure impossible, it did not make the rule wrong - T(i) is still
+    // computed from i, and the moment a geometry is not integral the drift
+    // comes back.  Demonstrated on the ratio the machine actually had:
+    const auto target_with = [](int64_t i, int64_t num, int64_t den) {
+        return (2 * i * num + den) / (2 * den);
+    };
+    constexpr int64_t NUM = 5440, DEN = 33;          // the dead 85T/33T rim gear
+    const int64_t exact_frac = target_with(FLAPS, NUM, DEN);
+    CHECK_EQ(exact_frac, 412121);
+    int64_t naive_frac = 0;
+    for (int64_t i = 0; i < FLAPS; ++i) naive_frac += target_with(1, NUM, DEN);
+    CHECK_EQ(naive_frac, 412500);                    // 165 each, accumulated
+    CHECK(naive_frac - exact_frac > 2 * target_with(1, NUM, DEN));
 }
 
 // --------------------------------------------------------------------------
@@ -118,14 +182,17 @@ void test_plan_target() {
 void test_edge_anchor_offset() {
     CHECK_EQ(edge_anchor_offset(0, 0), 0);
     CHECK_EQ(edge_anchor_offset(40, 5), 40 + ring_target_usteps(5));
-    CHECK_EQ(edge_anchor_offset(8142, 1), 65);    // 8142 + 165 - 8242
-    CHECK_EQ(edge_anchor_offset(200, 49), 36);    // 200 + 8078 - 8242
-    CHECK_EQ(edge_anchor_offset(8241, 49), 8077); // wraps once, not twice
+    // Cases where cal + T(to) exceeds a revolution and must reduce.  Written
+    // out arithmetically so a geometry change makes them fail loudly rather
+    // than silently testing nothing.
+    CHECK_EQ(edge_anchor_offset(3100, 49), 3100 + 3136 - 3200);  // 3036
+    CHECK_EQ(edge_anchor_offset(200, 49), 200 + 3136 - 3200);    // 136
+    CHECK_EQ(edge_anchor_offset(3199, 49), 3199 + 3136 - 3200);  // 3135, once not twice
 
     // The invariant the termination proof rests on: for EVERY legal cal and
     // dest, the anchor offset is sub-revolution, so a rebased target can never
     // recede across successive edges.
-    for (int32_t cal = 0; cal < 8242; cal += 97) {
+    for (int32_t cal = 0; cal < USTEPS_PER_SPOOL_REV_NOMINAL; cal += 97) {
         for (int to = 0; to < RING_SLOT_COUNT; ++to) {
             const int64_t e = edge_anchor_offset(cal, to);
             CHECK(e >= 0 && e < USTEPS_PER_SPOOL_REV_NOMINAL);
@@ -146,7 +213,7 @@ void test_retarget_on_edge() {
     const int64_t provisional = plan_target(hall_old, cal, pos, 5);
 
     // The real edge lands 3 usteps late.  The target rebases onto it.
-    const int64_t hall_new = 8242 + 3;
+    const int64_t hall_new = USTEPS_PER_SPOOL_REV_NOMINAL + 3;
     const int64_t corrected = retarget_on_edge(hall_new, cal, hall_new, 5);
     CHECK_EQ(corrected, hall_new + cal + ring_target_usteps(5));
     CHECK(corrected != provisional);  // the correction actually did something
@@ -166,28 +233,40 @@ void test_retarget_on_edge() {
 // --------------------------------------------------------------------------
 void test_edge_classification() {
     const EdgeTolerances tol = DEFAULT_EDGE_TOLERANCES;
-    CHECK_EQ(tol.silent, 41);
-    CHECK_EQ(tol.major, 165);
+    // Both derive from the flap, so they followed the drive change: a quarter
+    // flap is 16 usteps now, and a flap is 64.
+    CHECK_EQ(tol.silent, 16);
+    CHECK_EQ(tol.major, 64);
 
     CHECK(classify_edge_error(0, tol) == EdgeVerdict::Minor);
-    CHECK(classify_edge_error(41, tol) == EdgeVerdict::Minor);
-    CHECK(classify_edge_error(-41, tol) == EdgeVerdict::Minor);
-    CHECK(classify_edge_error(42, tol) == EdgeVerdict::Major);
-    CHECK(classify_edge_error(165, tol) == EdgeVerdict::Major);
-    CHECK(classify_edge_error(-165, tol) == EdgeVerdict::Major);
-    CHECK(classify_edge_error(166, tol) == EdgeVerdict::Fault);
-    CHECK(classify_edge_error(-166, tol) == EdgeVerdict::Fault);
+    CHECK(classify_edge_error(16, tol) == EdgeVerdict::Minor);
+    CHECK(classify_edge_error(-16, tol) == EdgeVerdict::Minor);
+    CHECK(classify_edge_error(17, tol) == EdgeVerdict::Major);
+    CHECK(classify_edge_error(64, tol) == EdgeVerdict::Major);
+    CHECK(classify_edge_error(-64, tol) == EdgeVerdict::Major);
+    CHECK(classify_edge_error(65, tol) == EdgeVerdict::Fault);
+    CHECK(classify_edge_error(-65, tol) == EdgeVerdict::Fault);
 
-    // A clean revolution measures 8242 or 8243; both are silent.
-    CHECK_EQ(edge_error(1000, 1000 + 8242), 0);
-    CHECK_EQ(edge_error(1000, 1000 + 8243), 1);
-    CHECK(classify_edge_error(edge_error(1000, 1000 + 8243), tol) == EdgeVerdict::Minor);
+    // At 1:1 a clean revolution measures EXACTLY 3200 - there is no residue to
+    // alternate any more, which is itself the strongest single check that the
+    // drum on the bench is the direct-drive one.
+    CHECK_EQ(edge_error(1000, 1000 + 3200), 0);
+    CHECK_EQ(edge_error(1000, 1000 + 3201), 1);
+    CHECK(classify_edge_error(edge_error(1000, 1000 + 3201), tol) == EdgeVerdict::Minor);
 
-    // The 68T/26T drum would read ~8369 per revolution.  That is a Major resync
-    // every rev, not a fault - which is exactly the signature bench step 4 is
-    // looking for (see geometry.h).
-    CHECK_EQ(edge_error(0, 8369), 127);
-    CHECK(classify_edge_error(127, tol) == EdgeVerdict::Major);
+    // WRONG-DRUM SIGNATURES (geometry.h has the pedigree).  A drum still on the
+    // 85T/33T rim gear, read by direct-drive firmware, is out by 5042 usteps a
+    // revolution - 78 flaps.  That is not a resync, it is an immediate Fault,
+    // and it is unmistakable, which is the point: the two machines can no
+    // longer be confused for one another by a marginal number.
+    CHECK_EQ(edge_error(0, 8242), 5042);
+    CHECK(classify_edge_error(edge_error(0, 8242), tol) == EdgeVerdict::Fault);
+    // The never-built 36T revision would have read 7555 - equally unmistakable.
+    CHECK(classify_edge_error(edge_error(0, 7555), tol) == EdgeVerdict::Fault);
+
+    // A genuine Major is a much smaller number now, because a flap is 64
+    // usteps rather than 165: past the silent tolerance but inside one flap.
+    CHECK(classify_edge_error(tol.silent + 1, tol) == EdgeVerdict::Major);
 
     // The missed-edge window is a revolution and a HALF, not a revolution and
     // a flap.  At the old width a slip of just over one flap and a drum that
@@ -196,10 +275,10 @@ void test_edge_classification() {
     // arrives as a late edge (Slip, retried) and only a real absence trips it
     // (Jam, never retried).
     CHECK(!edge_overdue(0, 0));
-    CHECK(!edge_overdue(8242, 0));
-    CHECK(!edge_overdue(8242 + 166, 0));    // a one-flap slip is still just late
-    CHECK(!edge_overdue(8242 + 4000, 0));   // so is a big one
-    CHECK(edge_overdue(8242 + 4200, 0));    // past 1.5 revolutions: it stopped
+    CHECK(!edge_overdue(3200, 0));
+    CHECK(!edge_overdue(3200 + 64, 0));     // a one-flap slip is still just late
+    CHECK(!edge_overdue(3200 + 1500, 0));   // so is a big one
+    CHECK(edge_overdue(3200 + 1700, 0));    // past 1.5 revolutions: it stopped
 }
 
 // --------------------------------------------------------------------------
@@ -271,31 +350,42 @@ void test_ramp_arrives_exactly() {
     CHECK(seconds > 2.3 && seconds < 2.8);
 
     // Single flip, and a single ustep: short moves must still land exactly.
-    for (int64_t d : {int64_t{1}, int64_t{2}, ring_target_usteps(1), wrap, int64_t{8242}}) {
+    for (int64_t d : {int64_t{1}, int64_t{2}, ring_target_usteps(1), wrap,
+                      USTEPS_PER_SPOOL_REV_NOMINAL}) {
         SimResult s = simulate_move(d, v_alarm, accel);
         CHECK(s.finished);
         CHECK_EQ(s.steps, d);
         CHECK(s.peak_v <= v_alarm);
     }
 
-    // A short move is triangular: it never reaches cruise speed.
-    SimResult tri = simulate_move(60, v_alarm, accel);
+    // A short move is triangular: it never reaches cruise speed.  The distance
+    // needed to reach cruise fell with the speed - v^2/2a is ~16 usteps at 1:1
+    // against ~104 under the rim gear - so this has to be a shorter move than
+    // it used to be to still be testing what it says.
+    SimResult tri = simulate_move(20, v_alarm, accel);
     CHECK(tri.finished);
     CHECK(tri.peak_v < v_alarm);
 
-    // 0 -> alarm speed in about 50 ms (spec 5.2).
+    // 0 -> alarm speed in about 20 ms.
+    //
+    // IT USED TO BE ~50 ms AT THE SAME `accel`, and that difference is a real
+    // mechanical change rather than a test detail: alarm speed is now 1600
+    // usteps/s instead of 4121, so the same 82000 usteps/s^2 reaches it 2.6x
+    // sooner - which at 1:1 is 2.6x the DRUM angular acceleration, against a
+    // reflected torque demand that also rose (no gear reduction).  The bench
+    // re-derives `motion.accel`; spec 5.2 records that it is now open.
     int32_t v = 0;
     int ticks_to_full = 0;
     while (v < v_alarm && ticks_to_full < 10000) {
         v = ramp_next_velocity(1000000, v, RampParams{v_alarm, accel, CONTROL_HZ});
         ++ticks_to_full;
     }
-    CHECK(ticks_to_full >= 45 && ticks_to_full <= 55);  // control ticks == ms
+    CHECK(ticks_to_full >= 18 && ticks_to_full <= 22);  // control ticks == ms
 }
 
 void test_ramp_edges() {
-    const RampParams rp{4121, 82000, CONTROL_HZ};
-    CHECK_EQ(ramp_next_velocity(0, 4121, rp), 0);   // arrived
+    const RampParams rp{1600, 82000, CONTROL_HZ};
+    CHECK_EQ(ramp_next_velocity(0, 1600, rp), 0);   // arrived
     CHECK_EQ(ramp_next_velocity(-5, 100, rp), 0);   // overshot
     CHECK(ramp_next_velocity(100000, 0, rp) > 0);   // starts from rest
     // Velocity is clamped so the DDA can never be asked for >1 step per tick.
@@ -308,6 +398,7 @@ void test_ramp_edges() {
 void run_tests() {
     test_geometry_constants();
     test_ring_target();
+    test_fractional_machinery_still_works();
     test_no_accumulation();
     test_plan_target();
     test_edge_anchor_offset();

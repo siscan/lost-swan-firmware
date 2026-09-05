@@ -5,6 +5,7 @@
 #include <cstdint>
 
 #include "hal/pins.h"  // N_COLUMNS - pins.h is deliberately pure (cstdint only)
+#include "ring/geometry.h"  // ring_target_usteps: the tolerances derive from a flap
 #include "motion/column_mode.h"
 #include "motion/fault_policy.h"
 
@@ -19,7 +20,12 @@ struct MotionParams {
     int32_t flaps_s_alarm = 25;
     int32_t flaps_s_home = 8;
     int32_t accel = 82000;  // usteps/s^2, 0 -> alarm speed in ~50 ms
-    int32_t hall_tol = 41;  // HALL_TOL_SILENT, 1/4 flap.  Set from bench step 6.
+    // HALL_TOL_SILENT, a QUARTER FLAP.  Derived, not written out: it was the
+    // literal 41 - a quarter of the rim gear's 165-ustep flap - and would have
+    // silently become 64% of a flap when the drive went 1:1 and a flap became
+    // 64 usteps, widening the silent band to swallow real slips.  VERIFY: bench
+    // step 6 measures edge repeatability and sets it from the result.
+    int32_t hall_tol = static_cast<int32_t>(ring_target_usteps(1) / 4);  // 16
     bool en_idle_off = false;
     // A3144 is open-collector and pulls LOW with the magnet present, but which
     // magnet face works is an assembly convention (handoff 3, UNCERTAIN), so

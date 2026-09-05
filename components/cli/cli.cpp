@@ -235,9 +235,17 @@ int cmd_spin(int argc, char** argv) {
     return err == ESP_OK ? 0 : 1;
 }
 
-// Bench step 4: measure hall_to_hall over n revolutions.  Expect ~8242 for the
-// 85/33 gearing; a consistent ~8369 means the drum is on the old 68/26 parts
-// and geometry.h needs correcting (see spec 3).
+// Bench step 4: measure hall_to_hall over n revolutions.  THIS IS THE COMMAND
+// THAT IDENTIFIES WHICH MACHINE GOT BUILT, and the numbers are far apart
+// enough that it cannot be misread (geometry.h carries the pedigree):
+//
+//     3200 exactly  ->  the 1:1 direct drive.  What is being built.
+//     ~8242         ->  an 85T/33T rim-gear drum.  The original bridge.
+//     ~7555         ->  an 85T/36T rim-gear drum.  Designed, never built.
+//     ~8369         ->  68T/26T.  The stale MECHANICAL_README prose.
+//
+// A direct-drive drum reads 3200 with no spread at all - there is no residue
+// to alternate - so any spread is itself a finding.
 int cmd_revs(int argc, char** argv) {
     if (argc != 3) {
         std::printf("usage: revs <col> <n>\n");

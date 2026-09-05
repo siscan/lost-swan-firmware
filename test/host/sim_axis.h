@@ -26,8 +26,10 @@ inline int64_t floordiv(int64_t a, int64_t b) {
 // so mechanics are computed in integer units of 1/REV_DEN microstep and stay
 // exact over any number of revolutions.
 //
-// Default gearing 85/33: rev = 272000/33 usteps (rev_num=272000, rev_den=33).
-// The stale 68/26 drum:  rev = 217600/26 = 108800/13 usteps.
+// Default: the 1:1 direct drive, rev = 3200 usteps exactly (rev_num=3200,
+// rev_den=1).  The fractional form is kept so a wrong drum can be modelled -
+// the 85T/33T rim gear is rev_num=272000, rev_den=33, which is what
+// test_wrong_drum_faults_immediately drives.
 //
 // The Hall operate window starts at each edge position and extends
 // window_usteps forward.  Optional per-edge jitter shifts each edge by a
@@ -35,8 +37,8 @@ inline int64_t floordiv(int64_t a, int64_t b) {
 // rand(): reproducibility is the point of a simulation).
 // ---------------------------------------------------------------------------
 struct SimDrum {
-    int64_t rev_num = USTEPS_PER_SPOOL_REV_NUM;  // 272000
-    int64_t rev_den = USTEPS_PER_SPOOL_REV_DEN;  // 33
+    int64_t rev_num = USTEPS_PER_SPOOL_REV_NUM;  // 3200
+    int64_t rev_den = USTEPS_PER_SPOOL_REV_DEN;  // 1
     int64_t start_angle_usteps = 0;  // mechanical angle at pos_abs == 0
     int64_t window_usteps = 60;      // operate window width
     int32_t jitter_usteps = 0;       // max +- per-edge jitter
