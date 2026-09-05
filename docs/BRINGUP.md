@@ -1404,6 +1404,39 @@ heap start / min     : ______________  /  ______________
 date / who           : ______________________
 ```
 
+### Step 6b — kill the rail, once
+
+**One observation, and it decides whether Power Good ever gets a pin** (spec
+§2.6).  Firmware does not read PG on the argument that it *cannot* usefully do
+so: the logic buck needs 6.5 V in, so any rail veto should collapse the ESP32
+within milliseconds and surface as a brownout reboot rather than as a
+persistent "enabled but vetoed" state.
+
+That is a claim about this bench supply and this buck, and it has never been
+watched.
+
+Part way through the soak — or right after it, so an hour is not wasted:
+
+- [ ] cut the **12 V** at the supply while the column is holding
+- [ ] watch the console
+
+```
+expected : the ESP32 browns out and reboots, and on the way back up it
+           RE-HOMES the column (spec 5.5 / 5.8) - recovery already works
+finding  : the ESP32 stays alive and keeps running with the drivers vetoed
+```
+
+```
+what happened: ______________________________________________
+did it re-home on its own?  yes / no
+console line(s) worth keeping: ______________________________
+```
+
+**If the ESP32 survived**, the premise in §2.6 is wrong, the vetoed-but-alive
+state is real, and PG is worth a pin after all — say so, because that reopens a
+decision that is currently closed and is competing for the same GPIO as DIR and
+as §5.7a's Plan B.
+
 ### Step 7 — the slow spin: runout and wire routing
 
 ```

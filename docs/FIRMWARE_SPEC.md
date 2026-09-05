@@ -34,7 +34,7 @@ Columns are physically grouped 3 + 2 with a band between (no colon column).
 | Rotation | **One direction only** (the rings are *descending* since v3, §4: one forward flip decrements). Reverse is mechanically forbidden (flaps jam on the bezel lip). | **DIR is a ganged GPIO again** on boards with a spare non-strapping pin — GPIO24 on the DevKitC-1, absent on the XIAO (§2.1). The motor now faces the other way inside the drum, so which level gives the descending sense is a bench measurement (step 3), and `motion.dir_invert` settles it without a soldering iron. EN is a single ganged GPIO. |
 | Home sensor | 5 × A3144 digital Hall (TO-92), Ø6×3 N35 magnet at R52 on the idler disc, one per column | A3144 supply is 4.5–24 V → must be fed **5 V**; output is open-collector, pull it up to **3V3** (10 k) so the GPIO sees 3.3 V logic. `VERIFY` the hall JST carries 5 V. Output is active-LOW when the magnet is present (`VERIFY`). One operate edge per spool revolution. |
 | Audio | MAX98357A I2S mono amp + 40 mm 4 Ω 3 W speaker | 3 GPIOs (BCLK, LRCLK, DIN). Gain pin left at default 9 dB. `VERIFY` SD/shutdown pin handling on the module. No hardware volume → software gain. |
-| Power | 12 V 6 A PSU → drivers; 12→5 V buck → logic, halls, amp | All five spinning ≈ 4–5 A on 12 V. |
+| Power | 12 V 6 A PSU → drivers; 12→5 V buck → logic, halls, amp | All five spinning ≈ 4–5 A on 12 V. **EN is a diode-OR node the rail can veto — §2.6**, which also says why Power Good is not read and why the node boots *enabled*. |
 | Status | Onboard LED on GPIO27 on either C5 board | XIAO: single yellow LED, active low → blink patterns. DevKitC-1: WS2812 RGB → colour-coded status. |
 | Button | One user button `[Q6]` — **built 2026-08-24, §2.5** | Wired in parallel with the onboard BOOT button (GPIO28, active low) on either C5 board. Costs no GPIO. GPIO28 is the BOOT **strapping** pin: held low at reset it selects the serial bootloader, which no firmware can override — §2.5 says what the firmware does about it instead. |
 
@@ -95,6 +95,77 @@ The consequence to live with, stated plainly: **holding the button while the
 display is powered on or reset may leave the board in the bootloader** —
 powered, silent, off the network, and looking dead. The cure is to release the
 button and power-cycle. `docs/OWNER.md` says so in the owner's words.
+
+### 2.6 The EN interlock, the rail, and what boots enabled
+
+The ganged EN line is not driven by the ESP32 alone: it is a **wired-OR node**
+that the PD trigger board can veto (`docs/HARDWARE_PLAN_2.md` §5, LOCKED).
+Firmware behaviour depends on the topology, so the topology is stated here.
+
+**The node.**  A 10 kΩ pulldown on the ganged EN net, and two Schottky diodes
+diode-OR'd into it — one from the trigger board's **Power Good**, one from the
+ESP32 GPIO — **anodes at the sources, cathodes at EN**.
+
+| PG | ESP32 GPIO | EN node | drivers |
+|---|---|---|---|
+| low (good) | low | pulled low | **enabled** |
+| low (good) | high | pulled high | disabled |
+| high (bad) | low | pulled high | disabled |
+| low (good) | **high-Z** (reset) | pulled low | **enabled** |
+
+Either source high forces all five drivers off; both low enables.  A diode can
+only *pull the node up*, so neither source can force an enable against the
+other — which is what makes this a veto rather than a vote.
+
+**No firmware polarity change is required, and none was made.**  The derivation,
+because it is the sort of thing that gets "fixed" by someone reading only half
+of it: the trigger board's PG is **open-drain, low = good**; the TMC2209's EN is
+**active-low**; so *low means "go" on both* and they compose directly.  The
+firmware's existing drive — `gpio_set_level(PIN_EN, on ? 0 : 1)` — already
+writes **high to disable**, which is exactly the polarity the diode-OR wants
+from its ESP32 leg.  `motion.cpp` and `hal/pins.h` are correct as they stand.
+
+**BOOT-DEFAULT-ENABLED IS LOAD-BEARING.  Do not "fix" it.**  While the ESP32 is
+in reset its GPIOs are high-Z, so the ESP32's diode conducts nothing and the
+pulldown holds EN low: **the drivers stay enabled across a reset.**  That is
+required, not incidental — the direct-drive drum is unbalanced 3.92 N·cm against
+a 2.2 N·cm detent (§5.7), so a de-energized drum *slews* to its heavy side.  A
+pull-**up** on this net, or any change that made the reset state "disabled",
+would turn every reboot into five drums swinging.  The 10 kΩ is a pulldown for
+that reason and for no other.
+
+One honest qualification, so the claim is not read wider than it is: the
+pulldown covers the **reset window**.  Once `motion::init` configures the pin it
+deliberately drives EN high — disabled — until the drivers have had VM for
+≥100 ms (§5.5), and only then enables and homes.  So a boot does contain a short
+de-energized window in which a drum may slew; it is bounded, it is followed
+immediately by homing, and enabling into a rail that has not settled is the
+worse trade.  What the pulldown prevents is the *unbounded* case: a drum
+de-energized for the whole duration of a reset that never completes.
+
+**Power Good is deliberately NOT read by firmware.**  It has no GPIO and it will
+not be given one.  The reasoning, recorded because "the firmware cannot see the
+interlock" looks like an oversight and is not:
+
+- The logic rail comes from a buck that needs **6.5 V in**.  Any PG-bad state
+  collapses that rail within milliseconds, so the ESP32 does not survive to
+  observe it.  **The persistent "firmware thinks it is enabled, hardware has
+  vetoed" state cannot exist** — which is the only state a PG input would be
+  useful for.
+- The visible symptom of every rail veto is therefore a **brownout reboot**, and
+  **reboot → re-home** is already the designed recovery (§5.5, and §5.8's rule
+  that re-asserting EN re-homes).  A PG input would buy a window measured in
+  milliseconds before the same recovery ran anyway.
+- The pin does not exist.  The DevKitC-1 map has one spare non-strapping GPIO
+  and DIR has it (§2.2); `HARDWARE_PLAN_2.md`'s 22-pin budget was written before
+  that, and its `1× PD Power Good + 1× rail sense` are not affordable on this
+  board without giving something else up.
+
+**Revisit only on evidence**, and there is a bench observation for exactly that:
+BRINGUP §28b gate 3 kills the rail once during the soak and confirms the ESP32
+dies and comes back by re-homing.  **If it is ever observed SURVIVING a rail
+drop**, the premise above is wrong, the vetoed-but-alive state is real, and PG
+becomes worth a pin.  Until then it is not.
 
 ### 2.0 Board decision — DevKitC-1-N8R8 (**arrived, verified 2026-08-23**)
 
@@ -572,6 +643,10 @@ Consequences, all of them now load-bearing rather than defensive:
 - The NVS key `m_en_idle` is retired in place — not read, not written, not
   erased.  An inert record beats a write on every boot of an image with no use
   for it.
+- **And the hardware boots ENABLED for the same reason** (§2.6): the EN node's
+  10 kΩ pulldown holds the drivers on while the ESP32 is in reset, because a
+  drum de-energized for an entire reset would slew.  That pulldown is part of
+  this contract, not a detail of the power supply.
 
 ### 5.7a Current and thermal contract
 
@@ -3686,3 +3761,45 @@ numbered section — if you find one that disagrees, fix the section.
   releases EN, which is the state a pinned drum wants.  There is nothing to
   detect a pin with and inventing a sensor would be a worse answer than telling
   a person the order to do two things in.  §5.9, BRINGUP and `docs/OWNER.md`.
+
+- 2026-09-06 — **The EN interlock: the "active-high DISABLE" instruction is
+  WITHDRAWN as erroneous, and no firmware change is made.**  §2.6 is the
+  normative statement.
+
+  The hardware-landed pass called for sweeping every EN touchpoint to active-high
+  DISABLE through the diode-OR.  That report never reached this repository, and
+  **its loss was harmless on this item** — the sweep would have been wrong.
+
+  The derivation, which is the whole of it: the trigger board's Power Good is
+  **open-drain, low = good**, and the TMC2209's EN is **active-low**, so low
+  means "go" on both and they compose directly.  The firmware already writes
+  **high to disable** (`gpio_set_level(PIN_EN, on ? 0 : 1)`), which is exactly
+  what the diode-OR wants from its ESP32 leg.  Inverting it would have driven
+  the node low to disable — and a diode with its cathode at EN cannot pull the
+  node down at all, so the ESP32 would have lost the ability to disable the
+  drivers entirely while appearing to work whenever PG happened to be asserting.
+  **Touchpoints changed: none.**  `motion.cpp` and `hal/pins.h` were already
+  right.
+
+  Recorded at this length because a withdrawn instruction that is merely dropped
+  looks, later, like an instruction that was missed.
+
+  - **Power Good stays unread, deliberately** (§2.6).  The logic buck needs
+    6.5 V in, so any PG-bad state collapses the rail within milliseconds and the
+    ESP32 does not survive to observe it: the persistent "firmware-enabled,
+    hardware-vetoed" state — the only state a PG input would be useful for —
+    **cannot exist**.  Every rail veto surfaces as a brownout reboot, and
+    reboot → re-home is already the designed recovery.  The pin it would need is
+    spent on DIR, and `HARDWARE_PLAN_2.md`'s 22-pin budget predates that.
+    Revisit **only** if the bench observes the ESP32 surviving a rail drop, and
+    BRINGUP §28b gate 3 now kills the rail once to find out.
+  - **The node boots ENABLED, and that is load-bearing** (§2.6).  The 10 kΩ
+    pulldown holds EN low while the ESP32 is in reset and its GPIO is high-Z, so
+    the drivers stay on across a reset.  With the drum unbalanced 3.92 N·cm
+    against a 2.2 N·cm detent (§5.7), a pull-**up** — or any change making the
+    reset state "disabled" — would turn every reboot into five drums swinging.
+    Written down so it is not tidied into a "safer" default later.
+    Qualified honestly in §2.6: the pulldown covers the *reset* window, while
+    `motion::init` still disables deliberately until VM has settled for ≥100 ms
+    and then homes.  A boot contains a short, bounded de-energized window; what
+    the pulldown prevents is the unbounded one.
