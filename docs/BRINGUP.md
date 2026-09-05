@@ -1267,6 +1267,25 @@ config default. A build that can exceed it is a different build.
 - [ ] `col 0 real` — the bench soak **refuses a simulated column**, on purpose.
       A modelled drum would produce a beautiful hour of logs and answer nothing.
 
+**Look at the drivers before you wire them.**  They are **one batch**, so the
+sense-resistor measurement you are about to make on driver #1 (step 2) should
+carry to all five — but *"one batch"* is an assumption doing real work, and the
+only thing that confirms it is your eyes on the boards.  FYSETC has shipped
+TMC2209 modules with different sense resistors, and that is exactly the number
+step 2 exists to pin down.
+
+- [ ] all five modules carry the **same silkscreen revision and the same
+      sense-resistor marking**.  Record it:
+
+   ```
+   driver revision / silkscreen : ______________________
+   sense resistor marking       : ______________________
+   all five identical?          : yes / no  -> if NO, step 2 is per driver
+   ```
+
+If they are not identical, Vref must be set and recorded **per driver**, not
+once — and the thermal result from gate 3 applies only to the driver it ran on.
+
 ### Step 2 — SET VREF BY MEASUREMENT — 0.7 A RMS
 
 **Do this before enabling the driver, with the motor unplugged.** The usual
@@ -1283,14 +1302,19 @@ reason this is a measurement and not a calculation.
 4. Target, for **0.7 A RMS** with the common 0.11 Ω sense resistor:
    `Vref ≈ 0.7 × 2.5 × 0.11 = 0.193 V`. If the module is 0.15 Ω it is 0.263 V.
    **Which it is, is what you are about to find out** — set the pot to the 0.11 Ω
-   figure, then confirm the actual current in step 5 and adjust.
-5. Record it here, because the next session cannot re-derive it:
+   figure, then confirm the actual current in **Step 5 of this section**
+   (below, not item 5 here) and adjust.
+5. **One batch, so one measurement — if step 1 confirmed they match.**  Set and
+   record Vref on driver #1 and use it for the rest; if step 1 found a
+   mismatch, do this for each driver instead.  The measurement is what makes
+   the 0.7 A real, and the sense resistor is the number nobody has verified.
+6. Record it here, because the next session cannot re-derive it:
 
    ```
    driver #1 serial / marking : ______________________
    sense resistor (if legible): ______________ ohm
    Vref set                   : ______________ V
-   measured phase current     : ______________ A RMS   (step 5)
+   measured phase current     : ______________ A RMS   (Step 5 below)
    date / who                 : ______________________
    ```
 
@@ -1321,9 +1345,13 @@ next STEP edge, so flipping it mid-move walks the drum backwards.
    ```
 
 **Expect 3200 with no spread.** Anything else, stop and read the table at the
-top of this file — the number tells you which machine you are holding. A spread
-on a direct drive is a slipping coupling, a marginal magnet, or a microstep
-setting that is not 1/16.
+top of this file — the number tells you which machine you are holding.
+
+A spread on a direct drive is a slipping coupling, a marginal magnet, or a
+microstep setting that is not 1/16.  **The motor shaft is confirmed D-cut**, so
+a grub screw landing on the flat makes a slipping coupling the *least* likely of
+the three — check the magnet and the microstep jumpers first, and if it really
+is the coupling, confirm the screw is on the flat rather than riding the round.
 
 ### Step 5 — confirm the current you actually set
 
