@@ -37,7 +37,7 @@ constexpr const char* NS = "swan";
 // motion.flaps_s_home          m_fs_home
 // motion.accel                 m_accel
 // motion.hall_tol              m_hall_tol
-// motion.en_idle_off           m_en_idle
+// motion.dir_invert            m_dir_inv
 // motion.hall_active_low       m_hall_lo
 // clock.h24                    c_h24
 // clock.land_on_tick           c_lot
@@ -68,8 +68,11 @@ constexpr const char* K_FS_ALRM = "m_fs_alrm";
 constexpr const char* K_FS_HOME = "m_fs_home";
 constexpr const char* K_ACCEL = "m_accel";
 constexpr const char* K_HALL_TOL = "m_hall_tol";
-constexpr const char* K_EN_IDLE = "m_en_idle";
+// K_EN_IDLE ("m_en_idle") is RETIRED (spec 5.7).  It is deliberately not
+// read, not written and not erased: an existing record is inert, and erasing
+// it would be a write on every boot of an image that has no use for it.
 constexpr const char* K_HALL_LO = "m_hall_lo";
+constexpr const char* K_DIR_INV = "m_dir_inv";
 constexpr const char* K_H24 = "c_h24";
 constexpr const char* K_CLK_LOT = "c_lot";
 constexpr const char* K_GRAN = "c_gran";
@@ -148,8 +151,8 @@ esp_err_t load(MotionParams& p) {
     get_i32(h, K_FS_HOME, &p.flaps_s_home);
     get_i32(h, K_ACCEL, &p.accel);
     get_i32(h, K_HALL_TOL, &p.hall_tol);
-    get_bool(h, K_EN_IDLE, &p.en_idle_off);
     get_bool(h, K_HALL_LO, &p.hall_active_low);
+    get_bool(h, K_DIR_INV, &p.dir_invert);
 
     size_t len = sizeof(p.cal);
     int32_t cal[N_COLUMNS];
@@ -173,8 +176,8 @@ esp_err_t save(const MotionParams& p) {
     NVS_SET(nvs_set_i32(h, K_FS_HOME, p.flaps_s_home));
     NVS_SET(nvs_set_i32(h, K_ACCEL, p.accel));
     NVS_SET(nvs_set_i32(h, K_HALL_TOL, p.hall_tol));
-    NVS_SET(nvs_set_u8(h, K_EN_IDLE, p.en_idle_off ? 1 : 0));
     NVS_SET(nvs_set_u8(h, K_HALL_LO, p.hall_active_low ? 1 : 0));
+    NVS_SET(nvs_set_u8(h, K_DIR_INV, p.dir_invert ? 1 : 0));
     NVS_SET(nvs_set_blob(h, K_CAL, p.cal, sizeof(p.cal)));
 
     err = nvs_commit(h);

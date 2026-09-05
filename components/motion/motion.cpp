@@ -467,6 +467,17 @@ void post(int col, const Request& r) {
 // Public API
 // ---------------------------------------------------------------------------
 
+// The ganged DIR level.  Plain relaxed atomic: it is written by the control
+// task or a command and read by whoever last needs to drive the pin, and there
+// is nothing to pair it with, so it is not part of the AxisCtl seqlock
+// (docs/MOTION_SYNC.md boundary 3).
+DRAM_ATTR std::atomic<bool> g_dir_invert{false};
+
+void apply_dir_level() {
+    if (!HAS_DIR_GPIO) return;
+    gpio_set_level(static_cast<gpio_num_t>(PIN_DIR), g_dir_invert.load(RLX) ? 1 : 0);
+}
+
 esp_err_t init(const MotionParams& p) {
     g_params = p;
 
@@ -477,10 +488,16 @@ esp_err_t init(const MotionParams& p) {
         g_ctl[i].cal_offset.store(normalize_cal(p.cal[i]), RLX);
     }
     g_hall_invert = p.hall_active_low ? HALL_MASK_ALL : 0u;
+    g_dir_invert.store(p.dir_invert, RLX);
     republish_masks();
 
     uint64_t out_mask = 1ULL << PIN_EN;
     for (int i = 0; i < N_COLUMNS; ++i) out_mask |= 1ULL << PIN_STEP[i];
+    // DIR is ganged like EN and, on a board that has a pin for it, is driven
+    // before anything can step.  It is a plain level, not a per-step signal:
+    // the TMC2209 samples it on the STEP edge, so it only has to be settled
+    // before the first pulse and never changes inside a move.
+    if (HAS_DIR_GPIO) out_mask |= 1ULL << PIN_DIR;
 
     gpio_config_t out_cfg = {};
     out_cfg.pin_bit_mask = out_mask;
@@ -488,6 +505,7 @@ esp_err_t init(const MotionParams& p) {
     ESP_RETURN_ON_ERROR(gpio_config(&out_cfg), TAG, "step/en gpio_config");
 
     gpio_set_level(static_cast<gpio_num_t>(PIN_EN), 1);  // active low: disabled
+    apply_dir_level();
     gpio_bank_clear(STEP_MASK_ALL);
 
     uint64_t in_mask = 0;
@@ -537,6 +555,13 @@ void set_params(const MotionParams& p) {
     // spinlock like everything else in that group.
     g_hall_invert = p.hall_active_low ? HALL_MASK_ALL : 0u;
     portEXIT_CRITICAL(&g_lock);
+    // DIR takes effect immediately, which is the point: bench step 3 is a
+    // person watching a drum and typing `dir` until it turns the descending
+    // way.  The pin is a level the driver samples on the next STEP edge, so
+    // changing it between moves is safe; changing it DURING one would reverse
+    // mid-move, which is why the dispatcher refuses it on a moving axis.
+    g_dir_invert.store(p.dir_invert, RLX);
+    apply_dir_level();
     for (int i = 0; i < N_COLUMNS; ++i) {
         g_ctl[i].cal_offset.store(normalize_cal(p.cal[i]), RLX);
     }

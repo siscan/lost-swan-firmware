@@ -477,8 +477,16 @@ function renderSettings(s) {
   $("reveal-preset-hint").textContent = revealSet
       ? ""
       : "REVEAL is five blanks until the reveal glyphs are chosen, below in Settings.";
-  if (!editing($("set-enidle"))) $("set-enidle").checked = !!s.cfg.en_idle_off;
   if (!editing($("set-halllow"))) $("set-halllow").checked = !!s.cfg.hall_active_low;
+  if (!editing($("set-dirinv"))) $("set-dirinv").checked = !!s.cfg.dir_invert;
+  // A board with no spare non-strapping pin has no DIR GPIO at all (the XIAO
+  // map). Say so instead of offering a control that will be refused.
+  if (s.cfg.has_dir_gpio === false) {
+    $("set-dirinv").disabled = true;
+    $("hint-dirinv").textContent =
+        "This board has no spare non-strapping GPIO, so DIR is tied at the " +
+        "drivers and direction is a wiring change (spec 2.1).";
+  }
 
   renderColumnModes(s);
   renderEnable(s);
@@ -854,9 +862,10 @@ function wire() {
       send("motion.params", patch);
     };
   });
-  $("set-enidle").onchange = () => send("motion.params", { en_idle_off: $("set-enidle").checked });
   $("set-halllow").onchange =
       () => send("motion.params", { hall_active_low: $("set-halllow").checked });
+  $("set-dirinv").onchange =
+      () => send("motion.params", { dir_invert: $("set-dirinv").checked });
   $("btn-en").onclick = () => {
     const on = state && state.sys && state.sys.drivers_enabled === false;
     send("motion.enable", on);

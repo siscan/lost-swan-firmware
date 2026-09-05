@@ -236,7 +236,8 @@ std::string build_state(Context& ctx, int64_t utc_ms) {
         .kv("flaps_s_home", mp.flaps_s_home)
         .kv("accel", mp.accel)
         .kv("hall_tol", mp.hall_tol)
-        .kv("en_idle_off", mp.en_idle_off)
+        .kv("dir_invert", mp.dir_invert)
+        .kv("has_dir_gpio", HAS_DIR_GPIO)
         .kv("hall_active_low", mp.hall_active_low)
         .kv("failure_loop_s", cfg.failure_loop_s)
         .kv("ntp", ctx.modes.ntp());
@@ -475,22 +476,50 @@ std::string do_motion_params(Context& ctx, const json::Value& p) {
         if (v < 1 || v > 400) return err_result("hall_tol out of range");
         mp.hall_tol = v;
     }
-    // Settable from nowhere at all until now - not the API, not the console -
-    // while `save` persisted it faithfully.  Spec 5.7 leaves it false until the
-    // bench test says a loaded drum does not creep with EN released.
-    if (const json::Value* en = member(p, "en_idle_off")) {
-        if (en->type != json::Type::Bool) return err_result("en_idle_off must be true or false");
-        mp.en_idle_off = en->boolean;
+    // `en_idle_off` is GONE (spec 5.7).  It is refused rather than ignored,
+    // because a peer that still sends it is asking for de-energised drums and
+    // on this drive that means a drum that slews off its position - silently
+    // accepting the key would answer "ok" to something the firmware will not
+    // do, which is the failure the whole reply-means-execution sweep was for.
+    if (member(p, "en_idle_off") != nullptr) {
+        return err_result("en_idle_off is gone: the drum is unbalanced past its "
+                          "detent and the coils must stay energised (spec 5.7)");
     }
-    // Same shape as en_idle_off: loaded from NVS, persisted by `motion.save`,
-    // and settable from nowhere.  Spec 2 tags the A3144's polarity `VERIFY`, so
-    // the one value that a bench measurement is most likely to overturn could
-    // only be changed by recompiling.
+    // Loaded from NVS, persisted by `motion.save`.  Spec 2 tags the A3144's
+    // polarity `VERIFY`, so the one value that a bench measurement is most
+    // likely to overturn must be settable without recompiling.
     if (const json::Value* hl = member(p, "hall_active_low")) {
         if (hl->type != json::Type::Bool) {
             return err_result("hall_active_low must be true or false");
         }
         mp.hall_active_low = hl->boolean;
+    }
+    // DIR, ganged (spec 2.2).  Two refusals rather than a silent no-op:
+    //
+    // - a board with no DIR pin cannot honour it, and answering "ok" to a
+    //   direction change that will not happen is exactly the "a reply must
+    //   reflect execution, not receipt" failure;
+    // - reversing a MOVING axis reverses it mid-move.  The driver samples
+    //   DIR on the next STEP edge, so the axis would walk backwards while
+    //   the control core still believed it was closing on a target, and
+    //   forward-only is the guarantee the whole position model rests on.
+    if (const json::Value* di = member(p, "dir_invert")) {
+        if (di->type != json::Type::Bool) {
+            return err_result("dir_invert must be true or false");
+        }
+        if (!HAS_DIR_GPIO) {
+            return err_result("this board has no DIR GPIO; DIR is tied at the drivers");
+        }
+        bool moving = false;
+        for (int i = 0; i < N_COLUMNS && !moving; ++i) {
+            const AxisInfo ai = ctx.motion.info(i);
+            moving = (ai.state == AxisState::Moving) || ai.velocity != 0;
+        }
+        if (di->boolean != mp.dir_invert && moving) {
+            return err_result("a column is moving; reversing DIR mid-move would "
+                              "walk the drum backwards");
+        }
+        mp.dir_invert = di->boolean;
     }
     ctx.motion.set_params(mp);
     // Keep the modes layer's copy in step.  alarm_flaps_s was seeded from

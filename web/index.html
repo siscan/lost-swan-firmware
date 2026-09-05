@@ -164,8 +164,19 @@
   <div class="row"><label for="p-halltol">motion.hall_tol <b id="v-halltol"></b></label>
     <input id="p-halltol" type="range" min="1" max="400" step="1"></div>
   <p class="hint">hall_tol is the edge error accepted in silence &mdash; a
-     quarter of a flap by default (41&nbsp;µsteps). Set it after measuring edge
-     repeatability over twenty revolutions (BRINGUP step 6), not before.</p>
+     quarter of a flap by default (16&nbsp;µsteps at the 1:1 direct drive, where a
+     flap is 64). Set it after measuring edge repeatability over twenty
+     revolutions (BRINGUP step 6), not before.</p>
+  <div class="row">
+    <label><input id="set-dirinv" type="checkbox"> invert direction
+      (<code>motion.dir_invert</code>)</label>
+    <span class="hint" id="hint-dirinv">Ganged across all five drivers &mdash; one
+      GPIO, like EN. The drum must turn the <b>descending</b> way: one forward flip
+      <b>decrements</b> the digit. The motor now sits inside the drum facing the
+      opposite way to the old gear drive, so which level is correct is a bench
+      measurement (BRINGUP step 3), not something the spec can state. Refused while
+      a column is moving. Saved with the calibration.</span>
+  </div>
   <div class="row">
     <label><input id="set-halllow" type="checkbox"> Hall is active LOW
       (<code>motion.hall_active_low</code>)</label>
@@ -175,11 +186,11 @@
       magnet before trusting a homing pass. Saved with the calibration.</span>
   </div>
   <div class="row">
-    <label><input id="set-enidle" type="checkbox"> release EN at rest
-      (<code>motion.en_idle_off</code>)</label>
-    <span class="hint">Off until the bench test says a loaded drum does not creep
-      with the drivers released (spec &sect;5.7). EN is ganged, so this is all
-      five or none.</span>
+    <span class="hint">The drivers stay energised at rest, always. The direct-drive
+      drum is unbalanced past its detent torque, so a released drum does not creep,
+      it swings to its heavy side and the display loses its position &mdash; there is
+      no setting for it any more (spec &sect;5.7). Standstill current reduction keeps
+      the holding current at about half of run current.</span>
   </div>
   <div class="row">
     <button id="btn-en">RELEASE THE MOTORS (EN OFF)</button>

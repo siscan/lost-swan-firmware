@@ -160,6 +160,39 @@ int cmd_en(int argc, char** argv) {
     return 0;
 }
 
+// Bench step 3.  The drum must turn in the DESCENDING sense - one forward flip
+// DECREMENTS the displayed digit (spec 4) - and with the motor now inside the
+// drum facing the other way, which level does that is not knowable on paper.
+// Type `dir`, watch a flip, type `dir 1` if it went the wrong way, then `save`.
+int cmd_dir(int argc, char** argv) {
+    if (!swan::HAS_DIR_GPIO) {
+        std::printf("this board has no DIR GPIO; DIR is tied at the drivers\n");
+        return 1;
+    }
+    motion::MotionParams p = motion::params();
+    if (argc == 1) {
+        std::printf("dir_invert = %d  (GPIO%d, ganged across all five drivers)\n",
+                    p.dir_invert ? 1 : 0, swan::PIN_DIR);
+        std::printf("  one forward flip must DECREMENT the digit - spec 4\n");
+        std::printf("  `save` persists it with the calibration\n");
+        return 0;
+    }
+    if (argc != 2) {
+        std::printf("usage: dir [0|1]\n");
+        return 1;
+    }
+    long v;
+    if (!parse_long(argv[1], v)) return 1;
+    if (!motion::all_idle()) {
+        std::printf("a column is moving; reversing DIR mid-move would walk it backwards\n");
+        return 1;
+    }
+    p.dir_invert = (v != 0);
+    motion::set_params(p);
+    std::printf("dir_invert = %d\n", p.dir_invert ? 1 : 0);
+    return 0;
+}
+
 int cmd_step(int argc, char** argv) {
     if (argc != 3) {
         std::printf("usage: step <col> <usteps>    (open loop; leaves the index unknown)\n");
@@ -945,6 +978,7 @@ esp_err_t start() {
     reg("hall", "live Hall levels, raw and debounced", cmd_hall);
     reg("button", "button [seconds] - live BOOT/button level, and edges", cmd_button);
     reg("en", "en 0|1 - driver enable (ganged)", cmd_en);
+    reg("dir", "dir [0|1] - ganged direction; bench step 3 sets it", cmd_dir);
     reg("step", "step <col> <usteps> - open loop", cmd_step);
     reg("home", "home <col>|all", cmd_home);
     reg("go", "go <col> <index|token>", cmd_go);
