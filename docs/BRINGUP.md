@@ -220,7 +220,9 @@ convergence).
 
 ## Phase 1 bench checklist (spec §14.1)
 
-Run with one module on the bench, drivers powered from 12 V, logic from the buck.
+Run with one module on the bench, drivers powered from the **20 V PD rail**
+(`HARDWARE_PLAN_2` §5, LOCKED - this said 12 V until 2026-09-06, from before
+the PD decision), logic from the buck.
 
 ### 0. First flash — **DONE 2026-08-23**
 
@@ -1224,14 +1226,41 @@ design until this passes. The question is narrow and physical: *a NEMA 17 is
 sealed inside a PLA drum that softens at 55–60 °C, and the clock holds position
 99 % of the day — does it cook?*
 
-**What you need on the bench**
+**WHAT YOU NEED ON THE BENCH — the whole list, so nothing is discovered
+missing mid-session.**  Derived from what the numbered steps below actually
+touch, not from memory.
 
-- one column: drum on the **printed PLA stand-in axle**, one NEMA 17 inside it,
-  one **FYSETC TMC2209**, one A3144 Hall and its magnet at R52
-- the ESP32-C5 board, 12 V to the driver, USB to the PC
-- a multimeter with a fine probe or a clip
-- a small screwdriver for the driver's trimpot
-- **a timer, and an hour you are not going to need the bench for**
+*The column*
+
+- the assembled stand-in: drum, **NEMA 17 inside it**, **Ø8 × Ø6 support tube**,
+  **printed spacers**, **03a coupling** — grub screw onto the shaft's D-flat
+- the **A3144 Hall and its magnet at R52**, installed and **marked at spool
+  assembly** (the mark is the reference; you are not positioning it here)
+- a vise or fixture to hold the column still for an hour
+
+*Electrical*
+
+- the **ESP32-C5-DevKitC-1** and a USB-C cable to the PC (console + flashing)
+- **all five FYSETC TMC2209 modules** — step 1 compares them even though only
+  one is wired
+- the **20 V USB-C PD supply and trigger board** (CentyLab RotoPD; `HARDWARE_PLAN_2`
+  §5 is locked at 20 V, *not* 12 V) — and **a way to cut it deliberately**, for
+  step 6b: the downstream rocker, or just be willing to unplug
+- **100 µF electrolytic across the driver's VM/GND**, legs short — do not drive
+  a motor off a bench lead without bulk capacitance at the driver
+- hook-up wire for STEP/DIR/EN/GND and the Hall's 5 V, GND and pulled-up output
+
+*Instruments and tools*
+
+- a **multimeter** with a fine probe or a clip — Vref at the trimpot (step 2)
+- **a way to read phase current** for step 5: a clamp meter, or a low-side shunt
+  you have already rigged.  A plain DMM in series with a coil is awkward and
+  not worth improvising at the bench — if you do not have one, say so in the
+  blank rather than writing a number you inferred
+- a **small flathead or ceramic trimmer screwdriver** for the driver's pot
+- the **hex key** for the coupling grub screw
+- **a timer, an hour you do not need the bench for, and a pen** — the blanks
+  below are the deliverable
 
 **The build is its own flavour, and it is not optional.**
 
@@ -1252,18 +1281,38 @@ and to an OTA. **The show spin is absent from this image.** Every commanded
 speed is clamped to **50 flaps/s = 1 drum rev/s** at the one place speeds enter
 the motion layer, so a value from NVS, a Settings slider or an MQTT peer cannot
 lift it; `bench spin` above the cap is refused outright rather than quietly run
-slower. The stand-in axle is printed and the cap is a safety contract, not a
-config default. A build that can exceed it is a different build.
+slower.
+
+**Why the cap exists, stated accurately.**  The shaft is a real Ø8 × Ø6 metal
+support tube — it is the **spacers and the mount that are printed**, and they
+are what carries the drum and reacts the motor's torque on this stand-in.  Those
+are the compliant parts, and they are the reason the show spin is not on the
+menu.  The cap is a safety contract, not a config default: a build that can
+exceed it is a different build.
 
 ---
 
 ### Step 1 — wire it, and check the Hall before the motor moves
 
 - [ ] `pins` — confirm the map, and that **DIR=GPIO24** appears
-- [ ] `hall` — wave the magnet past the sensor; `magnet=YES` when present.
-      If it reads inverted, `motion.params {"hall_active_low": false}` and
-      `save`. Do this before homing, or homing hunts for an edge that reads
-      backwards.
+**Check the coupling before anything turns.**  The 03a coupling clamps onto the
+motor shaft's D-flat, and **that flat starts 7 mm from the motor flange** — so
+the grub screw only bites metal-on-flat if the coupling sits far enough out.  A
+screw riding the round part of the shaft holds by friction alone, which is
+exactly the failure that shows up later as a `hall_to_hall` spread nobody can
+explain.
+
+- [ ] the coupling's grub screw lands **beyond 7 mm from the flange**, on the
+      flat — check it with the hex key in, by eye, before the drum goes on
+- [ ] the screw is tight on the flat, not on the corner where the flat begins
+
+**The Hall and magnet are already fitted**, at R52, and their relative position
+was **marked at spool assembly** — you are confirming that mark, not setting it.
+
+- [ ] `hall` — turn the drum slowly by hand through the marked position;
+      `magnet=YES` as it passes.  If it reads inverted,
+      `motion.params {"hall_active_low": false}` and `save`. Do this before
+      homing, or homing hunts for an edge that reads backwards.
 - [ ] `col 0 real` — the bench soak **refuses a simulated column**, on purpose.
       A modelled drum would produce a beautiful hour of logs and answer nothing.
 
@@ -1293,8 +1342,10 @@ once — and the thermal result from gate 3 applies only to the driver it ran on
 FYSETC modules' sense resistor value is **unverified** — that is the whole
 reason this is a measurement and not a calculation.
 
-1. Power the driver from 12 V with **the motor disconnected** and EN released
-   (`en 0`).
+1. Power the driver from the **20 V PD rail** with **the motor disconnected**
+   and EN released (`en 0`).  Twenty volts, not twelve: `HARDWARE_PLAN_2` §5 is
+   locked on 20 V USB-C PD, and Vref is a reference voltage that does not care
+   about VM — but what you are about to run the motor on does.
 2. Put the meter's negative on driver GND. Touch the positive to the **trimpot
    wiper** — on a FYSETC TMC2209 that is the metal screw head itself. Do not
    short it to the neighbouring pads; a slipped probe here kills the driver.
@@ -1348,10 +1399,11 @@ next STEP edge, so flipping it mid-move walks the drum backwards.
 top of this file — the number tells you which machine you are holding.
 
 A spread on a direct drive is a slipping coupling, a marginal magnet, or a
-microstep setting that is not 1/16.  **The motor shaft is confirmed D-cut**, so
-a grub screw landing on the flat makes a slipping coupling the *least* likely of
-the three — check the magnet and the microstep jumpers first, and if it really
-is the coupling, confirm the screw is on the flat rather than riding the round.
+microstep setting that is not 1/16.  **The shaft is D-cut and step 1 confirmed
+the grub screw is on the flat**, so a slipping coupling is the *least* likely of
+the three — check the magnet against its assembly mark and the microstep jumpers
+first.  If it really is the coupling, the thing to re-check is the 7 mm: a screw
+that has crept inboard of where the flat starts is back to holding by friction.
 
 ### Step 5 — confirm the current you actually set
 
@@ -1417,7 +1469,8 @@ watched.
 
 Part way through the soak — or right after it, so an hour is not wasted:
 
-- [ ] cut the **12 V** at the supply while the column is holding
+- [ ] cut the **20 V PD rail** while the column is holding — the downstream
+      rocker, or unplug it
 - [ ] watch the console
 
 ```
