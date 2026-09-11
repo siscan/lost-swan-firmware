@@ -344,6 +344,12 @@ int cmd_spin(int argc, char** argv) {
     const int64_t usteps = (static_cast<int64_t>(fs) * secs * USTEPS_PER_FLAP_NUM) /
                            USTEPS_PER_FLAP_DEN;
     const esp_err_t err = motion::step_open_loop(col, usteps, static_cast<int32_t>(fs));
+    if (err == ESP_ERR_NOT_SUPPORTED) {
+        std::printf("REFUSED: %ld flaps/s is over this image's cap of %d (1 drum rev/s).\n",
+                    fs, static_cast<int>(motion::BENCH_MAX_FLAPS_S));
+        std::printf("  This is a bench image and the stand-in axle is printed PLA.\n");
+        return 1;
+    }
     std::printf("%s: %lld usteps at %ld flaps/s\n", err == ESP_OK ? "spinning" : "failed",
                 static_cast<long long>(usteps), fs);
     return err == ESP_OK ? 0 : 1;

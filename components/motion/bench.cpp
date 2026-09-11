@@ -89,10 +89,17 @@ void print_verdict_prompt(const BenchStats& s, const BenchSchedule& sched) {
     std::printf("=====================================================\n");
     std::printf("  column %d, %u of %u s, %u flaps (expected %u)\n", s.column, el, tot,
                 flaps, want);
-    std::printf("  drum revolutions   %u\n", revs);
-    std::printf("  hall_to_hall       %d..%d   (3200 exactly is the direct drive)\n", lo, hi);
-    std::printf("  worst edge error   %d usteps\n", worst);
-    std::printf("  resyncs            %u minor, %u major\n", minor, major);
+    if (s.open_loop) {
+        std::printf("  OPEN LOOP - no Hall fitted, so no edge data exists.\n");
+        std::printf("  This run answers the THERMAL question only.  Drum\n");
+        std::printf("  revolutions, hall_to_hall, edge error and resyncs are\n");
+        std::printf("  omitted rather than printed as zeroes.\n");
+    } else {
+        std::printf("  drum revolutions   %u\n", revs);
+        std::printf("  hall_to_hall       %d..%d   (3200 exactly is the direct drive)\n", lo, hi);
+        std::printf("  worst edge error   %d usteps\n", worst);
+        std::printf("  resyncs            %u minor, %u major\n", minor, major);
+    }
     std::printf("  faults             %u\n", faults);
     std::printf("  heap               %u start, %u now, %u min\n", h0, h1, h2);
     if (!s.completed) {
@@ -132,6 +139,16 @@ void bench_task(void* arg) {
              static_cast<unsigned>(sched.total_s),
              static_cast<unsigned>(sched.tick_s));
     ESP_LOGW(TAG, "the coils hold for >93%% of this run - that is the test");
+    {
+        AxisInfo a{};
+        motion::info(col, a);
+        const std::lock_guard<std::mutex> lk(g_mu);
+        g_stats.open_loop = !a.hall_valid;
+        if (g_stats.open_loop) {
+            ESP_LOGW(TAG, "NO HOME REFERENCE - running OPEN LOOP");
+            ESP_LOGW(TAG, "thermal answer only: no edges, no resyncs, no hall_to_hall");
+        }
+    }
 
     uint32_t last_flap_s = 0;
     bool any_flap = false;
@@ -153,8 +170,20 @@ void bench_task(void* arg) {
             // ONE FLAP FORWARD.  The ring is descending, so this is also the
             // direction a countdown ticks - the bench is exercising the real
             // sense, not an arbitrary one.
-            index = (index + 1) % RING_SLOT_COUNT;
-            motion::go(col, index);
+            //
+            // Closed loop when the column has a home reference, open loop when
+            // it has not.  go() refuses without hall_valid, so on a module with
+            // no magnet fitted the closed-loop path would post nothing for an
+            // hour and report a soak that never moved.
+            AxisInfo a{};
+            motion::info(col, a);
+            if (a.hall_valid) {
+                index = (index + 1) % RING_SLOT_COUNT;
+                motion::go(col, index);
+            } else {
+                motion::step_open_loop(col, USTEPS_PER_FLAP_NUM,
+                                       motion::params().flaps_s_normal);
+            }
             last_flap_s = elapsed;
             any_flap = true;
         }
@@ -211,9 +240,15 @@ bool column_drivable(int col) {
                  col, col);
         return false;
     }
+    // NOT "state != Fault".  A module with no Hall fitted homes at boot, fails,
+    // retries and latches a no_hall FAULT - so requiring a clean state would
+    // refuse the one configuration this build was written to be used in first.
+    // Open-loop stepping has always been allowed from FAULT (it is the bench
+    // un-jamming tool, spec 17); the soak matches that.  Homing is the one
+    // state that must be left alone.
     AxisInfo a{};
     motion::info(col, a);
-    return a.state != AxisState::Fault;
+    return a.state != AxisState::Homing;
 }
 
 }  // namespace

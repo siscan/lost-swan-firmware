@@ -16,6 +16,13 @@
 //          Hall edges, resyncs and elapsed time are logged, because a thermal
 //          run that also proves the drum kept its registration is two answers
 //          for one hour of bench time.
+//
+//          WITH NO HALL FITTED it still runs, open loop, and answers the
+//          thermal half only.  That is deliberate: module V1 is assembled and
+//          powered before the magnet goes in, and refusing would have made the
+//          one question this build exists for unanswerable at exactly the
+//          moment it can first be asked.  The report says OPEN LOOP in as many
+//          words and omits the edge figures rather than printing zeroes.
 //   spin   slow continuous rotation for runout and wire-routing checks, hard
 //          capped at one drum revolution per second (bench_policy.h).
 //   ----   NO SHOW SPIN.  Not slower, not shorter: absent.  See bench_policy.h.
@@ -73,6 +80,13 @@ struct BenchStats {
     uint32_t heap_now = 0;
     uint32_t heap_min = 0;
     const char* stopped_because = "";
+    // TRUE when the column had no home reference and the run flapped OPEN LOOP.
+    // The thermal question does not need a Hall - the heat is in the holding
+    // current - so a hall-less module can still answer gate 3.  Everything the
+    // Hall would have told us is absent though (no edges, no resyncs, no
+    // hall_to_hall), and the report says so rather than printing zeroes that
+    // look like clean results.
+    bool open_loop = false;
     // Set when the run reaches its full duration, which is the only state in
     // which the hand-on-the-case verdict means anything.  A soak that was cut
     // short is not a shorter answer, it is no answer.

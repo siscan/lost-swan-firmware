@@ -868,6 +868,15 @@ esp_err_t step_open_loop(int col, int64_t usteps, int32_t flaps_s) {
         return ESP_ERR_INVALID_STATE;
     }
 
+    // THE BENCH CAP, AT THE REAL CHOKE POINT.  It used to be applied only in
+    // set_params, which clamps the three CONFIGURED speeds - so an explicit
+    // open-loop spin walked straight past it with whatever rate the caller
+    // asked for.  `spin 0 400 20` at a console is one typo, and the console is
+    // the only path a person uses at a vise, so the contract did not hold
+    // where it mattered most.  Refused rather than clamped: a spin asks for a
+    // specific speed for a reason (2026-09-11).
+    if (bench_speed_refused(flaps_s)) return ESP_ERR_NOT_SUPPORTED;
+
     // Remember that this was the alarm-speed whirl: a fault during it drops EN.
     g_fast_spin[col] = flaps_s >= g_params.flaps_s_alarm;
 
