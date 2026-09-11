@@ -664,9 +664,18 @@ and the heat becomes uninteresting, at the cost of torque margin that 1:1 can
 afford.
 
 **Vref is set by MEASUREMENT, not by a formula.**  The FYSETC modules' sense
-resistor value is unverified, and the usual `Vref = I_RMS × 2.5 × R_sense`
-arithmetic is only as good as that number.  BRINGUP §28b gate 3 step 2 has the
-procedure and a blank for the measured value on driver #1.
+resistor value is unverified, and the arithmetic is only as good as that number.
+For a TMC2209, VREF is a *scaling* input against a full-scale current fixed by
+the sense resistor —
+`I_RMS = [0.325 / (R_sense + 0.02)] / √2 × (Vref / 2.5)` — which puts 0.7 A RMS
+at **≈0.99 V** on a 0.11 Ω module and **≈1.29 V** on a 0.15 Ω one.
+
+> **Corrected 2026-09-11.**  This paragraph previously quoted
+> `Vref = I_RMS × 2.5 × R_sense`, which is the **A4988 / DRV8825** relationship
+> and is wrong here by roughly 5×.  See the §17 entry.
+
+`docs/BENCH_WIRING.md` §4 has the full procedure; BRINGUP §28b gate 3 step 2
+has the blanks for the measured values on driver #1.
 
 **Plan B, adopted only if the thermal soak fails: UART mode.**  Wire PDN_UART to
 the C5 and set `IHOLD` ≈ 15 % with `IRUN` as needed; this also unlocks StallGuad
@@ -3803,3 +3812,41 @@ numbered section — if you find one that disagrees, fix the section.
     `motion::init` still disables deliberately until VM has settled for ≥100 ms
     and then homes.  A boot contains a short, bounded de-energized window; what
     the pulldown prevents is the unbounded one.
+
+- 2026-09-11 — **Two defects found while writing the bench wiring guide, both
+  in the path Nico was about to use.**  `docs/BENCH_WIRING.md` is the guide;
+  module V1 is assembled and about to be powered for the first time.
+
+  - **THE BENCH SPEED CAP DID NOT HOLD ON THE CONSOLE PATH.**  §15 phase 8 and
+    §17 both describe the cap as applied "at the one place every speed enters
+    the motion layer".  That was `motion::set_params`, which clamps the three
+    *configured* speeds — and `motion::step_open_loop` takes `flaps_s` as an
+    argument and never checked it.  So `spin 0 400 20` at a console ran the show
+    spin at full rate on a printed PLA axle, and the console is the only path a
+    person uses at a vise.  The cap is enforced inside `step_open_loop` now,
+    which is the function every commanded rate actually reaches, and the CLI
+    prints the refusal with the number rather than a bare error name.  Worth
+    recording as a lesson about wording: "the one place every speed enters the
+    motion layer" was written about the place speeds are *configured*, and
+    reading it back later it sounded like a proof.
+  - **THE BENCH SOAK COULD NOT RUN WITHOUT A HALL.**  It called the closed-loop
+    `motion::go`, which refuses on `!hall_valid` — so on a module with no magnet
+    fitted it would have sat for an hour posting nothing and reported a soak
+    that never moved.  The thermal question does not need a Hall, because the
+    heat is in the holding current, so the soak now falls back to open-loop
+    flaps when there is no home reference, says `OPEN LOOP` in the log and the
+    report, and **omits** the edge figures rather than printing zeroes that look
+    like clean results.  `column_drivable` no longer rejects a FAULT state
+    either: a hall-less module homes at boot, fails, retries and latches
+    `no_hall`, so requiring a clean state refused the one configuration this
+    build exists to be used in first.
+
+  Also corrected: **the Vref formula in §5.7a and BRINGUP §28b was the A4988 /
+  DRV8825 relationship**, `Vref = I_RMS × 2.5 × R_sense`, and it is wrong for a
+  TMC2209 by roughly 5×.  The TMC2209 uses VREF as a *scaling* input against a
+  full-scale current fixed by the sense resistor:
+  `I_RMS = [0.325 / (R_sense + 0.02)] / √2 × (Vref / 2.5)`, so 0.7 A RMS is
+  **≈0.99 V** on a 0.11 Ω module, not 0.193 V.  The old figure would have set
+  ~0.14 A, the motor would have skipped under load, and the natural conclusion
+  would have been that the drive is inadequate — a wrong number that produces a
+  plausible wrong diagnosis is worse than one that produces an obvious failure.

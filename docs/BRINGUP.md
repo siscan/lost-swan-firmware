@@ -1338,9 +1338,17 @@ once — and the thermal result from gate 3 applies only to the driver it ran on
 ### Step 2 — SET VREF BY MEASUREMENT — 0.7 A RMS
 
 **Do this before enabling the driver, with the motor unplugged.** The usual
-`Vref = I_RMS × 2.5 × R_sense` arithmetic is only as good as `R_sense`, and the
-FYSETC modules' sense resistor value is **unverified** — that is the whole
-reason this is a measurement and not a calculation.
+arithmetic is only as good as `R_sense`, and the FYSETC modules' sense resistor
+value is **unverified** — that is the whole reason this is a measurement and not
+a calculation.
+
+> **CORRECTED 2026-09-11.**  This section previously gave `Vref = I_RMS × 2.5 ×
+> R_sense` and a target of **0.193 V**.  That is the **A4988 / DRV8825**
+> relationship and it is wrong for a TMC2209, which uses VREF as a *scaling*
+> input against a full-scale current fixed by the sense resistor.  0.193 V would
+> have set roughly **0.14 A** — the motor would have skipped under any load and
+> the obvious conclusion would have been that the drive is inadequate.  The real
+> figure is about **1 V**.  `docs/BENCH_WIRING.md` §4 has the derivation.
 
 1. Power the driver from the **20 V PD rail** with **the motor disconnected**
    and EN released (`en 0`).  Twenty volts, not twelve: `HARDWARE_PLAN_2` §5 is
@@ -1350,11 +1358,19 @@ reason this is a measurement and not a calculation.
    wiper** — on a FYSETC TMC2209 that is the metal screw head itself. Do not
    short it to the neighbouring pads; a slipped probe here kills the driver.
 3. Turn the pot and read Vref directly.
-4. Target, for **0.7 A RMS** with the common 0.11 Ω sense resistor:
-   `Vref ≈ 0.7 × 2.5 × 0.11 = 0.193 V`. If the module is 0.15 Ω it is 0.263 V.
-   **Which it is, is what you are about to find out** — set the pot to the 0.11 Ω
-   figure, then confirm the actual current in **Step 5 of this section**
-   (below, not item 5 here) and adjust.
+4. Target, for **0.7 A RMS**.  The TMC2209 relationship is
+   `I_RMS = [V_fs / (R_sense + 0.02)] / √2 × (Vref / 2.5)` with `V_fs = 0.325 V`:
+
+   | R_sense (read the marking) | full-scale I_RMS | **Vref for 0.7 A** |
+   |---|---|---|
+   | `R110` = 0.11 Ω | 1.77 A | **0.99 V** |
+   | `R150` = 0.15 Ω | 1.35 A | **1.29 V** |
+   | `R100` = 0.10 Ω | 1.92 A | **0.91 V** |
+
+   **Read the sense resistor rather than guessing it** — two small SMD parts
+   beside the motor outputs, and the marking settles it in seconds.  Then
+   confirm the actual current in **Step 5 of this section** (below, not item 5
+   here).  Peak coil current at 0.7 A RMS is **0.99 A**.
 5. **One batch, so one measurement — if step 1 confirmed they match.**  Set and
    record Vref on driver #1 and use it for the rest; if step 1 found a
    mismatch, do this for each driver instead.  The measurement is what makes
