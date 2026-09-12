@@ -12,6 +12,11 @@ Prices are ballparks for sanity, not quotes.
 >   and the 5 V sensor rail is gone.
 > - **`Buck 12→5 V` no longer feeds the sensors** — HP2 §5 is a 20→5 V
 >   R-78B5.0-2.0 for logic and audio only.
+> - **The magnets bought are N42, not N35** — 120 × Ø6×3 **axial** discs
+>   (`PROCUREMENT_STATUS.md`), inside HP2 §4's N35–N48 window.  Two warnings
+>   this row lacks: buy **metric** (the US 1/4in × 1/8in disc will not enter a
+>   Ø6.2 pocket) and **axial** (diametric 6×3 discs are sold and are useless
+>   here).
 > - **Gotcha 1's "~1.1-1.2 A RMS" is superseded by 0.7 A RMS** (spec §5.7a,
 >   2026-09-06 — the motor is sealed in a PLA drum and holds current all day).
 >   Its second sentence still stands.

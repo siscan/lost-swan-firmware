@@ -114,6 +114,26 @@ motors are released. It survives a reboot on purpose, so pulling the power
 mid-repair cannot restart a countdown on top of your hands. Leaving maintenance
 re-homes everything, because the drums have been moved by hand.
 
+### The park pin, and the order to use it in
+
+There is a **park pin** that drops through the idler wall and physically locks
+one drum, so it cannot turn while you work on it. It has one rule, and the rule
+is an order rather than a warning:
+
+> **Pin in ⇒ maintenance mode ON first. Pin out ⇒ maintenance mode OFF last.**
+
+Maintenance first, every time. A drum that is pinned while the display is still
+running is a drum the motor will try to turn — and it will keep trying, because
+as far as the firmware knows a drum that has stopped moving is a jam. It stops
+itself within a couple of seconds and does not retry, so nothing is damaged; but
+you will have put a fault in the display's permanent record that you caused on
+purpose, and that record is worth more when everything in it is real.
+
+Maintenance already releases the motors, stops the scheduling and turns off
+automatic re-homing, which is exactly the state a pinned drum wants. Nothing
+detects the pin — there is no sensor for it, and the right answer to that is
+telling you the order rather than inventing one.
+
 ## The terminal prop
 
 If you have built the separate Swan terminal — the Pi with the CRT — it announces

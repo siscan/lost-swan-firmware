@@ -37,10 +37,16 @@ struct SimDrum {
     // is expressed as a fixed drum angle: the model has always assumed ~2.6
     // degrees, which was 60 usteps under the rim gear and is 23 at 1:1.  Left
     // at 60 it would have silently modelled a magnet almost three times wider
-    // than the one on the disc - a model that flatters homing.  VERIFY: the
-    // real arc is set by the A1121LUA-T (95 G operate) and the 6x3 magnet at
-    // R52, and has never been
-    // measured.
+    // than the one on the disc - a model that flatters homing.
+    //
+    // VERIFY, and the direction of the error is known even though the value is
+    // not: the real arc is set by the A1121LUA-T (95 G operate) and the 6x3
+    // *N42* disc at R52, and has never been measured.  N42 is stronger than the
+    // N35 this 2.6 degrees was estimated against, and a stronger magnet crosses
+    // 95 G FURTHER from the sensor - so the real window is probably WIDER than
+    // 23 usteps, not narrower.  A wider real window is the benign direction (the
+    // model is the pessimistic one), which is why this stays a bench
+    // measurement rather than a guess: BRINGUP step 6, edge repeatability.
     int32_t window = static_cast<int32_t>(USTEPS_PER_SPOOL_REV_NUM /
                                           (USTEPS_PER_SPOOL_REV_DEN * 137));
     int32_t jitter = 0;    // max +- per-edge jitter, usteps; does NOT accumulate

@@ -59,13 +59,16 @@ Maintenance survives a reboot and a boot in maintenance does not home and leaves
 EN released — which is exactly what you want while wiring. `maint off` re-arms
 and re-homes everything.
 
-**2. Which rail DIR is tied to is NOT recorded anywhere, and it is a coin
-flip.** Spec §2 says DIR is tied at each driver and bench step 3 says to move it
-to the other rail if the drum turns the wrong way — but nothing says which rail
-to start from, and the rings are **descending**, so "correct" means one forward
-flip *decrements* the digit. Decide it with the motor's coupler off the drum, or
-in maintenance with `step`, before the drum can jam against the bezel lip.
-**Record the answer here when you know it.**
+**2. Direction is a FIRMWARE BIT on this board, not a wiring decision.** DIR is
+the ganged **GPIO24** and `motion.dir_invert` chooses the sense (§2.2, since
+2026-09-06) — there is no rail to pick and nothing to unsolder. The rings are
+**descending**, so "correct" means one forward flip *decrements* the digit; if
+it increments, `dir 1` then `save`. Still settle it with the motor's coupler off
+the drum, or in maintenance with `step`, before the drum can jam against the
+bezel lip. **Record the answer here when you know it.**
+*(Until 2026-09-11 this said the rail was "a coin flip that is NOT recorded
+anywhere". True of the rim-gear bridge, and still true of the **XIAO** — no pin
+to spare, `PIN_DIR = -1`, direction is a wiring change there.)*
 
 **3. `motion.hall_active_low` is settable now — but NOT from the console.**
 Step 2 tells you to change it if the magnet polarity reads inverted. It got a
@@ -199,11 +202,11 @@ does not run all of them. This is the path:
 | — | `col 1..4 disabled` if only one column is wired | four unwired `real` columns drop EN for all five |
 | 1 | `pins` | is this the board map you wired to |
 | 2 | `hall` + a magnet | polarity, and is the sensor alive at all |
-| 3 | `step 0 200` | **which rail DIR is tied to** — with the coupler OFF the drum |
-| 4 | `home 0`, `revs 0 10` | **the gear ratio**: 8242 or 8369 |
+| 3 | `step 0 200`, then `dir` / `save` | **`motion.dir_invert`** — with the coupler OFF the drum |
+| 4 | `home 0`, `revs 0 10` | **which machine this is**: expect **3200, flat** |
 | 5 | `spin 0 <n> 10`, 10 → 25 | **`flaps_s_alarm`** — watched, not read |
 | 6 | `revs 0 20` | **`hall_tol`** |
-| 7 | `en 0`, ten minutes | **`en_idle_off`** |
+| 7 | ~~`en 0`, ten minutes~~ | **obsolete** — `en_idle_off` is deleted and the coils stay energised (§5.7); the thermal soak replaces it |
 | 8 | `cal`, `save`, then `go 0 0..49` | the blank card, and the right drum on the right column |
 | 20 | the physical provocations | the fault thresholds, which are the least-trusted numbers here |
 
@@ -302,11 +305,17 @@ one.
       direction, and on the v3 descending rings it is the direction in which
       the displayed digit DECREMENTS.
 
-If not, move that driver's DIR tie to the other rail. DIR is tied per driver, so
-this is a per-column wiring fix; there is no firmware setting for it and coil
-order on the JSTs does not need to match.
+If not: **`dir 1`, then `save`.** DIR is the ganged GPIO24 and
+`motion.dir_invert` is the setting — one bit, all five drivers, no soldering
+iron (§2.2, since 2026-09-06). Refused while a column is MOVING, because the
+driver samples DIR on the next STEP edge. Coil order on the JSTs does not need
+to match.
 
-- Result: DIR rail = ______
+*(Until 2026-09-11 this said to move the driver's DIR tie to the other rail and
+that "there is no firmware setting for it". Correct for the rim-gear bridge, and
+still correct on the XIAO — `PIN_DIR = -1` there.)*
+
+- Result: `motion.dir_invert` = ______
 
 ### 4. `home 0`, then `revs 0 10` — which machine is this?
 

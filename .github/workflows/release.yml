@@ -119,10 +119,17 @@ jobs:
           {
             echo "Flashable images for \`$TAG\`, built in CI from that tree."
             echo
-            echo "**The software is done; the mechanism is untouched.** No motor, driver or"
-            echo "Hall sensor has ever been connected to this board. See the \`STATE OF THE"
-            echo "WORLD\` entry at the end of §17 in \`docs/FIRMWARE_SPEC.md\`, then"
-            echo "\`docs/BRINGUP.md\`."
+            # Deliberately asserts nothing about the mechanism.  This block used to
+            # hard-code "no motor, driver or Hall sensor has ever been connected" -
+            # true when it was written, and a TEMPLATE, so the next dispatch would
+            # have re-emitted it onto a release cut after the bench had run.
+            echo "**What is verified against hardware, and what is not, is recorded in the"
+            echo "\`STATE OF THE WORLD\` entry at the end of §17 of \`docs/FIRMWARE_SPEC.md\`**"
+            echo "as of this tag.  Read that, then \`docs/BRINGUP.md\`."
+            echo
+            echo "**Check the geometry era before putting this on a mechanism:** \`git show"
+            echo "$TAG:components/ring/include/ring/geometry.h\`.  An image built for a"
+            echo "different drive faults rather than running wrong, but it will not work."
             echo
             echo '## Restore, without a build environment'
             echo
@@ -179,6 +186,6 @@ jobs:
             gh release upload "$TAG" rel/* --clobber
           else
             gh release create "$TAG" rel/* \
-              --title "$TAG — the software is done, the mechanism is untouched" \
+              --title "$TAG" \
               --notes-file notes.md
           fi
