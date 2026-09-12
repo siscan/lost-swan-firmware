@@ -2,73 +2,57 @@
 <rect width="1600" height="1131" fill="#ffffff"/>
 <rect x="0" y="0" width="1600" height="88" fill="#eef1f4"/>
 <line x1="0" y1="88" x2="1600" y2="88" stroke="#c7ced6" stroke-width="2"/>
-<text x="52" y="47" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="29" fill="#14181d" text-anchor="start" font-weight="bold">Connection 3  —  STEP  -&gt;  GPIO8</text>
-<text x="52" y="74" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">wire colour: orange</text>
-<text x="1548" y="52" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="26" fill="#6b7683" text-anchor="end" font-weight="bold">5 / 21</text>
-<rect x="640" y="250" width="250" height="400" rx="6" fill="#f6f8fa" stroke="#14181d" stroke-width="3"/>
-<text x="765" y="204" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="21" fill="#14181d" text-anchor="middle" font-weight="bold">FYSETC TMC2209</text>
-<text x="765" y="226" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="14" fill="#6b7683" text-anchor="middle" font-weight="normal">standalone  ·  match by LABEL</text>
-<rect x="720" y="400" width="90" height="90" rx="4" fill="#2b3138" stroke="none" stroke-width="2"/>
-<text x="765" y="452" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#ffffff" text-anchor="middle" font-weight="bold">TMC</text>
-<circle cx="765" cy="555" r="21" fill="#dfe4ea" stroke="#14181d" stroke-width="2"/>
-<line x1="752" y1="555" x2="778" y2="555" stroke="#14181d" stroke-width="4" stroke-linecap="round"/>
-<text x="765" y="598" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="middle" font-weight="normal">Vref pot</text>
-<rect x="622" y="284" width="18" height="20" rx="0" fill="#9aa4ae" stroke="none" stroke-width="2"/>
-<text x="652" y="300" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="start" font-weight="normal">EN</text>
-<rect x="622" y="326" width="18" height="20" rx="0" fill="#9aa4ae" stroke="none" stroke-width="2"/>
-<text x="652" y="342" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="start" font-weight="normal">MS1</text>
-<rect x="622" y="368" width="18" height="20" rx="0" fill="#9aa4ae" stroke="none" stroke-width="2"/>
-<text x="652" y="384" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="start" font-weight="normal">MS2</text>
-<rect x="622" y="410" width="18" height="20" rx="0" fill="#9aa4ae" stroke="none" stroke-width="2"/>
-<text x="652" y="426" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="start" font-weight="normal">PDN</text>
-<rect x="622" y="452" width="18" height="20" rx="0" fill="#9aa4ae" stroke="none" stroke-width="2"/>
-<text x="652" y="468" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="start" font-weight="normal">CLK</text>
-<rect x="622" y="494" width="18" height="20" rx="0" fill="#14181d" stroke="none" stroke-width="2"/>
-<text x="652" y="510" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#14181d" text-anchor="start" font-weight="bold">STEP</text>
-<rect x="622" y="536" width="18" height="20" rx="0" fill="#9aa4ae" stroke="none" stroke-width="2"/>
-<text x="652" y="552" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="start" font-weight="normal">DIR</text>
-<rect x="622" y="578" width="18" height="20" rx="0" fill="#9aa4ae" stroke="none" stroke-width="2"/>
-<text x="652" y="594" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="start" font-weight="normal">(n/c)</text>
-<rect x="890" y="284" width="18" height="20" rx="0" fill="#9aa4ae" stroke="none" stroke-width="2"/>
-<text x="878" y="300" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="end" font-weight="normal">VM</text>
-<rect x="890" y="326" width="18" height="20" rx="0" fill="#9aa4ae" stroke="none" stroke-width="2"/>
-<text x="878" y="342" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="end" font-weight="normal">GND</text>
-<rect x="890" y="368" width="18" height="20" rx="0" fill="#9aa4ae" stroke="none" stroke-width="2"/>
-<text x="878" y="384" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="end" font-weight="normal">2B</text>
-<rect x="890" y="410" width="18" height="20" rx="0" fill="#9aa4ae" stroke="none" stroke-width="2"/>
-<text x="878" y="426" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="end" font-weight="normal">2A</text>
-<rect x="890" y="452" width="18" height="20" rx="0" fill="#9aa4ae" stroke="none" stroke-width="2"/>
-<text x="878" y="468" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="end" font-weight="normal">1A</text>
-<rect x="890" y="494" width="18" height="20" rx="0" fill="#9aa4ae" stroke="none" stroke-width="2"/>
-<text x="878" y="510" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="end" font-weight="normal">1B</text>
-<rect x="890" y="536" width="18" height="20" rx="0" fill="#9aa4ae" stroke="none" stroke-width="2"/>
-<text x="878" y="552" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="end" font-weight="normal">VIO</text>
-<rect x="890" y="578" width="18" height="20" rx="0" fill="#9aa4ae" stroke="none" stroke-width="2"/>
-<text x="878" y="594" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="end" font-weight="normal">GND</text>
-<rect x="110" y="250" width="260" height="430" rx="6" fill="#f6f8fa" stroke="#14181d" stroke-width="3"/>
-<text x="240" y="204" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="21" fill="#14181d" text-anchor="middle" font-weight="bold">ESP32-C5-DevKitC-1</text>
-<text x="240" y="226" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="14" fill="#6b7683" text-anchor="middle" font-weight="normal">USB-C at the top</text>
-<rect x="214" y="234" width="74" height="20" rx="4" fill="#9aa4ae" stroke="#14181d" stroke-width="2"/>
-<text x="240" y="249" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="12" fill="#14181d" text-anchor="middle" font-weight="normal">USB-C</text>
-<rect x="158" y="290" width="150" height="84" rx="4" fill="#2b3138" stroke="none" stroke-width="2"/>
-<text x="240" y="340" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#ffffff" text-anchor="middle" font-weight="bold">ESP32-C5</text>
-<rect x="370" y="335" width="18" height="22" rx="0" fill="#9aa4ae" stroke="none" stroke-width="2"/>
-<text x="358" y="352" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#6b7683" text-anchor="end" font-weight="normal">3V3</text>
-<rect x="370" y="397" width="18" height="22" rx="0" fill="#9aa4ae" stroke="none" stroke-width="2"/>
-<text x="358" y="414" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#6b7683" text-anchor="end" font-weight="normal">GND</text>
-<rect x="370" y="459" width="18" height="22" rx="0" fill="#9aa4ae" stroke="none" stroke-width="2"/>
-<text x="358" y="476" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#6b7683" text-anchor="end" font-weight="normal">GPIO6</text>
-<rect x="370" y="521" width="18" height="22" rx="0" fill="#14181d" stroke="none" stroke-width="2"/>
-<text x="358" y="538" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#14181d" text-anchor="end" font-weight="bold">GPIO8</text>
-<rect x="370" y="583" width="18" height="22" rx="0" fill="#9aa4ae" stroke="none" stroke-width="2"/>
-<text x="358" y="600" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#6b7683" text-anchor="end" font-weight="normal">GPIO24</text>
-<text x="126" y="664" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#c7ced6" text-anchor="start" font-weight="normal">other pins omitted</text>
-<polyline points="618,504 520,504 520,532 392,532" fill="none" stroke="#e07b16" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
-<circle cx="618" cy="504" r="4.34" fill="#e07b16" stroke="none" stroke-width="1"/>
-<circle cx="392" cy="532" r="4.34" fill="#e07b16" stroke="none" stroke-width="1"/>
-<rect x="52" y="730" width="1496" height="2" rx="0" fill="#c7ced6" stroke="none" stroke-width="2"/>
-<text x="52" y="776" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#14181d" text-anchor="start" font-weight="normal">One pulse on this wire moves the motor one microstep. At 1/16 microstepping that is 1/64th of a flap,</text>
-<text x="52" y="804" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#14181d" text-anchor="start" font-weight="normal">and 3200 pulses is exactly one drum revolution. This is the only wire that carries motion.</text>
+<text x="52" y="47" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="29" fill="#14181d" text-anchor="start" font-weight="bold">Solder the headers</text>
+<text x="52" y="74" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">SKIPPED this session - the modules arrived with headers already on</text>
+<text x="1548" y="52" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="26" fill="#6b7683" text-anchor="end" font-weight="bold">5 / 28</text>
+<rect x="52" y="108" width="1496" height="102" rx="6" fill="#eff8f2" stroke="#1a7f45" stroke-width="3"/>
+<rect x="52" y="108" width="9" height="102" rx="0" fill="#1a7f45" stroke="none" stroke-width="2"/>
+<text x="80" y="140" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="18" fill="#1a7f45" text-anchor="start" font-weight="bold">SKIP THIS PAGE AND GO TO PAGE 6. The FYSETC modules arrived PRE-SOLDERED - confirmed by opening the box, not inferred from a</text>
+<text x="80" y="166" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="18" fill="#1a7f45" text-anchor="start" font-weight="bold">product photo. The page stays because the next module to arrive may not be, and because the orientation below is the one thing</text>
+<text x="80" y="192" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="18" fill="#1a7f45" text-anchor="start" font-weight="bold">that cannot be undone.</text>
+<text x="52" y="270" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="21" fill="#14181d" text-anchor="start" font-weight="bold">Confirm it in five seconds before you move on</text>
+<rect x="56" y="290" width="26" height="26" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
+<text x="98" y="310" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">Two black strips of 8 pins each are IN the module, not loose in the bag.</text>
+<rect x="56" y="330" width="26" height="26" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
+<text x="98" y="350" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">Every pin has a shiny cone of solder where it meets the board.</text>
+<rect x="56" y="370" width="26" height="26" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
+<text x="98" y="390" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">Sighted from the end, all sixteen pins are parallel and the same length.</text>
+<rect x="56" y="410" width="26" height="26" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
+<text x="98" y="430" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">The pins point AWAY from the components, i.e. out of the underside.</text>
+<text x="52" y="486" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="21" fill="#14181d" text-anchor="start" font-weight="bold">If a future module arrives with loose strips</text>
+<text x="52" y="522" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">Solder it STRADDLED INTO THE BREADBOARD. The board holds all sixteen pins square and at the right</text>
+<text x="52" y="547" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">spacing while you work, which is the whole problem - a module soldered freehand comes out with</text>
+<text x="52" y="572" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">splayed pins that will not enter a breadboard, and straightening them afterwards breaks them at the</text>
+<text x="52" y="597" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">joint.</text>
+<rect x="52" y="646" width="660" height="330" rx="8" fill="#eff8f2" stroke="#1a7f45" stroke-width="3"/>
+<text x="76" y="686" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="21" fill="#1a7f45" text-anchor="start" font-weight="bold">RIGHT  -  pins held by the board</text>
+<rect x="836" y="646" width="660" height="330" rx="8" fill="#fdf0ef" stroke="#c0261b" stroke-width="3"/>
+<text x="860" y="686" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="21" fill="#c0261b" text-anchor="start" font-weight="bold">WRONG  -  pins held by hand or tape</text>
+<polyline points="382,714 382,742" fill="none" stroke="#14181d" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<polyline points="374,734 382,742 390,734" fill="none" stroke="#14181d" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="404" y="730" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#1a7f45" text-anchor="start" font-weight="bold">solder from THIS side</text>
+<rect x="192" y="750" width="360" height="22" rx="3" fill="#3c6e47" stroke="#14181d" stroke-width="2"/>
+<text x="372" y="766" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="14" fill="#ffffff" text-anchor="middle" font-weight="bold">module, component side UP</text>
+<rect x="122" y="814" width="470" height="76" rx="5" fill="#fbfbf9" stroke="#14181d" stroke-width="2"/>
+<rect x="130" y="844" width="454" height="14" rx="2" fill="#eceff2" stroke="none" stroke-width="2"/>
+<rect x="242" y="772" width="16" height="78" rx="2" fill="#2b3138" stroke="#14181d" stroke-width="1"/>
+<rect x="486" y="772" width="16" height="78" rx="2" fill="#2b3138" stroke="#14181d" stroke-width="1"/>
+<text x="372" y="882" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="14" fill="#6b7683" text-anchor="middle" font-weight="normal">0.6 in</text>
+<text x="76" y="922" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">Strips into the board pins-down, module dropped on top, solder the sixteen</text>
+<text x="76" y="942" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">joints you can see.</text>
+<rect x="926" y="740" width="430" height="46" rx="4" fill="#3c6e47" stroke="#14181d" stroke-width="2"/>
+<text x="1141" y="770" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#ffffff" text-anchor="middle" font-weight="bold">module</text>
+<line x1="956" y1="786" x2="956" y2="844" stroke="#2b3138" stroke-width="7" stroke-linecap="round"/>
+<line x1="1008" y1="786" x2="1017" y2="844" stroke="#2b3138" stroke-width="7" stroke-linecap="round"/>
+<line x1="1060" y1="786" x2="1053" y2="844" stroke="#2b3138" stroke-width="7" stroke-linecap="round"/>
+<line x1="1112" y1="786" x2="1116" y2="844" stroke="#2b3138" stroke-width="7" stroke-linecap="round"/>
+<line x1="1164" y1="786" x2="1161" y2="844" stroke="#2b3138" stroke-width="7" stroke-linecap="round"/>
+<line x1="1216" y1="786" x2="1227" y2="844" stroke="#2b3138" stroke-width="7" stroke-linecap="round"/>
+<line x1="1268" y1="786" x2="1258" y2="844" stroke="#2b3138" stroke-width="7" stroke-linecap="round"/>
+<line x1="1320" y1="786" x2="1326" y2="844" stroke="#2b3138" stroke-width="7" stroke-linecap="round"/>
+<text x="1141" y="880" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#c0261b" text-anchor="middle" font-weight="bold">splayed - will not enter a board</text>
+<text x="860" y="922" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">Sixteen pins cannot be held square by hand. This is the failure that costs</text>
+<text x="860" y="942" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">a module rather than a minute.</text>
 <line x1="52" y1="1087" x2="1548" y2="1087" stroke="#c7ced6" stroke-width="1" stroke-linecap="round"/>
 <text x="52" y="1111" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">LOST Swan  module V1  ·  generated by tools/wiringgen.py from hal/pins.h + docs/BENCH_WIRING.md</text>
 </svg>

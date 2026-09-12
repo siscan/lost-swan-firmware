@@ -2,13 +2,9 @@
 <rect width="1600" height="1131" fill="#ffffff"/>
 <rect x="0" y="0" width="1600" height="88" fill="#eef1f4"/>
 <line x1="0" y1="88" x2="1600" y2="88" stroke="#c7ced6" stroke-width="2"/>
-<text x="52" y="47" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="29" fill="#14181d" text-anchor="start" font-weight="bold">The breadboard, and where the driver sits</text>
-<text x="52" y="74" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">Nothing is wired yet. This is the board, drawn as it is.</text>
-<text x="1548" y="52" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="26" fill="#6b7683" text-anchor="end" font-weight="bold">7 / 28</text>
-<text x="52" y="130" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="18" fill="#14181d" text-anchor="start" font-weight="normal">Two facts about this board do all the work. Each group of five holes across ONE row, on one side of the</text>
-<text x="52" y="156" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="18" fill="#14181d" text-anchor="start" font-weight="normal">channel, is ONE electrical node - so a wire in row 26 column J is electrically the driver's VM pin. And the</text>
-<text x="52" y="182" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="18" fill="#14181d" text-anchor="start" font-weight="normal">four long strips along the edges are the POWER RAILS, which are joined to nothing at all until page 20 makes</text>
-<text x="52" y="208" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="18" fill="#14181d" text-anchor="start" font-weight="normal">them live.</text>
+<text x="52" y="47" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="29" fill="#14181d" text-anchor="start" font-weight="bold">The finished board</text>
+<text x="52" y="74" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">Walk rows 26 to 33 once, before anything is powered</text>
+<text x="1548" y="52" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="26" fill="#6b7683" text-anchor="end" font-weight="bold">27 / 28</text>
 <rect x="70" y="250" width="1452" height="394" rx="8" fill="#fbfbf9" stroke="#14181d" stroke-width="3"/>
 <line x1="100" y1="278" x2="1502" y2="278" stroke="#d0342c" stroke-width="2" stroke-linecap="round" stroke-dasharray="2 6"/>
 <text x="86" y="283" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="18" fill="#d0342c" text-anchor="middle" font-weight="bold">+</text>
@@ -686,41 +682,90 @@
 <text x="776" y="670" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#14181d" text-anchor="middle" font-weight="bold">31</text>
 <text x="798" y="670" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#14181d" text-anchor="middle" font-weight="bold">32</text>
 <text x="820" y="670" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#14181d" text-anchor="middle" font-weight="bold">33</text>
-<polyline points="622,402 562,362" fill="none" stroke="#14181d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-<rect x="262" y="340" width="300" height="24" rx="0" fill="#fbfbf9" stroke="none" stroke-width="2"/>
-<text x="556" y="356" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#14181d" text-anchor="end" font-weight="bold">the module straddles the channel</text>
-<text x="1210" y="446" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="14" fill="#6b7683" text-anchor="middle" font-weight="normal">0.3 in channel  -  the only reason a StepStick works on a breadboard</text>
-<text x="52" y="738" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="20" fill="#14181d" text-anchor="start" font-weight="bold">Why the driver lands in columns D and H</text>
-<text x="52" y="774" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#14181d" text-anchor="start" font-weight="normal">A StepStick's two headers are 0.6 in apart. Counting across the channel, column D to</text>
-<text x="52" y="797" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#14181d" text-anchor="start" font-weight="normal">column H is 0.1+0.1+0.1+0.3+0.1+0.1 = 0.6 in exactly, so the module drops in with no</text>
-<text x="52" y="820" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#14181d" text-anchor="start" font-weight="normal">pin sharing a node with its opposite number. That spacing is the one certain physical</text>
-<text x="52" y="843" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#14181d" text-anchor="start" font-weight="normal">fact these coordinates are built on.</text>
-<rect x="52" y="884" width="740" height="96" rx="6" fill="#fdf7ec" stroke="#b8791a" stroke-width="3"/>
-<rect x="52" y="884" width="9" height="96" rx="0" fill="#b8791a" stroke="none" stroke-width="2"/>
-<text x="80" y="916" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#b8791a" text-anchor="start" font-weight="bold">COLUMNS E, F AND G DO NOT EXIST for this build: the module body sits</text>
-<text x="80" y="940" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#b8791a" text-anchor="start" font-weight="bold">over them. Every wire on the right half goes into I or J, every wire</text>
-<text x="80" y="964" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#b8791a" text-anchor="start" font-weight="bold">on the left half into B. That is clearance, not tidiness.</text>
-<text x="840" y="738" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="20" fill="#14181d" text-anchor="start" font-weight="bold">THE ESP32 STAYS OFF THE BOARD</text>
-<text x="840" y="774" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#14181d" text-anchor="start" font-weight="normal">Its header-to-header spacing is 0.9 in or 1.0 in depending on the inset, and on an 0.1</text>
-<text x="840" y="797" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#14181d" text-anchor="start" font-weight="normal">in board with an 0.3 in channel both of them fit - landing the pins in different</text>
-<text x="840" y="820" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#14181d" text-anchor="start" font-weight="normal">columns. Which GPIO sits where along the header is a board fact this repository does</text>
-<text x="840" y="843" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#14181d" text-anchor="start" font-weight="normal">not carry, and guessing bends pins. So the DevKitC-1 lies loose on the bench and every</text>
-<text x="840" y="866" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#14181d" text-anchor="start" font-weight="normal">wire to it is male-to-FEMALE.</text>
-<text x="840" y="934" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="bold">Find these five by label on the silkscreen:</text>
-<rect x="844" y="956" width="24" height="24" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
-<text x="876" y="974" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="16" fill="#14181d" text-anchor="start" font-weight="normal">GPIO8  (STEP)</text>
-<rect x="1084" y="956" width="24" height="24" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
-<text x="1116" y="974" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="16" fill="#14181d" text-anchor="start" font-weight="normal">GPIO24  (DIR)</text>
-<rect x="1324" y="956" width="24" height="24" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
-<text x="1356" y="974" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="16" fill="#14181d" text-anchor="start" font-weight="normal">GPIO6  (EN)</text>
-<rect x="844" y="994" width="24" height="24" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
-<text x="876" y="1012" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="16" fill="#14181d" text-anchor="start" font-weight="normal">3V3</text>
-<rect x="1084" y="994" width="24" height="24" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
-<text x="1116" y="1012" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="16" fill="#14181d" text-anchor="start" font-weight="normal">GND</text>
-<text x="840" y="1038" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">ROW AND COLUMN NUMBERS ARE LAYOUT, NOT CHECKED FACTS. The pins on this page are parsed from</text>
-<text x="840" y="1056" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">hal/pins.h and BENCH_WIRING.md and cross-checked; no source says which HOLE anything sits</text>
-<text x="840" y="1074" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">in, so nothing verifies that. Build it elsewhere on the board and the electrical pages are</text>
-<text x="840" y="1092" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">still true while these numbers are not.</text>
+<circle cx="666" cy="540" r="9" fill="#1a7f45" stroke="none" stroke-width="1"/>
+<circle cx="666" cy="342" r="9" fill="#1a7f45" stroke="none" stroke-width="1"/>
+<circle cx="666" cy="320" r="9" fill="#1a7f45" stroke="none" stroke-width="1"/>
+<circle cx="688" cy="540" r="9" fill="#1a7f45" stroke="none" stroke-width="1"/>
+<circle cx="688" cy="342" r="9" fill="#1a7f45" stroke="none" stroke-width="1"/>
+<circle cx="688" cy="320" r="9" fill="#1a7f45" stroke="none" stroke-width="1"/>
+<circle cx="710" cy="540" r="9" fill="#1a7f45" stroke="none" stroke-width="1"/>
+<circle cx="710" cy="320" r="9" fill="#1a7f45" stroke="none" stroke-width="1"/>
+<circle cx="732" cy="320" r="9" fill="#1a7f45" stroke="none" stroke-width="1"/>
+<circle cx="754" cy="320" r="9" fill="#1a7f45" stroke="none" stroke-width="1"/>
+<circle cx="776" cy="540" r="9" fill="#1a7f45" stroke="none" stroke-width="1"/>
+<circle cx="776" cy="320" r="9" fill="#1a7f45" stroke="none" stroke-width="1"/>
+<circle cx="798" cy="540" r="9" fill="#1a7f45" stroke="none" stroke-width="1"/>
+<circle cx="798" cy="320" r="9" fill="#1a7f45" stroke="none" stroke-width="1"/>
+<circle cx="820" cy="320" r="9" fill="#1a7f45" stroke="none" stroke-width="1"/>
+<line x1="864" y1="320" x2="890" y2="320" stroke="#1a7f45" stroke-width="2" stroke-linecap="round"/>
+<rect x="894" y="308" width="400" height="24" rx="0" fill="#fbfbf9" stroke="none" stroke-width="2"/>
+<text x="898" y="325" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="14" fill="#14181d" text-anchor="start" font-weight="normal">J   capacitor, coils, VIO, GND (logic)</text>
+<line x1="864" y1="342" x2="890" y2="342" stroke="#1a7f45" stroke-width="2" stroke-linecap="round"/>
+<rect x="894" y="330" width="400" height="24" rx="0" fill="#fbfbf9" stroke="none" stroke-width="2"/>
+<text x="898" y="347" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="14" fill="#14181d" text-anchor="start" font-weight="normal">I   the two RotoPD supply wires</text>
+<line x1="864" y1="540" x2="890" y2="540" stroke="#1a7f45" stroke-width="2" stroke-linecap="round"/>
+<rect x="894" y="528" width="400" height="24" rx="0" fill="#fbfbf9" stroke="none" stroke-width="2"/>
+<text x="898" y="545" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="14" fill="#14181d" text-anchor="start" font-weight="normal">B   STEP, DIR, EN, MS1, MS2</text>
+<text x="52" y="734" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="20" fill="#14181d" text-anchor="start" font-weight="bold">The whole board, row by row</text>
+<rect x="52" y="750" width="1000" height="34" rx="0" fill="#ffffff" stroke="none" stroke-width="2"/>
+<rect x="56" y="754" width="24" height="24" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
+<text x="96" y="774" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="16" fill="#14181d" text-anchor="start" font-weight="bold">row 26</text>
+<text x="196" y="774" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="16" fill="#6b7683" text-anchor="start" font-weight="normal">EN       | VM</text>
+<text x="520" y="774" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="16" fill="#14181d" text-anchor="start" font-weight="normal">B EN, I VM in, J cap +</text>
+<rect x="52" y="790" width="1000" height="34" rx="0" fill="#fafbfc" stroke="none" stroke-width="2"/>
+<rect x="56" y="794" width="24" height="24" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
+<text x="96" y="814" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="16" fill="#14181d" text-anchor="start" font-weight="bold">row 27</text>
+<text x="196" y="814" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="16" fill="#6b7683" text-anchor="start" font-weight="normal">MS1      | GND</text>
+<text x="520" y="814" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="16" fill="#14181d" text-anchor="start" font-weight="normal">B MS1, I GND in, J cap -</text>
+<rect x="52" y="830" width="1000" height="34" rx="0" fill="#ffffff" stroke="none" stroke-width="2"/>
+<rect x="56" y="834" width="24" height="24" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
+<text x="96" y="854" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="16" fill="#14181d" text-anchor="start" font-weight="bold">row 28</text>
+<text x="196" y="854" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="16" fill="#6b7683" text-anchor="start" font-weight="normal">MS2      | 2B</text>
+<text x="520" y="854" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="16" fill="#14181d" text-anchor="start" font-weight="normal">B MS2, J 2B</text>
+<rect x="52" y="870" width="1000" height="34" rx="0" fill="#fafbfc" stroke="none" stroke-width="2"/>
+<rect x="56" y="874" width="24" height="24" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
+<text x="96" y="894" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="16" fill="#14181d" text-anchor="start" font-weight="bold">row 29</text>
+<text x="196" y="894" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="16" fill="#6b7683" text-anchor="start" font-weight="normal">PDN      | 2A</text>
+<text x="520" y="894" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="16" fill="#14181d" text-anchor="start" font-weight="normal">J 2A</text>
+<rect x="52" y="910" width="1000" height="34" rx="0" fill="#ffffff" stroke="none" stroke-width="2"/>
+<rect x="56" y="914" width="24" height="24" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
+<text x="96" y="934" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="16" fill="#14181d" text-anchor="start" font-weight="bold">row 30</text>
+<text x="196" y="934" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="16" fill="#6b7683" text-anchor="start" font-weight="normal">CLK      | 1A</text>
+<text x="520" y="934" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="16" fill="#14181d" text-anchor="start" font-weight="normal">J 1A</text>
+<rect x="52" y="950" width="1000" height="34" rx="0" fill="#fafbfc" stroke="none" stroke-width="2"/>
+<rect x="56" y="954" width="24" height="24" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
+<text x="96" y="974" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="16" fill="#14181d" text-anchor="start" font-weight="bold">row 31</text>
+<text x="196" y="974" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="16" fill="#6b7683" text-anchor="start" font-weight="normal">STEP     | 1B</text>
+<text x="520" y="974" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="16" fill="#14181d" text-anchor="start" font-weight="normal">B STEP, J 1B</text>
+<rect x="52" y="990" width="1000" height="34" rx="0" fill="#ffffff" stroke="none" stroke-width="2"/>
+<rect x="56" y="994" width="24" height="24" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
+<text x="96" y="1014" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="16" fill="#14181d" text-anchor="start" font-weight="bold">row 32</text>
+<text x="196" y="1014" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="16" fill="#6b7683" text-anchor="start" font-weight="normal">DIR      | VIO</text>
+<text x="520" y="1014" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="16" fill="#14181d" text-anchor="start" font-weight="normal">B DIR, J VIO</text>
+<rect x="52" y="1030" width="1000" height="34" rx="0" fill="#fafbfc" stroke="none" stroke-width="2"/>
+<rect x="56" y="1034" width="24" height="24" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
+<text x="96" y="1054" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="16" fill="#14181d" text-anchor="start" font-weight="bold">row 33</text>
+<text x="196" y="1054" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="16" fill="#6b7683" text-anchor="start" font-weight="normal">(n/c)    | GND</text>
+<text x="520" y="1054" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="16" fill="#14181d" text-anchor="start" font-weight="normal">J GND (logic)</text>
+<text x="1090" y="734" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="20" fill="#14181d" text-anchor="start" font-weight="bold">Count before you power anything</text>
+<text x="1090" y="774" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="19" fill="#14181d" text-anchor="start" font-weight="bold"> 9</text>
+<text x="1134" y="774" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#14181d" text-anchor="start" font-weight="normal">jumper wires</text>
+<text x="1090" y="806" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="19" fill="#14181d" text-anchor="start" font-weight="bold"> 2</text>
+<text x="1134" y="806" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#14181d" text-anchor="start" font-weight="normal">supply wires from the RotoPD</text>
+<text x="1090" y="838" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="19" fill="#14181d" text-anchor="start" font-weight="bold"> 2</text>
+<text x="1134" y="838" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#14181d" text-anchor="start" font-weight="normal">capacitor legs</text>
+<text x="1090" y="870" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="19" fill="#14181d" text-anchor="start" font-weight="bold"> 4</text>
+<text x="1134" y="870" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#14181d" text-anchor="start" font-weight="normal">motor leads from the pigtail</text>
+<line x1="1090" y1="890" x2="1500" y2="890" stroke="#c7ced6" stroke-width="2" stroke-linecap="round"/>
+<text x="1090" y="918" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="19" fill="#14181d" text-anchor="start" font-weight="bold">17</text>
+<text x="1134" y="918" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#14181d" text-anchor="start" font-weight="bold">things in the board, total</text>
+<rect x="1090" y="942" width="458" height="93" rx="6" fill="#fdf7ec" stroke="#b8791a" stroke-width="3"/>
+<rect x="1090" y="942" width="9" height="93" rx="0" fill="#b8791a" stroke="none" stroke-width="2"/>
+<text x="1118" y="974" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#b8791a" text-anchor="start" font-weight="bold">A hole you cannot account for is a wire in</text>
+<text x="1118" y="997" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#b8791a" text-anchor="start" font-weight="bold">the wrong row. Pull it out and find it on</text>
+<text x="1118" y="1020" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#b8791a" text-anchor="start" font-weight="bold">page 20 or 21.</text>
+<text x="1090" y="1056" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#1a7f45" text-anchor="start" font-weight="normal">Then the meter, page 22. It finds what a count cannot: two</text>
+<text x="1090" y="1077" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#1a7f45" text-anchor="start" font-weight="normal">wires in one row that should not share it.</text>
 <line x1="52" y1="1087" x2="1548" y2="1087" stroke="#c7ced6" stroke-width="1" stroke-linecap="round"/>
 <text x="52" y="1111" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">LOST Swan  module V1  ·  generated by tools/wiringgen.py from hal/pins.h + docs/BENCH_WIRING.md</text>
 </svg>

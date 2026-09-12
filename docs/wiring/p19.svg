@@ -2,9 +2,9 @@
 <rect width="1600" height="1131" fill="#ffffff"/>
 <rect x="0" y="0" width="1600" height="88" fill="#eef1f4"/>
 <line x1="0" y1="88" x2="1600" y2="88" stroke="#c7ced6" stroke-width="2"/>
-<text x="52" y="47" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="29" fill="#14181d" text-anchor="start" font-weight="bold">Connection 2  —  coil B</text>
-<text x="52" y="74" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">POWER OFF while you do this</text>
-<text x="1548" y="52" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="26" fill="#6b7683" text-anchor="end" font-weight="bold">19 / 21</text>
+<text x="52" y="47" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="29" fill="#14181d" text-anchor="start" font-weight="bold">Bulk capacitor  —  connection 13</text>
+<text x="52" y="74" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">100 uF, at the driver's OWN pins</text>
+<text x="1548" y="52" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="26" fill="#6b7683" text-anchor="end" font-weight="bold">19 / 28</text>
 <rect x="640" y="250" width="250" height="400" rx="6" fill="#f6f8fa" stroke="#14181d" stroke-width="3"/>
 <text x="765" y="204" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="21" fill="#14181d" text-anchor="middle" font-weight="bold">FYSETC TMC2209</text>
 <text x="765" y="226" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="14" fill="#6b7683" text-anchor="middle" font-weight="normal">standalone  ·  match by LABEL</text>
@@ -29,14 +29,14 @@
 <text x="652" y="552" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="start" font-weight="normal">DIR</text>
 <rect x="622" y="578" width="18" height="20" rx="0" fill="#9aa4ae" stroke="none" stroke-width="2"/>
 <text x="652" y="594" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="start" font-weight="normal">(n/c)</text>
-<rect x="890" y="284" width="18" height="20" rx="0" fill="#9aa4ae" stroke="none" stroke-width="2"/>
-<text x="878" y="300" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="end" font-weight="normal">VM</text>
-<rect x="890" y="326" width="18" height="20" rx="0" fill="#9aa4ae" stroke="none" stroke-width="2"/>
-<text x="878" y="342" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="end" font-weight="normal">GND</text>
-<rect x="890" y="368" width="18" height="20" rx="0" fill="#14181d" stroke="none" stroke-width="2"/>
-<text x="878" y="384" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#14181d" text-anchor="end" font-weight="bold">2B</text>
-<rect x="890" y="410" width="18" height="20" rx="0" fill="#14181d" stroke="none" stroke-width="2"/>
-<text x="878" y="426" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#14181d" text-anchor="end" font-weight="bold">2A</text>
+<rect x="890" y="284" width="18" height="20" rx="0" fill="#14181d" stroke="none" stroke-width="2"/>
+<text x="878" y="300" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#14181d" text-anchor="end" font-weight="bold">VM</text>
+<rect x="890" y="326" width="18" height="20" rx="0" fill="#14181d" stroke="none" stroke-width="2"/>
+<text x="878" y="342" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#14181d" text-anchor="end" font-weight="bold">GND</text>
+<rect x="890" y="368" width="18" height="20" rx="0" fill="#9aa4ae" stroke="none" stroke-width="2"/>
+<text x="878" y="384" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="end" font-weight="normal">2B</text>
+<rect x="890" y="410" width="18" height="20" rx="0" fill="#9aa4ae" stroke="none" stroke-width="2"/>
+<text x="878" y="426" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="end" font-weight="normal">2A</text>
 <rect x="890" y="452" width="18" height="20" rx="0" fill="#9aa4ae" stroke="none" stroke-width="2"/>
 <text x="878" y="468" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="end" font-weight="normal">1A</text>
 <rect x="890" y="494" width="18" height="20" rx="0" fill="#9aa4ae" stroke="none" stroke-width="2"/>
@@ -45,34 +45,47 @@
 <text x="878" y="552" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="end" font-weight="normal">VIO</text>
 <rect x="890" y="578" width="18" height="20" rx="0" fill="#9aa4ae" stroke="none" stroke-width="2"/>
 <text x="878" y="594" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="end" font-weight="normal">GND</text>
-<rect x="1230" y="300" width="150" height="150" rx="8" fill="#e9edf1" stroke="#14181d" stroke-width="3"/>
-<circle cx="1305" cy="375" r="28" fill="#c7ced6" stroke="#14181d" stroke-width="2"/>
-<circle cx="1305" cy="375" r="9" fill="#14181d" stroke="none" stroke-width="1"/>
-<text x="1305" y="280" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="middle" font-weight="bold">LDO 42STH48-2504AH</text>
-<line x1="1184" y1="332" x2="1230" y2="332" stroke="#d0342c" stroke-width="5" stroke-linecap="round"/>
-<text x="1224" y="324" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="13" fill="#d0342c" text-anchor="end" font-weight="normal">red</text>
-<line x1="1184" y1="361" x2="1230" y2="361" stroke="#2f61c4" stroke-width="5" stroke-linecap="round"/>
-<text x="1224" y="353" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="13" fill="#2f61c4" text-anchor="end" font-weight="normal">blue</text>
-<line x1="1184" y1="390" x2="1230" y2="390" stroke="#1f8a4c" stroke-width="5" stroke-linecap="round"/>
-<text x="1224" y="382" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="13" fill="#1f8a4c" text-anchor="end" font-weight="normal">green</text>
-<line x1="1184" y1="419" x2="1230" y2="419" stroke="#22262b" stroke-width="5" stroke-linecap="round"/>
-<text x="1224" y="411" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="13" fill="#22262b" text-anchor="end" font-weight="normal">black</text>
-<polyline points="912,378 1090,378 1090,390 1184,390" fill="none" stroke="#1f8a4c" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
-<circle cx="912" cy="378" r="5.58" fill="#1f8a4c" stroke="none" stroke-width="1"/>
-<circle cx="1184" cy="390" r="5.58" fill="#1f8a4c" stroke="none" stroke-width="1"/>
-<polyline points="912,420 1140,420 1140,419 1184,419" fill="none" stroke="#22262b" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
-<circle cx="912" cy="420" r="5.58" fill="#22262b" stroke="none" stroke-width="1"/>
-<circle cx="1184" cy="419" r="5.58" fill="#22262b" stroke="none" stroke-width="1"/>
-<text x="1000" y="236" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="22" fill="#14181d" text-anchor="middle" font-weight="bold">PAIR 2</text>
-<text x="1000" y="266" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#6b7683" text-anchor="middle" font-weight="normal">drawn as green + black</text>
-<text x="1000" y="288" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#6b7683" text-anchor="middle" font-weight="normal">the pair page 4 left over</text>
+<rect x="985" y="232" width="118" height="188" rx="10" fill="#f0f2f5" stroke="#14181d" stroke-width="3"/>
+<rect x="1073" y="235" width="27" height="182" rx="6" fill="#c7ced6" stroke="none" stroke-width="2"/>
+<text x="1087" y="284" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="24" fill="#14181d" text-anchor="middle" font-weight="bold">-</text>
+<text x="1087" y="318" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="24" fill="#14181d" text-anchor="middle" font-weight="bold">-</text>
+<text x="1087" y="352" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="24" fill="#14181d" text-anchor="middle" font-weight="bold">-</text>
+<text x="1087" y="386" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="24" fill="#14181d" text-anchor="middle" font-weight="bold">-</text>
+<text x="1029" y="320" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="27" fill="#14181d" text-anchor="middle" font-weight="bold">100</text>
+<text x="1029" y="354" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="22" fill="#14181d" text-anchor="middle" font-weight="normal">uF</text>
+<text x="1029" y="384" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#6b7683" text-anchor="middle" font-weight="normal">35 V+</text>
+<line x1="1025" y1="232" x2="1025" y2="186" stroke="#14181d" stroke-width="4" stroke-linecap="round"/>
+<line x1="1073" y1="420" x2="1073" y2="466" stroke="#14181d" stroke-width="4" stroke-linecap="round"/>
+<text x="1025" y="176" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="26" fill="#d0342c" text-anchor="middle" font-weight="bold">+</text>
+<text x="1101" y="450" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="30" fill="#22262b" text-anchor="middle" font-weight="bold">-</text>
+<polyline points="912,294 940,294 940,186 1025,186" fill="none" stroke="#d0342c" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="912" cy="294" r="6.82" fill="#d0342c" stroke="none" stroke-width="1"/>
+<circle cx="1025" cy="186" r="6.82" fill="#d0342c" stroke="none" stroke-width="1"/>
+<polyline points="912,336 962,336 962,466 1073,466" fill="none" stroke="#22262b" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="912" cy="336" r="6.82" fill="#22262b" stroke="none" stroke-width="1"/>
+<circle cx="1073" cy="466" r="6.82" fill="#22262b" stroke="none" stroke-width="1"/>
+<rect x="1170" y="240" width="378" height="96" rx="6" fill="#fdf0ef" stroke="#c0261b" stroke-width="3"/>
+<rect x="1170" y="240" width="9" height="96" rx="0" fill="#c0261b" stroke="none" stroke-width="2"/>
+<text x="1198" y="272" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#c0261b" text-anchor="start" font-weight="bold">THE STRIPE IS THE NEGATIVE LEG.</text>
+<text x="1198" y="296" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#c0261b" text-anchor="start" font-weight="bold">Backwards, an electrolytic</text>
+<text x="1198" y="320" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#c0261b" text-anchor="start" font-weight="bold">vents.</text>
+<rect x="1170" y="390" width="378" height="120" rx="6" fill="#fdf7ec" stroke="#b8791a" stroke-width="3"/>
+<rect x="1170" y="390" width="9" height="120" rx="0" fill="#b8791a" stroke="none" stroke-width="2"/>
+<text x="1198" y="422" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#b8791a" text-anchor="start" font-weight="bold">35 V minimum; your 50 V part is</text>
+<text x="1198" y="446" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#b8791a" text-anchor="start" font-weight="bold">right. Never a 25 V cap on the</text>
+<text x="1198" y="470" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#b8791a" text-anchor="start" font-weight="bold">20 V rail — decelerating the</text>
+<text x="1198" y="494" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#b8791a" text-anchor="start" font-weight="bold">drum pushes the rail up.</text>
 <rect x="52" y="730" width="1496" height="2" rx="0" fill="#c7ced6" stroke="none" stroke-width="2"/>
-<text x="52" y="776" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#14181d" text-anchor="start" font-weight="normal">The other coil, to 2A and 2B. Same rule: both ends of one coil into one bridge. Mixing them across the</text>
-<text x="52" y="804" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#14181d" text-anchor="start" font-weight="normal">two bridges does not turn the motor — it buzzes, locks or judders, and it stresses the driver.</text>
-<rect x="52" y="846" width="1000" height="74" rx="6" fill="#eff8f2" stroke="#1a7f45" stroke-width="3"/>
-<rect x="52" y="846" width="9" height="74" rx="0" fill="#1a7f45" stroke="none" stroke-width="2"/>
-<text x="80" y="878" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#1a7f45" text-anchor="start" font-weight="bold">WITH THE MOTOR CONNECTED AND POWER STILL OFF, one last meter check: 1A to 1B beeps, 2A to</text>
-<text x="80" y="903" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#1a7f45" text-anchor="start" font-weight="bold">2B beeps, and 1A to 2A does NOT.</text>
+<text x="52" y="776" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#14181d" text-anchor="start" font-weight="normal">This capacitor supplies the sudden current the coils demand at each step, which the supply lead is too</text>
+<text x="52" y="804" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#14181d" text-anchor="start" font-weight="normal">inductive to deliver. Legs as short as you can make them, bridging the driver's own VM and GND pins.</text>
+<rect x="52" y="848" width="1000" height="99" rx="6" fill="#fdf0ef" stroke="#c0261b" stroke-width="3"/>
+<rect x="52" y="848" width="9" height="99" rx="0" fill="#c0261b" stroke="none" stroke-width="2"/>
+<text x="80" y="880" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#c0261b" text-anchor="start" font-weight="bold">ON A BREADBOARD THIS MEANS THE TWO HOLES BESIDE THE MODULE, not the power rails at the</text>
+<text x="80" y="905" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#c0261b" text-anchor="start" font-weight="bold">end of the board. Twenty centimetres of breadboard wire defeats the capacitor entirely.</text>
+<text x="80" y="930" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#c0261b" text-anchor="start" font-weight="bold">This is the single thing breadboard builds get wrong.</text>
+<text x="52" y="989" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="18" fill="#14181d" text-anchor="start" font-weight="bold">Concretely, on this build:</text>
+<text x="340" y="989" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="19" fill="#14181d" text-anchor="start" font-weight="bold">+ leg row 26 column J    -  leg row 27 column J</text>
+<text x="52" y="1017" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#6b7683" text-anchor="start" font-weight="normal">drawn on page 21; lead prep on page 2</text>
 <line x1="52" y1="1087" x2="1548" y2="1087" stroke="#c7ced6" stroke-width="1" stroke-linecap="round"/>
 <text x="52" y="1111" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">LOST Swan  module V1  ·  generated by tools/wiringgen.py from hal/pins.h + docs/BENCH_WIRING.md</text>
 </svg>

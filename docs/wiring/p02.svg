@@ -2,36 +2,128 @@
 <rect width="1600" height="1131" fill="#ffffff"/>
 <rect x="0" y="0" width="1600" height="88" fill="#eef1f4"/>
 <line x1="0" y1="88" x2="1600" y2="88" stroke="#c7ced6" stroke-width="2"/>
-<text x="52" y="47" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="29" fill="#14181d" text-anchor="start" font-weight="bold">Three ways to kill the driver</text>
-<text x="52" y="74" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">Read before you pick anything up</text>
-<text x="1548" y="52" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="26" fill="#6b7683" text-anchor="end" font-weight="bold">2 / 21</text>
-<rect x="52" y="132" width="1496" height="176" rx="8" fill="#fdf0ef" stroke="#c0261b" stroke-width="3"/>
-<rect x="52" y="132" width="10" height="176" rx="0" fill="#c0261b" stroke="none" stroke-width="2"/>
-<circle cx="116" cy="192" r="32" fill="#c0261b" stroke="none" stroke-width="1"/>
-<text x="116" y="203" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="32" fill="#ffffff" text-anchor="middle" font-weight="bold">1</text>
-<text x="174" y="182" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="24" fill="#c0261b" text-anchor="start" font-weight="bold">NEVER connect or disconnect the motor while VM is live.</text>
-<text x="174" y="220" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">An open coil on a live driver dumps its stored energy into the output stage. This kills more StepSticks than</text>
-<text x="174" y="246" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">every other cause put together. Power down FIRST, then touch the motor plug — every time, including 'just for a</text>
-<text x="174" y="272" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">second'.</text>
-<rect x="52" y="328" width="1496" height="176" rx="8" fill="#fdf0ef" stroke="#c0261b" stroke-width="3"/>
-<rect x="52" y="328" width="10" height="176" rx="0" fill="#c0261b" stroke="none" stroke-width="2"/>
-<circle cx="116" cy="388" r="32" fill="#c0261b" stroke="none" stroke-width="1"/>
-<text x="116" y="399" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="32" fill="#ffffff" text-anchor="middle" font-weight="bold">2</text>
-<text x="174" y="378" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="24" fill="#c0261b" text-anchor="start" font-weight="bold">NEVER insert or remove the driver module while VM is live.</text>
-<text x="174" y="416" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">Same physics, and you will bridge something on the way past as well.</text>
-<rect x="52" y="524" width="1496" height="176" rx="8" fill="#fdf0ef" stroke="#c0261b" stroke-width="3"/>
-<rect x="52" y="524" width="10" height="176" rx="0" fill="#c0261b" stroke="none" stroke-width="2"/>
-<circle cx="116" cy="584" r="32" fill="#c0261b" stroke="none" stroke-width="1"/>
-<text x="116" y="595" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="32" fill="#ffffff" text-anchor="middle" font-weight="bold">3</text>
-<text x="174" y="574" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="24" fill="#c0261b" text-anchor="start" font-weight="bold">Set Vref BEFORE the motor is ever connected.</text>
-<text x="174" y="612" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">Vref sets the coil current. Set it with the motor attached and the first thing your motor sees is wherever the</text>
-<text x="174" y="638" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">pot happened to be when it left the factory — often well over 1.5 A. This guide sets Vref on page 17 and</text>
-<text x="174" y="664" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">connects the motor on pages 18-19, in that order, deliberately.</text>
-<text x="52" y="760" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="20" fill="#14181d" text-anchor="start" font-weight="bold">And one that is less dramatic but more common</text>
-<text x="52" y="794" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="18" fill="#14181d" text-anchor="start" font-weight="normal">The bulk capacitor must sit at the driver's OWN VM and GND pins — not on a breadboard rail at the</text>
-<text x="52" y="820" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="18" fill="#14181d" text-anchor="start" font-weight="normal">far end of the board. Page 15 shows where.</text>
-<text x="52" y="866" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#1a7f45" text-anchor="start" font-weight="normal">If you are unsure at any point: power off, and nothing you do next can break anything. Every</text>
-<text x="52" y="891" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#1a7f45" text-anchor="start" font-weight="normal">irreversible mistake in this guide needs VM to be live.</text>
+<text x="52" y="47" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="29" fill="#14181d" text-anchor="start" font-weight="bold">What the schematic does not say</text>
+<text x="52" y="74" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">Three parts need preparing, one decision is already made, and one thing is deliberately NOT checked</text>
+<text x="1548" y="52" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="26" fill="#6b7683" text-anchor="end" font-weight="bold">2 / 28</text>
+<rect x="52" y="104" width="760" height="293" rx="8" fill="#ffffff" stroke="#14181d" stroke-width="2"/>
+<rect x="52" y="104" width="760" height="44" rx="8" fill="#eef2f6" stroke="none" stroke-width="2"/>
+<rect x="52" y="140" width="760" height="8" rx="0" fill="#eef2f6" stroke="none" stroke-width="2"/>
+<circle cx="80" cy="126" r="16" fill="#14181d" stroke="none" stroke-width="1"/>
+<text x="80" y="132" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#ffffff" text-anchor="middle" font-weight="bold">1</text>
+<text x="106" y="133" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#14181d" text-anchor="start" font-weight="bold">The motor plug cannot enter a breadboard</text>
+<text x="120" y="166" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="middle" font-weight="normal">on the motor</text>
+<text x="218" y="166" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="middle" font-weight="normal">pigtail</text>
+<rect x="84" y="174" width="72" height="44" rx="4" fill="#f0f2f5" stroke="#14181d" stroke-width="2"/>
+<text x="120" y="201" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#14181d" text-anchor="middle" font-weight="bold">JST-XH</text>
+<rect x="196" y="180" width="44" height="32" rx="3" fill="#d7dce1" stroke="#14181d" stroke-width="2"/>
+<polyline points="240,186 288,174 318,174" fill="none" stroke="#1f8a4c" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="328" y="180" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">2B  -&gt;  row 28 col J</text>
+<polyline points="240,193 288,196 318,196" fill="none" stroke="#22262b" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="328" y="202" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">2A  -&gt;  row 29 col J</text>
+<polyline points="240,200 288,218 318,218" fill="none" stroke="#d0342c" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="328" y="224" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">1A  -&gt;  row 30 col J</text>
+<polyline points="240,207 288,240 318,240" fill="none" stroke="#2f61c4" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="328" y="246" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">1B  -&gt;  row 31 col J</text>
+<text x="84" y="286" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">The loom ends in a 4-way JST-XH. Its shell will not go into an 0.1 in board and</text>
+<text x="84" y="307" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">forcing it spreads the contacts permanently. The mating pigtail plugs onto it and</text>
+<text x="84" y="328" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">ends in four bare leads: strip 6 mm, twist each hard or tin it, and push them into</text>
+<text x="84" y="349" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">rows 28 to 31 of column J. WHICH lead goes where is decided by the meter on page 8,</text>
+<text x="84" y="370" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">never by colour - these wires were cut and re-terminated.</text>
+<rect x="52" y="411" width="760" height="290" rx="8" fill="#ffffff" stroke="#14181d" stroke-width="2"/>
+<rect x="52" y="411" width="760" height="44" rx="8" fill="#eef2f6" stroke="none" stroke-width="2"/>
+<rect x="52" y="447" width="760" height="8" rx="0" fill="#eef2f6" stroke="none" stroke-width="2"/>
+<circle cx="80" cy="433" r="16" fill="#14181d" stroke="none" stroke-width="1"/>
+<text x="80" y="439" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#ffffff" text-anchor="middle" font-weight="bold">2</text>
+<text x="106" y="440" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#14181d" text-anchor="start" font-weight="bold">The RotoPD reaches the board on two wires</text>
+<text x="248" y="479" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="14" fill="#6b7683" text-anchor="start" font-weight="normal">screw terminals</text>
+<rect x="84" y="485" width="152" height="66" rx="4" fill="#f0f2f5" stroke="#14181d" stroke-width="2"/>
+<rect x="102" y="495" width="46" height="36" rx="3" fill="#c7ced6" stroke="#14181d" stroke-width="2"/>
+<circle cx="125" cy="513" r="11" fill="#9aa4ae" stroke="#14181d" stroke-width="2"/>
+<line x1="118" y1="513" x2="132" y2="513" stroke="#14181d" stroke-width="3" stroke-linecap="round"/>
+<rect x="168" y="495" width="46" height="36" rx="3" fill="#c7ced6" stroke="#14181d" stroke-width="2"/>
+<circle cx="191" cy="513" r="11" fill="#9aa4ae" stroke="#14181d" stroke-width="2"/>
+<line x1="184" y1="513" x2="198" y2="513" stroke="#14181d" stroke-width="3" stroke-linecap="round"/>
+<text x="125" y="545" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="18" fill="#d0342c" text-anchor="middle" font-weight="bold">+</text>
+<text x="191" y="547" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="22" fill="#22262b" text-anchor="middle" font-weight="bold">-</text>
+<polyline points="125,495 125,463 400,463" fill="none" stroke="#d0342c" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="125" cy="495" r="6.82" fill="#d0342c" stroke="none" stroke-width="1"/>
+<circle cx="400" cy="463" r="6.82" fill="#d0342c" stroke="none" stroke-width="1"/>
+<polyline points="191,531 191,571 400,571" fill="none" stroke="#22262b" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="191" cy="531" r="6.82" fill="#22262b" stroke="none" stroke-width="1"/>
+<circle cx="400" cy="571" r="6.82" fill="#22262b" stroke="none" stroke-width="1"/>
+<text x="412" y="469" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="16" fill="#14181d" text-anchor="start" font-weight="normal">row 26 col I</text>
+<text x="412" y="577" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="16" fill="#14181d" text-anchor="start" font-weight="normal">row 27 col I</text>
+<text x="84" y="607" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">Strip 8 mm of the 22 AWG solid core, clamp it under the screw, and run the other end</text>
+<text x="84" y="628" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">straight into the driver's own row. VM never goes through a rail.</text>
+<text x="84" y="659" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#b8791a" text-anchor="start" font-weight="normal">BELIEVED to be screw terminals; the unit is unopened. If yours is not, STOP AND</text>
+<text x="84" y="680" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#b8791a" text-anchor="start" font-weight="normal">REPORT - do not improvise a connector on a 20 V rail.</text>
+<rect x="52" y="715" width="760" height="280" rx="8" fill="#ffffff" stroke="#14181d" stroke-width="2"/>
+<rect x="52" y="715" width="760" height="44" rx="8" fill="#eef2f6" stroke="none" stroke-width="2"/>
+<rect x="52" y="751" width="760" height="8" rx="0" fill="#eef2f6" stroke="none" stroke-width="2"/>
+<circle cx="80" cy="737" r="16" fill="#14181d" stroke="none" stroke-width="1"/>
+<text x="80" y="743" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#ffffff" text-anchor="middle" font-weight="bold">3</text>
+<text x="106" y="744" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#14181d" text-anchor="start" font-weight="bold">The capacitor needs its legs prepared</text>
+<text x="130" y="779" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="middle" font-weight="normal">stripe = negative</text>
+<rect x="97" y="787" width="66" height="84" rx="9" fill="#f0f2f5" stroke="#14181d" stroke-width="3"/>
+<rect x="145" y="790" width="15" height="78" rx="4" fill="#c7ced6" stroke="none" stroke-width="2"/>
+<text x="120" y="823" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="18" fill="#14181d" text-anchor="middle" font-weight="bold">100</text>
+<text x="120" y="847" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="middle" font-weight="normal">uF</text>
+<line x1="112" y1="871" x2="112" y2="899" stroke="#14181d" stroke-width="4" stroke-linecap="round"/>
+<line x1="140" y1="871" x2="140" y2="899" stroke="#14181d" stroke-width="4" stroke-linecap="round"/>
+<text x="96" y="895" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="18" fill="#d0342c" text-anchor="middle" font-weight="bold">+</text>
+<text x="156" y="897" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="22" fill="#22262b" text-anchor="middle" font-weight="bold">-</text>
+<text x="210" y="821" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="16" fill="#14181d" text-anchor="start" font-weight="normal">+   row 26 col J</text>
+<text x="210" y="851" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="16" fill="#14181d" text-anchor="start" font-weight="normal">-   row 27 col J</text>
+<text x="84" y="917" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">It bridges the driver's OWN VM and GND, which are adjacent rows - 2.54 mm apart,</text>
+<text x="84" y="938" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">against the 3.5 or 5 mm the leads came at. Trim both to about 12 mm, bend them</text>
+<text x="84" y="959" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">toward each other at the body, and check the bends cannot touch. The body may</text>
+<text x="84" y="980" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">overhang other rows; only the legs matter. Backwards, it vents.</text>
+<rect x="840" y="104" width="708" height="242" rx="8" fill="#ffffff" stroke="#14181d" stroke-width="2"/>
+<rect x="840" y="104" width="708" height="44" rx="8" fill="#eef2f6" stroke="none" stroke-width="2"/>
+<rect x="840" y="140" width="708" height="8" rx="0" fill="#eef2f6" stroke="none" stroke-width="2"/>
+<circle cx="868" cy="126" r="16" fill="#14181d" stroke="none" stroke-width="1"/>
+<text x="868" y="132" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#ffffff" text-anchor="middle" font-weight="bold">4</text>
+<text x="894" y="133" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#14181d" text-anchor="start" font-weight="bold">Heatsink: not needed this session</text>
+<text x="864" y="182" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">DECIDED: the driver runs bare. 0.7 A RMS against the module's 2 A rating is</text>
+<text x="864" y="203" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">roughly an eighth of rated dissipation, and the soak's thermal question is the</text>
+<text x="864" y="224" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">motor sealed in PLA, not the driver. Page 28's STOP NOW list already carries</text>
+<text x="864" y="245" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">'the driver too hot to keep a finger on', so this is watched rather than</text>
+<text x="864" y="266" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">assumed.</text>
+<text x="864" y="301" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="14" fill="#b8791a" text-anchor="start" font-weight="normal">Not independently verified: the exact RDS(on)-derived junction temperature. IF one</text>
+<text x="864" y="320" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="14" fill="#b8791a" text-anchor="start" font-weight="normal">ever goes on, the adhesive pad MUST clear the Vref trimpot - a heatsink</text>
+<text x="864" y="339" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="14" fill="#b8791a" text-anchor="start" font-weight="normal">overhanging the pot ends page 23.</text>
+<rect x="840" y="360" width="708" height="234" rx="8" fill="#ffffff" stroke="#14181d" stroke-width="2"/>
+<rect x="840" y="360" width="708" height="44" rx="8" fill="#eef2f6" stroke="none" stroke-width="2"/>
+<rect x="840" y="396" width="708" height="8" rx="0" fill="#eef2f6" stroke="none" stroke-width="2"/>
+<circle cx="868" cy="382" r="16" fill="#14181d" stroke="none" stroke-width="1"/>
+<text x="868" y="388" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#ffffff" text-anchor="middle" font-weight="bold">5</text>
+<text x="894" y="389" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#14181d" text-anchor="start" font-weight="bold">The current path, so nobody over-engineers</text>
+<text x="864" y="438" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">0.7 A RMS through 22 AWG wire, stock jumpers and breadboard rails is fine and</text>
+<text x="864" y="459" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">needs no thought. A breadboard contact is good for about 1 A continuous and a</text>
+<text x="864" y="480" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">jumper drops tens of millivolts here. Two things are worth KNOWING rather than</text>
+<text x="864" y="501" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">fixing: the 0.7 A coil current flows in the four motor leads and inside the</text>
+<text x="864" y="522" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">driver, never along a rail; and VM and GND come in on their own wires to the</text>
+<text x="864" y="543" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">driver's own rows to keep the switching return out of the logic ground, not</text>
+<text x="864" y="564" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">for current rating. The bulk capacitor, not the supply wire, delivers each</text>
+<text x="864" y="585" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">step's transient. Upgrade nothing.</text>
+<rect x="840" y="608" width="708" height="342" rx="8" fill="#ffffff" stroke="#14181d" stroke-width="2"/>
+<rect x="840" y="608" width="708" height="44" rx="8" fill="#eef2f6" stroke="none" stroke-width="2"/>
+<rect x="840" y="644" width="708" height="8" rx="0" fill="#eef2f6" stroke="none" stroke-width="2"/>
+<circle cx="868" cy="630" r="16" fill="#14181d" stroke="none" stroke-width="1"/>
+<text x="868" y="636" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#ffffff" text-anchor="middle" font-weight="bold">6</text>
+<text x="894" y="637" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#14181d" text-anchor="start" font-weight="bold">What the guard checks, and what it cannot</text>
+<text x="864" y="686" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">Every PIN on every page is parsed out of hal/pins.h and docs/BENCH_WIRING.md,</text>
+<text x="864" y="707" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">cross-checked against the other, and the generator emits nothing at all if</text>
+<text x="864" y="728" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">they disagree. That is why a drawing here cannot quietly contradict the</text>
+<text x="864" y="749" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">firmware.</text>
+<text x="864" y="786" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#c0261b" text-anchor="start" font-weight="normal">ROW AND COLUMN NUMBERS ARE LAYOUT, NOT CHECKED FACTS. The pins on this page</text>
+<text x="864" y="807" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#c0261b" text-anchor="start" font-weight="normal">are parsed from hal/pins.h and BENCH_WIRING.md and cross-checked; no source</text>
+<text x="864" y="828" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#c0261b" text-anchor="start" font-weight="normal">says which HOLE anything sits in, so nothing verifies that. Build it elsewhere</text>
+<text x="864" y="849" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#c0261b" text-anchor="start" font-weight="normal">on the board and the electrical pages are still true while these numbers are</text>
+<text x="864" y="870" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#c0261b" text-anchor="start" font-weight="normal">not.</text>
+<text x="864" y="905" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="14" fill="#6b7683" text-anchor="start" font-weight="normal">It is the same distinction page 6 draws between a LABEL and a drawn position. The</text>
+<text x="864" y="924" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="14" fill="#6b7683" text-anchor="start" font-weight="normal">coordinates are chosen in tools/wiringgen.py, they are consistent with each other,</text>
+<text x="864" y="943" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="14" fill="#6b7683" text-anchor="start" font-weight="normal">and consistent is not verified.</text>
 <line x1="52" y1="1087" x2="1548" y2="1087" stroke="#c7ced6" stroke-width="1" stroke-linecap="round"/>
 <text x="52" y="1111" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">LOST Swan  module V1  ·  generated by tools/wiringgen.py from hal/pins.h + docs/BENCH_WIRING.md</text>
 </svg>

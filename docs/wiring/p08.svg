@@ -2,79 +2,72 @@
 <rect width="1600" height="1131" fill="#ffffff"/>
 <rect x="0" y="0" width="1600" height="88" fill="#eef1f4"/>
 <line x1="0" y1="88" x2="1600" y2="88" stroke="#c7ced6" stroke-width="2"/>
-<text x="52" y="47" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="29" fill="#14181d" text-anchor="start" font-weight="bold">Connection 6  —  VIO  -&gt;  3V3</text>
-<text x="52" y="74" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">wire colour: red, thin</text>
-<text x="1548" y="52" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="26" fill="#6b7683" text-anchor="end" font-weight="bold">8 / 21</text>
-<rect x="640" y="250" width="250" height="400" rx="6" fill="#f6f8fa" stroke="#14181d" stroke-width="3"/>
-<text x="765" y="204" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="21" fill="#14181d" text-anchor="middle" font-weight="bold">FYSETC TMC2209</text>
-<text x="765" y="226" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="14" fill="#6b7683" text-anchor="middle" font-weight="normal">standalone  ·  match by LABEL</text>
-<rect x="720" y="400" width="90" height="90" rx="4" fill="#2b3138" stroke="none" stroke-width="2"/>
-<text x="765" y="452" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#ffffff" text-anchor="middle" font-weight="bold">TMC</text>
-<circle cx="765" cy="555" r="21" fill="#dfe4ea" stroke="#14181d" stroke-width="2"/>
-<line x1="752" y1="555" x2="778" y2="555" stroke="#14181d" stroke-width="4" stroke-linecap="round"/>
-<text x="765" y="598" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="middle" font-weight="normal">Vref pot</text>
-<rect x="622" y="284" width="18" height="20" rx="0" fill="#9aa4ae" stroke="none" stroke-width="2"/>
-<text x="652" y="300" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="start" font-weight="normal">EN</text>
-<rect x="622" y="326" width="18" height="20" rx="0" fill="#9aa4ae" stroke="none" stroke-width="2"/>
-<text x="652" y="342" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="start" font-weight="normal">MS1</text>
-<rect x="622" y="368" width="18" height="20" rx="0" fill="#9aa4ae" stroke="none" stroke-width="2"/>
-<text x="652" y="384" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="start" font-weight="normal">MS2</text>
-<rect x="622" y="410" width="18" height="20" rx="0" fill="#9aa4ae" stroke="none" stroke-width="2"/>
-<text x="652" y="426" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="start" font-weight="normal">PDN</text>
-<rect x="622" y="452" width="18" height="20" rx="0" fill="#9aa4ae" stroke="none" stroke-width="2"/>
-<text x="652" y="468" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="start" font-weight="normal">CLK</text>
-<rect x="622" y="494" width="18" height="20" rx="0" fill="#9aa4ae" stroke="none" stroke-width="2"/>
-<text x="652" y="510" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="start" font-weight="normal">STEP</text>
-<rect x="622" y="536" width="18" height="20" rx="0" fill="#9aa4ae" stroke="none" stroke-width="2"/>
-<text x="652" y="552" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="start" font-weight="normal">DIR</text>
-<rect x="622" y="578" width="18" height="20" rx="0" fill="#9aa4ae" stroke="none" stroke-width="2"/>
-<text x="652" y="594" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="start" font-weight="normal">(n/c)</text>
-<rect x="890" y="284" width="18" height="20" rx="0" fill="#9aa4ae" stroke="none" stroke-width="2"/>
-<text x="878" y="300" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="end" font-weight="normal">VM</text>
-<rect x="890" y="326" width="18" height="20" rx="0" fill="#9aa4ae" stroke="none" stroke-width="2"/>
-<text x="878" y="342" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="end" font-weight="normal">GND</text>
-<rect x="890" y="368" width="18" height="20" rx="0" fill="#9aa4ae" stroke="none" stroke-width="2"/>
-<text x="878" y="384" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="end" font-weight="normal">2B</text>
-<rect x="890" y="410" width="18" height="20" rx="0" fill="#9aa4ae" stroke="none" stroke-width="2"/>
-<text x="878" y="426" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="end" font-weight="normal">2A</text>
-<rect x="890" y="452" width="18" height="20" rx="0" fill="#9aa4ae" stroke="none" stroke-width="2"/>
-<text x="878" y="468" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="end" font-weight="normal">1A</text>
-<rect x="890" y="494" width="18" height="20" rx="0" fill="#9aa4ae" stroke="none" stroke-width="2"/>
-<text x="878" y="510" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="end" font-weight="normal">1B</text>
-<rect x="890" y="536" width="18" height="20" rx="0" fill="#14181d" stroke="none" stroke-width="2"/>
-<text x="878" y="552" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#14181d" text-anchor="end" font-weight="bold">VIO</text>
-<rect x="890" y="578" width="18" height="20" rx="0" fill="#9aa4ae" stroke="none" stroke-width="2"/>
-<text x="878" y="594" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="end" font-weight="normal">GND</text>
-<rect x="110" y="250" width="260" height="430" rx="6" fill="#f6f8fa" stroke="#14181d" stroke-width="3"/>
-<text x="240" y="204" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="21" fill="#14181d" text-anchor="middle" font-weight="bold">ESP32-C5-DevKitC-1</text>
-<text x="240" y="226" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="14" fill="#6b7683" text-anchor="middle" font-weight="normal">USB-C at the top</text>
-<rect x="214" y="234" width="74" height="20" rx="4" fill="#9aa4ae" stroke="#14181d" stroke-width="2"/>
-<text x="240" y="249" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="12" fill="#14181d" text-anchor="middle" font-weight="normal">USB-C</text>
-<rect x="158" y="290" width="150" height="84" rx="4" fill="#2b3138" stroke="none" stroke-width="2"/>
-<text x="240" y="340" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#ffffff" text-anchor="middle" font-weight="bold">ESP32-C5</text>
-<rect x="370" y="335" width="18" height="22" rx="0" fill="#14181d" stroke="none" stroke-width="2"/>
-<text x="358" y="352" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#14181d" text-anchor="end" font-weight="bold">3V3</text>
-<rect x="370" y="397" width="18" height="22" rx="0" fill="#9aa4ae" stroke="none" stroke-width="2"/>
-<text x="358" y="414" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#6b7683" text-anchor="end" font-weight="normal">GND</text>
-<rect x="370" y="459" width="18" height="22" rx="0" fill="#9aa4ae" stroke="none" stroke-width="2"/>
-<text x="358" y="476" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#6b7683" text-anchor="end" font-weight="normal">GPIO6</text>
-<rect x="370" y="521" width="18" height="22" rx="0" fill="#9aa4ae" stroke="none" stroke-width="2"/>
-<text x="358" y="538" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#6b7683" text-anchor="end" font-weight="normal">GPIO8</text>
-<rect x="370" y="583" width="18" height="22" rx="0" fill="#9aa4ae" stroke="none" stroke-width="2"/>
-<text x="358" y="600" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#6b7683" text-anchor="end" font-weight="normal">GPIO24</text>
-<text x="126" y="664" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#c7ced6" text-anchor="start" font-weight="normal">other pins omitted</text>
-<polyline points="912,546 960,546 960,700 470,700 470,346 392,346" fill="none" stroke="#d0342c" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
-<circle cx="912" cy="546" r="3.72" fill="#d0342c" stroke="none" stroke-width="1"/>
-<circle cx="392" cy="346" r="3.72" fill="#d0342c" stroke="none" stroke-width="1"/>
-<text x="715" y="692" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#d0342c" text-anchor="middle" font-weight="bold">route under the module</text>
-<rect x="52" y="730" width="1496" height="2" rx="0" fill="#c7ced6" stroke="none" stroke-width="2"/>
-<text x="52" y="776" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#14181d" text-anchor="start" font-weight="normal">The logic supply. It sets the voltage the driver expects to see on STEP, DIR, EN and the MS pins, so it</text>
-<text x="52" y="804" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#14181d" text-anchor="start" font-weight="normal">must be the SAME 3.3 V the ESP32 drives with. VIO is on the right-hand pin column, so this one routes</text>
-<text x="52" y="832" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#14181d" text-anchor="start" font-weight="normal">under the module.</text>
-<rect x="52" y="876" width="1000" height="74" rx="6" fill="#fdf0ef" stroke="#c0261b" stroke-width="3"/>
-<rect x="52" y="876" width="9" height="74" rx="0" fill="#c0261b" stroke="none" stroke-width="2"/>
-<text x="80" y="908" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#c0261b" text-anchor="start" font-weight="bold">3.3 V, not 5 V. Feeding VIO 5 V makes the driver want 5 V logic levels from a 3.3 V</text>
-<text x="80" y="933" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#c0261b" text-anchor="start" font-weight="bold">microcontroller. It appears to work, right up until it does not.</text>
+<text x="52" y="47" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="29" fill="#14181d" text-anchor="start" font-weight="bold">Find the coil pairs</text>
+<text x="52" y="74" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">Motor connected to NOTHING. Meter only.</text>
+<text x="1548" y="52" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="26" fill="#6b7683" text-anchor="end" font-weight="bold">8 / 28</text>
+<rect x="200" y="180" width="150" height="150" rx="8" fill="#e9edf1" stroke="#14181d" stroke-width="3"/>
+<circle cx="275" cy="255" r="28" fill="#c7ced6" stroke="#14181d" stroke-width="2"/>
+<circle cx="275" cy="255" r="9" fill="#14181d" stroke="none" stroke-width="1"/>
+<text x="275" y="160" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="middle" font-weight="bold">LDO 42STH48-2504AH</text>
+<line x1="154" y1="212" x2="200" y2="212" stroke="#d0342c" stroke-width="5" stroke-linecap="round"/>
+<text x="194" y="204" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="13" fill="#d0342c" text-anchor="end" font-weight="normal">red</text>
+<line x1="154" y1="241" x2="200" y2="241" stroke="#2f61c4" stroke-width="5" stroke-linecap="round"/>
+<text x="194" y="233" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="13" fill="#2f61c4" text-anchor="end" font-weight="normal">blue</text>
+<line x1="154" y1="270" x2="200" y2="270" stroke="#1f8a4c" stroke-width="5" stroke-linecap="round"/>
+<text x="194" y="262" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="13" fill="#1f8a4c" text-anchor="end" font-weight="normal">green</text>
+<line x1="154" y1="299" x2="200" y2="299" stroke="#22262b" stroke-width="5" stroke-linecap="round"/>
+<text x="194" y="291" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="13" fill="#22262b" text-anchor="end" font-weight="normal">black</text>
+<rect x="560" y="200" width="230" height="300" rx="10" fill="#f6f8fa" stroke="#14181d" stroke-width="3"/>
+<rect x="582" y="228" width="186" height="74" rx="4" fill="#dfe6ea" stroke="#14181d" stroke-width="2"/>
+<text x="675" y="278" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="36" fill="#14181d" text-anchor="middle" font-weight="bold">1.4</text>
+<text x="675" y="330" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#6b7683" text-anchor="middle" font-weight="normal">range: 200 ohm</text>
+<circle cx="675" cy="392" r="42" fill="#e9edf1" stroke="#14181d" stroke-width="2"/>
+<line x1="675" y1="392" x2="675" y2="358" stroke="#14181d" stroke-width="4" stroke-linecap="round"/>
+<line x1="615" y1="472" x2="615" y2="500" stroke="#22262b" stroke-width="7" stroke-linecap="round"/>
+<line x1="735" y1="472" x2="735" y2="500" stroke="#d0342c" stroke-width="7" stroke-linecap="round"/>
+<text x="675" y="182" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#14181d" text-anchor="middle" font-weight="bold">DMM</text>
+<text x="850" y="190" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="18" fill="#14181d" text-anchor="start" font-weight="normal">The wires were cut and re-terminated, so no colour</text>
+<text x="850" y="216" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="18" fill="#14181d" text-anchor="start" font-weight="normal">convention is evidence any more. Measure all six</text>
+<text x="850" y="242" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="18" fill="#14181d" text-anchor="start" font-weight="normal">combinations. Exactly two read low — those are the coils.</text>
+<text x="850" y="268" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="18" fill="#14181d" text-anchor="start" font-weight="normal">The other four must read open.</text>
+<text x="850" y="302" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#b8791a" text-anchor="start" font-weight="normal">FIRST touch the probes together and note the reading</text>
+<text x="850" y="326" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#b8791a" text-anchor="start" font-weight="normal">(0.1-0.5 ohm). That is your test leads. Subtract it from</text>
+<text x="850" y="350" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#b8791a" text-anchor="start" font-weight="normal">everything below.</text>
+<text x="866" y="390" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="18" fill="#14181d" text-anchor="start" font-weight="normal">red  -  blue</text>
+<line x1="1120" y1="396" x2="1310" y2="396" stroke="#c7ced6" stroke-width="2" stroke-linecap="round"/>
+<text x="1322" y="390" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#6b7683" text-anchor="start" font-weight="normal">ohm</text>
+<text x="866" y="428" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="18" fill="#14181d" text-anchor="start" font-weight="normal">red  -  green</text>
+<line x1="1120" y1="434" x2="1310" y2="434" stroke="#c7ced6" stroke-width="2" stroke-linecap="round"/>
+<text x="1322" y="428" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#6b7683" text-anchor="start" font-weight="normal">ohm</text>
+<text x="866" y="466" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="18" fill="#14181d" text-anchor="start" font-weight="normal">red  -  black</text>
+<line x1="1120" y1="472" x2="1310" y2="472" stroke="#c7ced6" stroke-width="2" stroke-linecap="round"/>
+<text x="1322" y="466" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#6b7683" text-anchor="start" font-weight="normal">ohm</text>
+<text x="866" y="504" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="18" fill="#14181d" text-anchor="start" font-weight="normal">blue  -  green</text>
+<line x1="1120" y1="510" x2="1310" y2="510" stroke="#c7ced6" stroke-width="2" stroke-linecap="round"/>
+<text x="1322" y="504" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#6b7683" text-anchor="start" font-weight="normal">ohm</text>
+<text x="866" y="542" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="18" fill="#14181d" text-anchor="start" font-weight="normal">blue  -  black</text>
+<line x1="1120" y1="548" x2="1310" y2="548" stroke="#c7ced6" stroke-width="2" stroke-linecap="round"/>
+<text x="1322" y="542" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#6b7683" text-anchor="start" font-weight="normal">ohm</text>
+<text x="866" y="580" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="18" fill="#14181d" text-anchor="start" font-weight="normal">green  -  black</text>
+<line x1="1120" y1="586" x2="1310" y2="586" stroke="#c7ced6" stroke-width="2" stroke-linecap="round"/>
+<text x="1322" y="580" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#6b7683" text-anchor="start" font-weight="normal">ohm</text>
+<rect x="850" y="624" width="690" height="120" rx="6" fill="#fdf0ef" stroke="#c0261b" stroke-width="3"/>
+<rect x="850" y="624" width="9" height="120" rx="0" fill="#c0261b" stroke="none" stroke-width="2"/>
+<text x="878" y="656" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#c0261b" text-anchor="start" font-weight="bold">Two low (about 1-2 ohm), four open. More than two low is a</text>
+<text x="878" y="680" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#c0261b" text-anchor="start" font-weight="bold">short — usually a stray strand on a Dupont pin. Any wire</text>
+<text x="878" y="704" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#c0261b" text-anchor="start" font-weight="bold">beeping to the motor CASE: stop, that winding is shorted to the</text>
+<text x="878" y="728" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#c0261b" text-anchor="start" font-weight="bold">frame.</text>
+<text x="52" y="620" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">CROSS-CHECK WITH NO METER: twist one candidate pair's bare ends together</text>
+<text x="52" y="645" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">and turn the shaft. A real pair makes it noticeably harder and notchier</text>
+<text x="52" y="670" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">to turn; a wrong pair turns freely. Ten seconds, and it catches mistakes</text>
+<text x="52" y="695" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">a meter reading does not.</text>
+<text x="52" y="754" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#14181d" text-anchor="start" font-weight="bold">Write it down — pages 24 and 25 refer to it:</text>
+<text x="52" y="804" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="20" fill="#14181d" text-anchor="start" font-weight="bold">PAIR 1  =</text>
+<line x1="196" y1="810" x2="620" y2="810" stroke="#14181d" stroke-width="2" stroke-linecap="round"/>
+<text x="52" y="854" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="20" fill="#14181d" text-anchor="start" font-weight="bold">PAIR 2  =</text>
+<line x1="196" y1="860" x2="620" y2="860" stroke="#14181d" stroke-width="2" stroke-linecap="round"/>
+<text x="52" y="920" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#b8791a" text-anchor="start" font-weight="normal">Expected for this motor: black+green one coil, red+blue the other. IF</text>
+<text x="52" y="944" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#b8791a" text-anchor="start" font-weight="normal">YOUR METER DISAGREES, THE METER WINS.</text>
 <line x1="52" y1="1087" x2="1548" y2="1087" stroke="#c7ced6" stroke-width="1" stroke-linecap="round"/>
 <text x="52" y="1111" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">LOST Swan  module V1  ·  generated by tools/wiringgen.py from hal/pins.h + docs/BENCH_WIRING.md</text>
 </svg>
