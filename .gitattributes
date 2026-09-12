@@ -3,3 +3,4 @@
 # as modified and break the "git diff empty after regeneration" check.
 * text=auto eol=lf
 *.png binary
+*.pdf binary

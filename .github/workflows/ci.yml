@@ -27,6 +27,14 @@ jobs:
       - name: Generated ring table is current
         run: python3 tools/ringgen.py --check
 
+      - name: Wiring guide agrees with pins.h and BENCH_WIRING.md
+        run: python3 tools/wiringgen.py --check
+
+      - name: ... and the committed pages are what the generator emits
+        run: |
+          python3 tools/wiringgen.py
+          git diff --exit-code -- docs/wiring
+
   host-tests:
     runs-on: ubuntu-latest
     steps:

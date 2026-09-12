@@ -107,6 +107,19 @@ for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
         }
         if ($py) { Write-Host "jscheck ........................... Passed" -ForegroundColor Green }
 
+        # The illustrated wiring guide is GENERATED from hal/pins.h and
+        # docs/BENCH_WIRING.md, so a pin-map change that would falsify a
+        # picture has to fail here rather than at a bench with a soldering
+        # iron.  --check verifies and renders nothing.
+        if ($py) { & $py.Source (Join-Path $PSScriptRoot 'tools/wiringgen.py') --check | Out-Null }
+        else { Write-Host 'wiringgen ......................... SKIPPED (no python)' -ForegroundColor Yellow }
+        if ($py -and $LASTEXITCODE -ne 0) {
+            & $py.Source (Join-Path $PSScriptRoot 'tools/wiringgen.py') --check
+            Write-Error "docs/wiring would disagree with pins.h or BENCH_WIRING.md"
+            exit 1
+        }
+        if ($py) { Write-Host "wiringgen ......................... Passed" -ForegroundColor Green }
+
         # The mirror widget's suite is JavaScript, because the bug it pins was
         # in JavaScript (web/flap.js) and a C++ port of the logic would test a
         # copy rather than the thing that ships.  It needs no npm - the DOM is
