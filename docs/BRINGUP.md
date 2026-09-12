@@ -1632,8 +1632,49 @@ is almost entirely **holding** current: a flap at 15 flaps/s occupies ~67 ms, so
 even at one flap a second the coils are holding for >93 % of the hour, and at
 the clock's real cadence >99.99 %. Those are the same thermal question. What the
 faster tick buys is *motion* data — 3600 flaps and 72 drum revolutions of Hall
-edges, resyncs and edge errors — so the hour answers two things instead of one.
-If you want the literal clock duty, `bench soak 0 60 900`.
+edges, resyncs and edge errors — so on **branch A** the hour answers two things
+instead of one. If you want the literal clock duty, `bench soak 0 60 900`.
+
+**On branch B the hour answers ONE thing: the thermal question.** With no hall
+reference the soak takes its open-loop path, logs `OPEN LOOP`, and **omits** the
+edge figures from the closing report rather than printing zeroes that look like
+clean results. The four blanks below marked *(branch A)* cannot be filled today.
+
+> **Watch out for one inconsistency while it runs:** the closing report omits
+> the edge figures, but the **per-minute progress line and the `bench` status
+> command still print `revs`, `h2h`, worst error and resyncs unconditionally** —
+> so on branch B you will watch zeroes tick past for an hour. They are not
+> measurements. Not fixed in this pass (one code change was authorised, and it
+> went to `revs`); recorded so it is not read as a finding.
+
+**THE RAIL MUST BE AT 20 V BEFORE THE SOAK STARTS.**
+
+Everything up to here ran at 9 V on purpose — enough for the driver, no headroom
+needed at one drum revolution per second, and a fifth of the energy into a
+wiring mistake. The soak is different: it is the production thermal answer or it
+is nothing, and production is **20 V** (`HARDWARE_PLAN_2` §5, LOCKED). **A heat
+figure measured at 9 V is not the gate-3 result** and must not go in the blank
+as though it were.
+
+Change it through the power-off / power-on sequences (`docs/BENCH_WIRING.md` §5,
+wiring page 21) — never renegotiate the PDO with VM live, because the trigger
+drops and re-raises the rail to do it and that is a supply transient into an
+energised output stage:
+
+```
+1.  `en 0`                     <- de-energise the coils first
+2.  Remove VM                  <- output stage dead
+3.  Re-trigger the PD at 20 V
+4.  Apply VM                   <- measure BEFORE re-energising
+5.  `en 1`                     <- coils back on, now at 20 V
+```
+
+- [ ] **rail reads 20 V** — measured at the driver's **VM pin**, not read off
+      the trigger board's label
+- [ ] `en 1` afterwards. `maint on` released EN, and `bench soak` refuses a
+      released driver outright — *"the drivers are released; the coils must be
+      energised for this"*. Asserting EN under maintenance deliberately does
+      **not** home, which is exactly the state a hall-less soak wants.
 
 - [ ] soak ran the **full hour** — a short run is not a shorter answer, it is no
       answer, and the firmware says so rather than printing a verdict prompt
@@ -1649,48 +1690,111 @@ you snatch your hand away     -> FAIL, go to UART/IHOLD (spec 5.7a Plan B)
 Record the verdict — an unrecorded verdict is an hour that has to happen twice:
 
 ```
-hand-on-case verdict : ______________________________________
-drum exterior (also) : ______________________________________
-flaps / revs         : ______________  /  ______________
-hall_to_hall min..max: ______________  worst edge err: ________
-resyncs minor/major  : ______________  faults: ________
-heap start / min     : ______________  /  ______________
-date / who           : ______________________
+rail during the soak  : ______ V        <- must be 20, or the run is void
+hand-on-case verdict  : ______________________________________
+drum exterior (also)  : ______________________________________
+flaps (usteps ISSUED) : ______________
+faults                : ________
+heap start / min      : ______________  /  ______________
+date / who            : ______________________
+
+drum revolutions      : ____ (branch A)   hall_to_hall min..max: ____ (branch A)
+worst edge err        : ____ (branch A)   resyncs minor/major  : ____ (branch A)
 ```
+
+**`flaps` is a count of microsteps ISSUED, not of drum motion.** It is
+`pos_abs / 64`, and `pos_abs` counts steps the DDA emitted — on an open-loop
+run nothing ever compares it to the mechanism. It is a duty figure for the
+thermal question and it is not evidence the drum turned; that is what the
+mark-and-`step 0 3200` check in step 4 is for.
 
 ### Step 6b — kill the rail, once
 
-**One observation, and it decides whether Power Good ever gets a pin** (spec
-§2.6).  Firmware does not read PG on the argument that it *cannot* usefully do
-so: the logic buck needs 6.5 V in, so any rail veto should collapse the ESP32
-within milliseconds and surface as a brownout reboot rather than as a
-persistent "enabled but vetoed" state.
+**This step was rewritten on 2026-09-11. It used to predict a brownout reboot
+and treat survival as a finding against spec §2.6. On this bench, survival is
+guaranteed by the wiring** — so the old version had the operator record the
+designed behaviour as a discovery, against a decision that is closed and
+competing for the pin DIR now holds.
 
-That is a claim about this bench supply and this buck, and it has never been
-watched.
+**Why the bench cannot test §2.6.** §2.6 argues firmware need not read Power
+Good because in the **production** node the logic buck needs 6.5 V in and
+collapses with the rail, so the ESP32 never survives to observe a veto. On the
+bench the ESP32 is on **USB**, the PD rail feeds **only the driver's VM**, and
+there is no buck and no diode-OR node. Nothing in the firmware reads VM — no
+ADC, no PG input, no undervoltage hook — and the brownout detector watches the
+chip's own 3V3, which USB is holding up.
 
-Part way through the soak — or right after it, so an hour is not wasted:
+> **Do not record "the ESP32 survived" as evidence that §2.6 is wrong.** On this
+> topology that is the wiring, not a finding.
 
-- [ ] cut the **20 V PD rail** while the column is holding — the downstream
-      rocker, or unplug it
-- [ ] watch the console
+**What the bench CAN do, and it is more interesting than the old version.** It
+is a controlled demonstration of the exact state production prevents: the
+firmware believing the drivers are energised while they are not.
+
+**Part A — the vetoed-but-alive signature.** Runs on either branch. Do it
+*after* the soak, not part way through, because a rail cut mid-soak silently
+inflates the flap count (step 6).
+
+- [ ] with the column energised and still, cut the **20 V rail** — the rocker,
+      or unplug
+- [ ] `stats` — it will say **`drivers ENABLED`**, and it is not lying to you:
+      that field is `g_enabled`, the bool the firmware *commanded*, written
+      beside the EN pin and never read back. It cannot see VM
+- [ ] watch the console for 30 s
 
 ```
-expected : the ESP32 browns out and reboots, and on the way back up it
-           RE-HOMES the column (spec 5.5 / 5.8) - recovery already works
-finding  : the ESP32 stays alive and keeps running with the drivers vetoed
+expected : NOTHING.  No log line, no fault, no state change.  There is no
+           firmware path that can detect this - the step-ISR liveness counter
+           watches the GPTimer (still ticking), the axis FSM completes moves on
+           pos_abs with no feedback, and edge verification is gated on a hall
+           reference that branch B does not have.
+```
+
+- [ ] look at the drum. Coil current is now zero, so holding torque is zero and
+      only detent remains. **Whether it visibly moves is a question about this
+      printed stand-in, not about the firmware** — spec §5.7's 3.92 N·cm against
+      2.2 N·cm is the *loaded production* drum. Record what you see either way
+
+```
+console output during the dead rail : ______________________________
+`stats` said drivers                : ENABLED / disabled
+drum moved when the rail died?      : yes / no / a little - describe:
+  ____________________________________________________________
+```
+
+**Part B — the recovery, and it needs the magnet.** *(branch A only.)* This is
+the half that matters, and it is why edge verification is not redundant with
+reboot-and-re-home: **a rail blip under USB power corrupts position without a
+reboot, and no reboot means no re-home.** A unit being serviced with USB
+attached is exactly that case.
+
+- [ ] restore the rail. **Expect no firmware event at all** — EN was never
+      released, so `enable()` never ran, so the rule that re-homes on an EN
+      assert never fires. Nothing re-homes itself
+- [ ] `maint off`, then command moves and watch the first hall edges
+
+```
+expected : the first edge after the slew lands more than one flap from where
+           it was predicted, and the column raises a `slip` FAULT and
+           auto-re-homes (up to 3 attempts).  Below 16 usteps it is accepted
+           silently; 17-64 usteps is a logged resync_major.
+finding  : nothing notices - which would mean a corrupted position can
+           survive indefinitely with no reboot to clear it
 ```
 
 ```
-what happened: ______________________________________________
-did it re-home on its own?  yes / no
-console line(s) worth keeping: ______________________________
+what the first edges did : ______________________________________
+slip / resync_major / nothing : ______________
 ```
 
-**If the ESP32 survived**, the premise in §2.6 is wrong, the vetoed-but-alive
-state is real, and PG is worth a pin after all — say so, because that reopens a
-decision that is currently closed and is competing for the same GPIO as DIR and
-as §5.7a's Plan B.
+**One thing the firmware cannot answer, stated so nobody assumes it.** What the
+TMC2209 does internally across a VM outage while VIO stays up — whether its
+microstep counter keeps following the STEP pulses it is still receiving, and
+therefore which electrical phase it energises when VM returns — is a datasheet
+question, and the drivers are standalone with no UART so DIAG and the
+undervoltage flags are unreadable. Treat the column's electrical phase after a
+rail cut as **unknown**. It is the one mechanism by which this could leave a
+real physical offset rather than only a bookkeeping one.
 
 ### Step 7 — the slow spin: runout and wire routing
 

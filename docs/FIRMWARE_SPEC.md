@@ -585,6 +585,27 @@ its own comment says is worse than one that is merely wrong.
 `HALL_TOL_SILENT` is still set from measured edge repeatability (bench step 6);
 16 is the geometric default, not a measurement.
 
+**EDGE VERIFICATION IS NOT REDUNDANT WITH REBOOT-AND-RE-HOME, and the case
+that proves it is reachable** (added 2026-09-11).  §5.8's rule that a dropped EN
+invalidates position is backed by *re-asserting EN re-homes* — but that rule only
+fires when `enable()` is called, and a **rail loss is not an EN event**.  If VM
+goes away while the ESP32 stays up — which is precisely the bench topology, and
+in the field is a unit being serviced with USB attached — then: the coils lose
+current and the drum is free to move, EN is never released so nothing re-homes,
+and there is no reboot to trigger the boot-time home either.  Nothing else in
+the firmware compares a believed position against the mechanism: the frame
+scheduler's convergence pass and the settled test both read the axis's own
+*believed* index, so a slewed drum satisfies them.  **The first Hall edge after
+the slew is the only thing that can notice**, and it does — as a `resync_major`
+inside one flap, or a `slip` FAULT and an automatic re-home beyond it.
+
+So the two mechanisms cover different failures rather than overlapping: the
+re-home covers *anything that restarts or de-energises the controller*, and edge
+verification covers *the drum moving while the controller keeps running*.
+BRINGUP §28b gate 3 step 6b part B exercises the second one deliberately, and it
+needs the magnet fitted — with no Hall there are no edges, so on a hall-less
+module a corrupted position has nothing at all to catch it.
+
 FAULT routine: stop the column, attempt re-home up to `REHOME_RETRIES = 3`;
 on success resume the current frame; on failure mark FAULT, apply the fault
 display policy `[Q5]`, publish via MQTT, set LED pattern, show a UI banner.

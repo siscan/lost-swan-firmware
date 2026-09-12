@@ -624,6 +624,34 @@ runout, wobble, anything rubbing, and how the motor leads behave.
 Try `spin 0 400 5` **once**, so you have seen the refusal work rather than
 trusting that it does.
 
+### Raise the rail to 20 V FIRST
+
+Everything up to here ran at **9 V** deliberately: it is enough for the driver
+(the TMC2209 runs from 4.75 V), the cap is one drum revolution per second so
+there is no headroom to buy, and a wiring mistake at 9 V dissipates about a
+fifth of the energy. **The soak is different.** It is the production thermal
+answer or it is nothing, and production is **20 V** (`HARDWARE_PLAN_2` §5,
+LOCKED). A heat figure measured at 9 V is not the gate-3 result and must not be
+written into the blank as though it were.
+
+Change the rail the way §0 rule 3 requires — the power-off sequence, then the
+power-on sequence, both above, page 21 of the illustrated guide:
+
+```
+1.  `en 0`                     <- de-energise the coils first
+2.  Remove VM                  <- output stage dead
+3.  Re-trigger the PD at 20 V  <- the RotoPD's own selection
+4.  Apply VM                   <- confirm the voltage BEFORE en 1
+5.  `en 1`                     <- coils energised again, now at 20 V
+```
+
+- [ ] **rail reads 20 V** — measured at the driver's VM pin, not read off the
+      trigger board's label
+
+Do not hot-swap the PDO with VM live. The trigger renegotiates by dropping and
+re-raising the rail, and that is a supply transient into an energised output
+stage — `en 0` and remove VM first, every time.
+
 ### The one-flap-per-tick soak
 
 ```
