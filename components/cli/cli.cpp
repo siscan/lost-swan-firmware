@@ -469,6 +469,7 @@ int cmd_revs(int argc, char** argv) {
             std::printf("  apart; `hall` reads the input directly.\n");
             break;
         }
+    }
 
     motion::stop(col);
     if (seen > 0) {
