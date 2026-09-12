@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1131" viewBox="0 0 1600 1131">
+<rect width="1600" height="1131" fill="#ffffff"/>
+<rect x="0" y="0" width="1600" height="88" fill="#eef1f4"/>
+<line x1="0" y1="88" x2="1600" y2="88" stroke="#c7ced6" stroke-width="2"/>
+<text x="52" y="47" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="29" fill="#14181d" text-anchor="start" font-weight="bold">Connection 1  —  coil A</text>
+<text x="52" y="74" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">POWER OFF while you do this</text>
+<text x="1548" y="52" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="26" fill="#6b7683" text-anchor="end" font-weight="bold">18 / 21</text>
+<rect x="640" y="250" width="250" height="400" rx="6" fill="#f6f8fa" stroke="#14181d" stroke-width="3"/>
+<text x="765" y="204" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="21" fill="#14181d" text-anchor="middle" font-weight="bold">FYSETC TMC2209</text>
+<text x="765" y="226" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="14" fill="#6b7683" text-anchor="middle" font-weight="normal">standalone  ·  match by LABEL</text>
+<rect x="720" y="400" width="90" height="90" rx="4" fill="#2b3138" stroke="none" stroke-width="2"/>
+<text x="765" y="452" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#ffffff" text-anchor="middle" font-weight="bold">TMC</text>
+<circle cx="765" cy="555" r="21" fill="#dfe4ea" stroke="#14181d" stroke-width="2"/>
+<line x1="752" y1="555" x2="778" y2="555" stroke="#14181d" stroke-width="4" stroke-linecap="round"/>
+<text x="765" y="598" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="middle" font-weight="normal">Vref pot</text>
+<rect x="622" y="284" width="18" height="20" rx="0" fill="#9aa4ae" stroke="none" stroke-width="2"/>
+<text x="652" y="300" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="start" font-weight="normal">EN</text>
+<rect x="622" y="326" width="18" height="20" rx="0" fill="#9aa4ae" stroke="none" stroke-width="2"/>
+<text x="652" y="342" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="start" font-weight="normal">MS1</text>
+<rect x="622" y="368" width="18" height="20" rx="0" fill="#9aa4ae" stroke="none" stroke-width="2"/>
+<text x="652" y="384" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="start" font-weight="normal">MS2</text>
+<rect x="622" y="410" width="18" height="20" rx="0" fill="#9aa4ae" stroke="none" stroke-width="2"/>
+<text x="652" y="426" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="start" font-weight="normal">PDN</text>
+<rect x="622" y="452" width="18" height="20" rx="0" fill="#9aa4ae" stroke="none" stroke-width="2"/>
+<text x="652" y="468" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="start" font-weight="normal">CLK</text>
+<rect x="622" y="494" width="18" height="20" rx="0" fill="#9aa4ae" stroke="none" stroke-width="2"/>
+<text x="652" y="510" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="start" font-weight="normal">STEP</text>
+<rect x="622" y="536" width="18" height="20" rx="0" fill="#9aa4ae" stroke="none" stroke-width="2"/>
+<text x="652" y="552" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="start" font-weight="normal">DIR</text>
+<rect x="622" y="578" width="18" height="20" rx="0" fill="#9aa4ae" stroke="none" stroke-width="2"/>
+<text x="652" y="594" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="start" font-weight="normal">(n/c)</text>
+<rect x="890" y="284" width="18" height="20" rx="0" fill="#9aa4ae" stroke="none" stroke-width="2"/>
+<text x="878" y="300" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="end" font-weight="normal">VM</text>
+<rect x="890" y="326" width="18" height="20" rx="0" fill="#9aa4ae" stroke="none" stroke-width="2"/>
+<text x="878" y="342" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="end" font-weight="normal">GND</text>
+<rect x="890" y="368" width="18" height="20" rx="0" fill="#9aa4ae" stroke="none" stroke-width="2"/>
+<text x="878" y="384" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="end" font-weight="normal">2B</text>
+<rect x="890" y="410" width="18" height="20" rx="0" fill="#9aa4ae" stroke="none" stroke-width="2"/>
+<text x="878" y="426" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="end" font-weight="normal">2A</text>
+<rect x="890" y="452" width="18" height="20" rx="0" fill="#14181d" stroke="none" stroke-width="2"/>
+<text x="878" y="468" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#14181d" text-anchor="end" font-weight="bold">1A</text>
+<rect x="890" y="494" width="18" height="20" rx="0" fill="#14181d" stroke="none" stroke-width="2"/>
+<text x="878" y="510" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#14181d" text-anchor="end" font-weight="bold">1B</text>
+<rect x="890" y="536" width="18" height="20" rx="0" fill="#9aa4ae" stroke="none" stroke-width="2"/>
+<text x="878" y="552" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="end" font-weight="normal">VIO</text>
+<rect x="890" y="578" width="18" height="20" rx="0" fill="#9aa4ae" stroke="none" stroke-width="2"/>
+<text x="878" y="594" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="end" font-weight="normal">GND</text>
+<rect x="1230" y="300" width="150" height="150" rx="8" fill="#e9edf1" stroke="#14181d" stroke-width="3"/>
+<circle cx="1305" cy="375" r="28" fill="#c7ced6" stroke="#14181d" stroke-width="2"/>
+<circle cx="1305" cy="375" r="9" fill="#14181d" stroke="none" stroke-width="1"/>
+<text x="1305" y="280" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="middle" font-weight="bold">LDO 42STH48-2504AH</text>
+<line x1="1184" y1="332" x2="1230" y2="332" stroke="#d0342c" stroke-width="5" stroke-linecap="round"/>
+<text x="1224" y="324" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="13" fill="#d0342c" text-anchor="end" font-weight="normal">red</text>
+<line x1="1184" y1="361" x2="1230" y2="361" stroke="#2f61c4" stroke-width="5" stroke-linecap="round"/>
+<text x="1224" y="353" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="13" fill="#2f61c4" text-anchor="end" font-weight="normal">blue</text>
+<line x1="1184" y1="390" x2="1230" y2="390" stroke="#1f8a4c" stroke-width="5" stroke-linecap="round"/>
+<text x="1224" y="382" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="13" fill="#1f8a4c" text-anchor="end" font-weight="normal">green</text>
+<line x1="1184" y1="419" x2="1230" y2="419" stroke="#22262b" stroke-width="5" stroke-linecap="round"/>
+<text x="1224" y="411" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="13" fill="#22262b" text-anchor="end" font-weight="normal">black</text>
+<polyline points="912,462 1090,462 1090,332 1184,332" fill="none" stroke="#d0342c" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="912" cy="462" r="5.58" fill="#d0342c" stroke="none" stroke-width="1"/>
+<circle cx="1184" cy="332" r="5.58" fill="#d0342c" stroke="none" stroke-width="1"/>
+<polyline points="912,504 1140,504 1140,361 1184,361" fill="none" stroke="#2f61c4" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="912" cy="504" r="5.58" fill="#2f61c4" stroke="none" stroke-width="1"/>
+<circle cx="1184" cy="361" r="5.58" fill="#2f61c4" stroke="none" stroke-width="1"/>
+<text x="1000" y="236" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="22" fill="#14181d" text-anchor="middle" font-weight="bold">PAIR 1</text>
+<text x="1000" y="266" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#6b7683" text-anchor="middle" font-weight="normal">drawn as red + blue</text>
+<text x="1000" y="288" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#6b7683" text-anchor="middle" font-weight="normal">use YOUR measured pair</text>
+<rect x="52" y="730" width="1496" height="2" rx="0" fill="#c7ced6" stroke="none" stroke-width="2"/>
+<text x="52" y="776" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#14181d" text-anchor="start" font-weight="normal">Both ends of ONE coil — the pair you found on page 4 — go to 1A and 1B. Which of the two ends goes to</text>
+<text x="52" y="804" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#14181d" text-anchor="start" font-weight="normal">which pin does not matter; it only reverses rotation, and direction is a firmware bit. What matters is</text>
+<text x="52" y="832" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#14181d" text-anchor="start" font-weight="normal">that this bridge gets both ends of one coil and never one end of each.</text>
+<rect x="52" y="874" width="1000" height="74" rx="6" fill="#fdf0ef" stroke="#c0261b" stroke-width="3"/>
+<rect x="52" y="874" width="9" height="74" rx="0" fill="#c0261b" stroke="none" stroke-width="2"/>
+<text x="80" y="906" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#c0261b" text-anchor="start" font-weight="bold">VM MUST BE OFF. Plugging a coil into a live driver is rule 1 on page 2, and it is the</text>
+<text x="80" y="931" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#c0261b" text-anchor="start" font-weight="bold">most common way these modules die.</text>
+<line x1="52" y1="1087" x2="1548" y2="1087" stroke="#c7ced6" stroke-width="1" stroke-linecap="round"/>
+<text x="52" y="1111" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">LOST Swan  module V1  ·  generated by tools/wiringgen.py from hal/pins.h + docs/BENCH_WIRING.md</text>
+</svg>

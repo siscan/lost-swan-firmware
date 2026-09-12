@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1131" viewBox="0 0 1600 1131">
+<rect width="1600" height="1131" fill="#ffffff"/>
+<rect x="0" y="0" width="1600" height="88" fill="#eef1f4"/>
+<line x1="0" y1="88" x2="1600" y2="88" stroke="#c7ced6" stroke-width="2"/>
+<text x="52" y="47" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="29" fill="#14181d" text-anchor="start" font-weight="bold">Power on, and power off</text>
+<text x="52" y="74" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">In this order, every time</text>
+<text x="1548" y="52" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="26" fill="#6b7683" text-anchor="end" font-weight="bold">21 / 21</text>
+<text x="52" y="140" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="26" fill="#1a7f45" text-anchor="start" font-weight="bold">POWER ON</text>
+<rect x="52" y="180" width="720" height="54" rx="6" fill="#eff8f2" stroke="#1a7f45" stroke-width="2"/>
+<circle cx="88" cy="207" r="19" fill="#1a7f45" stroke="none" stroke-width="1"/>
+<text x="88" y="214" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#ffffff" text-anchor="middle" font-weight="bold">1</text>
+<text x="122" y="214" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">Everything wired, MOTOR INCLUDED, nothing powered.</text>
+<rect x="52" y="246" width="720" height="54" rx="6" fill="#eff8f2" stroke="#1a7f45" stroke-width="2"/>
+<circle cx="88" cy="273" r="19" fill="#1a7f45" stroke="none" stroke-width="1"/>
+<text x="88" y="280" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#ffffff" text-anchor="middle" font-weight="bold">2</text>
+<text x="122" y="280" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">Confirm EN reads high (disabled) — page 7.</text>
+<rect x="52" y="312" width="720" height="54" rx="6" fill="#eff8f2" stroke="#1a7f45" stroke-width="2"/>
+<circle cx="88" cy="339" r="19" fill="#1a7f45" stroke="none" stroke-width="1"/>
+<text x="88" y="346" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#ffffff" text-anchor="middle" font-weight="bold">3</text>
+<text x="122" y="346" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">USB-C from the PC to the ESP32.  VIO comes up; logic defined.</text>
+<rect x="52" y="378" width="720" height="54" rx="6" fill="#eff8f2" stroke="#1a7f45" stroke-width="2"/>
+<circle cx="88" cy="405" r="19" fill="#1a7f45" stroke="none" stroke-width="1"/>
+<text x="88" y="412" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#ffffff" text-anchor="middle" font-weight="bold">4</text>
+<text x="122" y="412" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">Watch the console boot.  Board healthy BEFORE any motor voltage.</text>
+<rect x="52" y="444" width="720" height="54" rx="6" fill="#eff8f2" stroke="#1a7f45" stroke-width="2"/>
+<circle cx="88" cy="471" r="19" fill="#1a7f45" stroke="none" stroke-width="1"/>
+<text x="88" y="478" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#ffffff" text-anchor="middle" font-weight="bold">5</text>
+<text x="122" y="478" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">maint on     — stops it hunting for a Hall that is not there.</text>
+<rect x="52" y="510" width="720" height="54" rx="6" fill="#eff8f2" stroke="#1a7f45" stroke-width="2"/>
+<circle cx="88" cy="537" r="19" fill="#1a7f45" stroke="none" stroke-width="1"/>
+<text x="88" y="544" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#ffffff" text-anchor="middle" font-weight="bold">6</text>
+<text x="122" y="544" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">Apply VM (9 V).  Output stage now live.</text>
+<rect x="52" y="576" width="720" height="54" rx="6" fill="#eff8f2" stroke="#1a7f45" stroke-width="2"/>
+<circle cx="88" cy="603" r="19" fill="#1a7f45" stroke="none" stroke-width="1"/>
+<text x="88" y="610" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#ffffff" text-anchor="middle" font-weight="bold">7</text>
+<text x="122" y="610" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">en 1         — and only now are the coils energised.</text>
+<text x="830" y="140" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="26" fill="#c0261b" text-anchor="start" font-weight="bold">POWER OFF</text>
+<rect x="830" y="180" width="718" height="54" rx="6" fill="#fdf0ef" stroke="#c0261b" stroke-width="2"/>
+<circle cx="866" cy="207" r="19" fill="#c0261b" stroke="none" stroke-width="1"/>
+<text x="866" y="214" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#ffffff" text-anchor="middle" font-weight="bold">1</text>
+<text x="900" y="214" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">en 0        — de-energise the coils first.</text>
+<rect x="830" y="246" width="718" height="54" rx="6" fill="#fdf0ef" stroke="#c0261b" stroke-width="2"/>
+<circle cx="866" cy="273" r="19" fill="#c0261b" stroke="none" stroke-width="1"/>
+<text x="866" y="280" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#ffffff" text-anchor="middle" font-weight="bold">2</text>
+<text x="900" y="280" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">Remove VM.</text>
+<rect x="830" y="312" width="718" height="54" rx="6" fill="#fdf0ef" stroke="#c0261b" stroke-width="2"/>
+<circle cx="866" cy="339" r="19" fill="#c0261b" stroke="none" stroke-width="1"/>
+<text x="866" y="346" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#ffffff" text-anchor="middle" font-weight="bold">3</text>
+<text x="900" y="346" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">Remove USB.</text>
+<rect x="830" y="378" width="718" height="54" rx="6" fill="#fdf0ef" stroke="#c0261b" stroke-width="2"/>
+<circle cx="866" cy="405" r="19" fill="#c0261b" stroke="none" stroke-width="1"/>
+<text x="866" y="412" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#ffffff" text-anchor="middle" font-weight="bold">4</text>
+<text x="900" y="412" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">Before touching the motor plug: confirm the bulk cap has discharged.</text>
+<rect x="830" y="452" width="718" height="74" rx="6" fill="#fdf0ef" stroke="#c0261b" stroke-width="3"/>
+<rect x="830" y="452" width="9" height="74" rx="0" fill="#c0261b" stroke="none" stroke-width="2"/>
+<text x="858" y="484" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#c0261b" text-anchor="start" font-weight="bold">THE BULK CAPACITOR HOLDS CHARGE after the supply is gone. That</text>
+<text x="858" y="509" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#c0261b" text-anchor="start" font-weight="bold">is still a live driver as far as rule 1 is concerned.</text>
+<text x="830" y="578" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="20" fill="#14181d" text-anchor="start" font-weight="bold">Standstill-current check (page 12)</text>
+<text x="830" y="612" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">With the motor energised and stationary, watch the supply</text>
+<text x="830" y="637" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">current: it must STEP DOWN about a second after the last step.</text>
+<text x="830" y="662" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">That is standstill reduction working, and it is the whole</text>
+<text x="830" y="687" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">thermal contract. If it never steps down, PDN is tied the</text>
+<text x="830" y="712" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">wrong way.</text>
+<text x="52" y="660" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="24" fill="#c0261b" text-anchor="start" font-weight="bold">STOP NOW — cut VM immediately</text>
+<circle cx="66" cy="700" r="6" fill="#c0261b" stroke="none" stroke-width="1"/>
+<text x="88" y="706" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="18" fill="#14181d" text-anchor="start" font-weight="normal">any smell of hot plastic or varnish</text>
+<circle cx="66" cy="734" r="6" fill="#c0261b" stroke="none" stroke-width="1"/>
+<text x="88" y="740" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="18" fill="#14181d" text-anchor="start" font-weight="normal">the driver too hot to keep a finger on</text>
+<circle cx="66" cy="768" r="6" fill="#c0261b" stroke="none" stroke-width="1"/>
+<text x="88" y="774" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="18" fill="#14181d" text-anchor="start" font-weight="normal">the motor case climbing past uncomfortable early in a run</text>
+<circle cx="66" cy="802" r="6" fill="#c0261b" stroke="none" stroke-width="1"/>
+<text x="88" y="808" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="18" fill="#14181d" text-anchor="start" font-weight="normal">the bulk capacitor warm, or bulging</text>
+<circle cx="66" cy="836" r="6" fill="#c0261b" stroke="none" stroke-width="1"/>
+<text x="88" y="842" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="18" fill="#14181d" text-anchor="start" font-weight="normal">loud buzzing with no rotation  (coil pairing — page 4)</text>
+<circle cx="66" cy="870" r="6" fill="#c0261b" stroke="none" stroke-width="1"/>
+<text x="88" y="876" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="18" fill="#14181d" text-anchor="start" font-weight="normal">supply current spiking, or the supply cutting out</text>
+<circle cx="66" cy="904" r="6" fill="#c0261b" stroke="none" stroke-width="1"/>
+<text x="88" y="910" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="18" fill="#14181d" text-anchor="start" font-weight="normal">the ESP32 rebooting repeatedly  (brownout — check grounds)</text>
+<text x="52" y="960" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#c0261b" text-anchor="start" font-weight="bold">Do not go looking for the console if something smells hot. Pull VM.</text>
+<text x="830" y="960" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#6b7683" text-anchor="start" font-weight="normal">EXPECTED, not a problem: faults on columns 1-4 (nothing is wired</text>
+<text x="830" y="983" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#6b7683" text-anchor="start" font-weight="normal">to them), a no_hall fault on column 0 before `maint on`, a</text>
+<text x="830" y="1006" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#6b7683" text-anchor="start" font-weight="normal">steady hiss at standstill (the chopper), and the drum settling</text>
+<text x="830" y="1029" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#6b7683" text-anchor="start" font-weight="normal">to a slightly different rest position after `en 0` — that is the</text>
+<text x="830" y="1052" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#6b7683" text-anchor="start" font-weight="normal">3.92 N·cm imbalance against a 2.2 N·cm detent, and seeing it</text>
+<text x="830" y="1075" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#6b7683" text-anchor="start" font-weight="normal">confirms the premise.</text>
+<line x1="52" y1="1087" x2="1548" y2="1087" stroke="#c7ced6" stroke-width="1" stroke-linecap="round"/>
+<text x="52" y="1111" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">LOST Swan  module V1  ·  generated by tools/wiringgen.py from hal/pins.h + docs/BENCH_WIRING.md</text>
+</svg>

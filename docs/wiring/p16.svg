@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1131" viewBox="0 0 1600 1131">
+<rect width="1600" height="1131" fill="#ffffff"/>
+<rect x="0" y="0" width="1600" height="88" fill="#eef1f4"/>
+<line x1="0" y1="88" x2="1600" y2="88" stroke="#c7ced6" stroke-width="2"/>
+<text x="52" y="47" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="29" fill="#14181d" text-anchor="start" font-weight="bold">Continuity check</text>
+<text x="52" y="74" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">Beep these five pairs BEFORE the first power-on</text>
+<text x="1548" y="52" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="26" fill="#6b7683" text-anchor="end" font-weight="bold">16 / 21</text>
+<text x="52" y="140" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#14181d" text-anchor="start" font-weight="normal">Meter on continuity (the beep symbol). Everything unpowered, USB out, motor still disconnected.</text>
+<text x="52" y="168" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#14181d" text-anchor="start" font-weight="normal">Five checks: three that must NOT beep, two that MUST. A mistake found here costs a minute; the</text>
+<text x="52" y="196" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#14181d" text-anchor="start" font-weight="normal">same mistake found by powering up costs a driver.</text>
+<rect x="52" y="248" width="1496" height="118" rx="8" fill="#fdf0ef" stroke="#c0261b" stroke-width="3"/>
+<rect x="52" y="248" width="9" height="118" rx="0" fill="#c0261b" stroke="none" stroke-width="2"/>
+<circle cx="112" cy="292" r="26" fill="#c0261b" stroke="none" stroke-width="1"/>
+<text x="112" y="302" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="26" fill="#ffffff" text-anchor="middle" font-weight="bold">1</text>
+<text x="166" y="288" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="22" fill="#14181d" text-anchor="start" font-weight="bold">VM            &lt;--&gt;  GND</text>
+<text x="166" y="324" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="20" fill="#c0261b" text-anchor="start" font-weight="bold">MUST NOT BEEP</text>
+<text x="620" y="288" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">A short across the supply. This is the one that makes smoke.</text>
+<rect x="1476" y="278" width="30" height="30" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
+<rect x="52" y="378" width="1496" height="118" rx="8" fill="#fdf0ef" stroke="#c0261b" stroke-width="3"/>
+<rect x="52" y="378" width="9" height="118" rx="0" fill="#c0261b" stroke="none" stroke-width="2"/>
+<circle cx="112" cy="422" r="26" fill="#c0261b" stroke="none" stroke-width="1"/>
+<text x="112" y="432" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="26" fill="#ffffff" text-anchor="middle" font-weight="bold">2</text>
+<text x="166" y="418" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="22" fill="#14181d" text-anchor="start" font-weight="bold">VM            &lt;--&gt;  3V3</text>
+<text x="166" y="454" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="20" fill="#c0261b" text-anchor="start" font-weight="bold">MUST NOT BEEP</text>
+<text x="620" y="418" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">Motor voltage on the ESP32's 3.3 V rail — destroys the board.</text>
+<rect x="1476" y="408" width="30" height="30" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
+<rect x="52" y="508" width="1496" height="118" rx="8" fill="#fdf0ef" stroke="#c0261b" stroke-width="3"/>
+<rect x="52" y="508" width="9" height="118" rx="0" fill="#c0261b" stroke="none" stroke-width="2"/>
+<circle cx="112" cy="552" r="26" fill="#c0261b" stroke="none" stroke-width="1"/>
+<text x="112" y="562" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="26" fill="#ffffff" text-anchor="middle" font-weight="bold">3</text>
+<text x="166" y="548" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="22" fill="#14181d" text-anchor="start" font-weight="bold">3V3           &lt;--&gt;  GND</text>
+<text x="166" y="584" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="20" fill="#c0261b" text-anchor="start" font-weight="bold">MUST NOT BEEP</text>
+<text x="620" y="548" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">Shorts the ESP32's regulator; the board will not boot.</text>
+<rect x="1476" y="538" width="30" height="30" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
+<rect x="52" y="638" width="1496" height="118" rx="8" fill="#eff8f2" stroke="#1a7f45" stroke-width="3"/>
+<rect x="52" y="638" width="9" height="118" rx="0" fill="#1a7f45" stroke="none" stroke-width="2"/>
+<circle cx="112" cy="682" r="26" fill="#1a7f45" stroke="none" stroke-width="1"/>
+<text x="112" y="692" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="26" fill="#ffffff" text-anchor="middle" font-weight="bold">4</text>
+<text x="166" y="678" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="22" fill="#14181d" text-anchor="start" font-weight="bold">ESP GND       &lt;--&gt;  driver GND</text>
+<text x="166" y="714" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="20" fill="#1a7f45" text-anchor="start" font-weight="bold">MUST BEEP</text>
+<text x="620" y="678" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">No common ground means every logic level is undefined. Nothing</text>
+<text x="620" y="702" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">works, confusingly.</text>
+<rect x="1476" y="668" width="30" height="30" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
+<rect x="52" y="768" width="1496" height="118" rx="8" fill="#eff8f2" stroke="#1a7f45" stroke-width="3"/>
+<rect x="52" y="768" width="9" height="118" rx="0" fill="#1a7f45" stroke="none" stroke-width="2"/>
+<circle cx="112" cy="812" r="26" fill="#1a7f45" stroke="none" stroke-width="1"/>
+<text x="112" y="822" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="26" fill="#ffffff" text-anchor="middle" font-weight="bold">5</text>
+<text x="166" y="808" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="22" fill="#14181d" text-anchor="start" font-weight="bold">ESP 3V3       &lt;--&gt;  driver VIO</text>
+<text x="166" y="844" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="20" fill="#1a7f45" text-anchor="start" font-weight="bold">MUST BEEP</text>
+<text x="620" y="808" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">MS1 and MS2 must beep to 3V3 as well — they are on the same</text>
+<text x="620" y="832" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">net.</text>
+<rect x="1476" y="798" width="30" height="30" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
+<text x="52" y="924" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="18" fill="#1a7f45" text-anchor="start" font-weight="normal">All five correct? Then the first power-on cannot destroy anything through a wiring error. Go to page 17.</text>
+<line x1="52" y1="1087" x2="1548" y2="1087" stroke="#c7ced6" stroke-width="1" stroke-linecap="round"/>
+<text x="52" y="1111" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">LOST Swan  module V1  ·  generated by tools/wiringgen.py from hal/pins.h + docs/BENCH_WIRING.md</text>
+</svg>
