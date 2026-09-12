@@ -1269,26 +1269,118 @@ touch, not from memory.
 - **a timer, an hour you do not need the bench for, and a pen** — the blanks
   below are the deliverable
 
-**The build is its own flavour, and it is not optional.**
+### THE FLASH PROCEDURE — the only one in this repository
+
+Everywhere else that used to carry flash commands for this session now points
+here: `docs/BENCH_WIRING.md` §5 and `README.md` → *The stand-in bench build*.
+If you find a second set of commands anywhere, one of them is stale and this is
+the one that is not.
+
+> ### ⛔ THERE IS NO BENCH IMAGE TO DOWNLOAD. YOU BUILD IT.
+>
+> The only release is **`v1.0-software-quiet`**, cut 2026-08-26 at commit
+> `5cf611d`, and it predates *both* things you need:
+>
+> - **`SWAN_BENCH` did not exist in that tree.** No flavour, no
+>   `bench_policy.h`, no clamp. Its five assets are the two board apps, the two
+>   full zips and `storage.bin`, all stamped `0.4.0+<board>.sim` — verified from
+>   the binaries, not from the filenames.
+> - **Its geometry is the RIM GEAR** — 5440/33 µsteps per flap, 8242 per
+>   revolution — asserted at compile time. The 1:1 direct drive landed
+>   2026-09-05/06, ten days after the tag.
+>
+> So flashing a release onto module V1 gives you a wrong-machine image with **no
+> speed cap**, on a printed stand-in. **CI builds a bench image on every push
+> and uploads nothing** — it proves the image compiles and is stamped
+> `0.4.0+devkitc1.bench`, then throws it away. The bench image exists only in
+> your own `build-bench/`.
+
+**Step A — one-time, per build directory.**
 
 ```bash
 .\build.ps1 -B build-bench -DSWAN_BENCH=ON set-target esp32c5
 ```
 
+**Step B — build the app. `app`, never `build`.**
+
 ```bash
 .\build.ps1 -B build-bench -DSWAN_BENCH=ON app
 ```
+
+`build` drags in the LittleFS image step, which Device Guard blocks on this
+machine (README → *Host unit tests*). `app` and `app-flash` do not go near it.
+
+**Step C — flash the app only, and watch it boot.**
 
 ```bash
 .\build.ps1 -B build-bench -DSWAN_BENCH=ON -p COM3 app-flash monitor
 ```
 
-It reports itself as `0.4.0+devkitc1.bench` in the boot log, in `sys.version`
-and to an OTA. **The show spin is absent from this image.** Every commanded
-speed is clamped to **50 flaps/s = 1 drum rev/s** at the one place speeds enter
-the motion layer, so a value from NVS, a Settings slider or an MQTT peer cannot
-lift it; `bench spin` above the cap is refused outright rather than quietly run
-slower.
+`app-flash` writes **one** region — the app at `0x20000`, which is `ota_0`. It
+does not touch `nvs`, `otadata` or `storage`, so calibration, per-column modes,
+WiFi and MQTT credentials, a live countdown deadline, `ring.json`, the event
+journal, the audio cues and the web UI all survive, and reverting is one more
+`app-flash` of the normal build.
+
+- [ ] the boot log says **`0.4.0+devkitc1.bench`**. If it does not say `bench`,
+      you are running the wrong image and **the speed cap is not there** — stop.
+
+> **IF THE FLASH SEEMS TO DO NOTHING, IT IS THE OTA SLOT.** This partition
+> table has **no factory partition** (`nvs` · `otadata` · `phy_init` · `ota_0`
+> @0x20000 · `ota_1` · `storage` @0x520000). `app-flash` always writes `ota_0`,
+> but the bootloader runs whichever slot `otadata` selects — and an OTA leaves
+> it selecting `ota_1`. The board then keeps running the old image and the
+> flash looks like it was ignored. `sys.ota_partition` in `GET /api/state` and
+> the boot log both name the running slot. The fix is one command, then
+> re-flash:
+>
+> ```bash
+> .\build.ps1 -B build-bench -p COM3 erase-otadata
+> ```
+>
+> With `otadata` blank and no factory partition the bootloader falls back to
+> `ota_0` — the slot `app-flash` writes. *(Not exercised on this board; the
+> target is verified present in ESP-IDF v5.5.5 and in `build-bench/build.ninja`.
+> The last full flash here was 2026-08-24, which would have left `ota_0`
+> selected, so you will probably never see this.)*
+
+> ### ☠ DO NOT USE A FULL `flash` TO GET THIS ONTO THE BOARD
+>
+> `idf.py flash` writes **five** regions, and one of them is `storage.bin` at
+> **`0x520000` — the whole 2 MB `storage` partition**. That partition is not
+> spare space. It holds, and a full flash replaces, all four of:
+>
+> | what | where |
+> |---|---|
+> | the runtime ring table | `/fs/ring.json` |
+> | **the persistent event journal** | `/fs/journal.jsonl` |
+> | the audio cues | `/fs/audio/*.wav` |
+> | every gzipped web asset | the whole UI and the presentation terminal |
+>
+> **The journal is the device's permanent record across reboots and it does not
+> come back.** Nothing in this session needs a full flash. `app-flash` is the
+> procedure; the only legitimate reason to reach for `flash` here is resetting
+> the OTA slot, and `erase-otadata` above does that without touching the
+> filesystem.
+>
+> (On this machine a full `idf.py flash` cannot complete anyway — Device Guard
+> blocks the LittleFS builder. README documents the split commands for the day
+> you genuinely need to rewrite the filesystem.)
+
+**What the flavour is, and what it is not.** The image reports
+`0.4.0+devkitc1.bench` in the boot log, in `sys.version` and to an OTA, so you
+can always see which one is running. **The show spin is absent from it:** every
+commanded speed is clamped to **50 flaps/s = 1 drum rev/s** inside
+`motion::step_open_loop` — the function every commanded rate actually reaches —
+so a value from NVS, a Settings slider or an MQTT peer cannot lift it, and
+`bench spin` above the cap is refused outright rather than quietly run slower.
+
+That wording is deliberate. Until 2026-09-11 this said the cap was applied "at
+the one place every speed enters the motion layer", which was written about
+where speeds are *configured* and read back later like a proof — and the console
+path walked straight past it (§17). The tag makes the flavour **visible**; it is
+not an interlock, and nothing in the OTA gate refuses a bench image or refuses
+to replace one.
 
 **Why the cap exists, stated accurately.**  The shaft is a real Ø8 × Ø6 metal
 support tube — it is the **spacers and the mount that are printed**, and they

@@ -425,20 +425,19 @@ we decide with a number in hand.
 
 ### Build and flash the bench image
 
-```bash
-.\build.ps1 -B build-bench -DSWAN_BENCH=ON set-target esp32c5
-```
+> **The commands live in one place: `docs/BRINGUP.md` §28b gate 3, "THE FLASH
+> PROCEDURE — the only one in this repository".** They used to be duplicated
+> here, and the copies had already drifted apart — this one said `build` where
+> BRINGUP says `app`, and `build` is the form that trips the Device-Guard-blocked
+> LittleFS step on the dev machine. Go there, come back.
 
-```bash
-.\build.ps1 -B build-bench -DSWAN_BENCH=ON build
-```
+Two things from it you need while you are standing at the bench:
 
-```bash
-.\build.ps1 -B build-bench -DSWAN_BENCH=ON -p COM3 app-flash monitor
-```
-
-`app-flash` only — it swaps the app and leaves NVS and the filesystem alone, so
-your settings survive and reverting is one more `app-flash` of the normal build.
+- **There is no bench image to download.** The only release predates both the
+  bench flavour and the direct drive. You build this image yourself.
+- **`app-flash`, never a full `flash`.** A full flash rewrites the 2 MB
+  `storage` partition — `ring.json`, the event journal, the audio cues and the
+  whole web UI — and the journal does not come back.
 
 It announces itself as **`0.4.0+devkitc1.bench`** in the boot log. If it does
 not say `bench`, you are running the wrong image and the speed cap is not there.

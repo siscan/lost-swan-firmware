@@ -195,24 +195,34 @@ lot.
 The first firmware here that drives a real motor (BRINGUP §28b gate 3, spec §15
 phase 8). One real column, one real TMC2209, on a **printed PLA stand-in axle**.
 
-```bash
-.\build.ps1 -B build-bench -DSWAN_BENCH=ON set-target esp32c5
-```
+**The commands are in `docs/BRINGUP.md` §28b gate 3**, under "THE FLASH
+PROCEDURE — the only one in this repository", together with the `otadata` trap
+and the reason a full `flash` is the wrong tool. They were duplicated here and
+in `docs/BENCH_WIRING.md`, and the three copies had drifted; there is now one.
 
-```bash
-.\build.ps1 -B build-bench -DSWAN_BENCH=ON -p COM3 app-flash monitor
-```
+**No release carries a bench image**, and none can: `.github/workflows/release.yml`
+never passes `-DSWAN_BENCH=ON`, and the one release that exists predates the
+flavour entirely. You build it.
 
-It reports itself as `0.4.0+devkitc1.bench` everywhere a version is read, so an
-OTA cannot put a capped image on the wall by accident.
+It reports itself as `0.4.0+devkitc1.bench` everywhere a version is read, so you
+can always see which image is running. That is **visibility, not an interlock** —
+`components/webapi/ota_policy.cpp` refuses exactly two things, a wrong-board
+image and a release image onto a board with simulated columns, and neither of
+them is "a capped image onto the wall" or "an uncapped image over a capped one".
+This sentence used to claim the tag prevented that; it does not.
 
 **The show spin is absent from this image, and cannot be turned back on.** Every
-commanded speed is clamped to **50 flaps/s — one drum revolution per second** at
-`motion::set_params`, the single place speeds enter the motion layer, so a value
-from NVS, a Settings slider or an MQTT peer cannot lift it. `bench spin` above
-the cap is refused outright rather than quietly run slower, because a spin asks
-for a speed for a reason. The axle is printed; the cap is a safety contract, not
-a config default.
+commanded speed is clamped to **50 flaps/s — one drum revolution per second**
+inside `motion::step_open_loop`, the function every commanded rate actually
+reaches, so a value from NVS, a Settings slider or an MQTT peer cannot lift it.
+`bench spin` above the cap is refused outright rather than quietly run slower,
+because a spin asks for a speed for a reason. The axle is printed; the cap is a
+safety contract, not a config default.
+
+*(Until 2026-09-11 this said the clamp was at `motion::set_params`, "the single
+place speeds enter the motion layer". That was written about where speeds are
+**configured**, and the console path walked straight past it — `spin 0 400 20`
+ran the show spin. Spec §17 has the entry.)*
 
 Console commands in this build:
 
@@ -230,6 +240,15 @@ through a real coil, and a modelled drum would produce a beautiful hour of logs
 and answer nothing.
 
 ## Restoring a released build — no toolchain needed
+
+> **⚠ THE ONLY RELEASE PREDATES THE DRIVE CHANGE.** `v1.0-software-quiet` was
+> cut 2026-08-26 from commit `5cf611d`; the 1:1 direct drive landed
+> 2026-09-05/06. Its images assert the **rim gear** at compile time — 5440/33
+> µsteps per flap, 8242 per revolution — and never configure GPIO24, which is
+> now the ganged DIR line. Onto the built mechanism that is a **downgrade to a
+> machine that was never built**, not a restore. It also carries no bench speed
+> cap. Everything below is correct as a procedure; read it as "how to put an
+> old image back", not as "how to get a good image".
 
 Tagged states are published as flashable images on the
 [Releases page](https://github.com/siscan/lost-swan-firmware/releases), built in
@@ -281,9 +300,15 @@ python tools/webpack.py
 ```
 
 - The published images are the **simulated-axis** flavour (`0.4.0+<board>.sim`),
-  which is what the bench runs and what `docs/BRINGUP.md` assumes.  A release
-  build cannot carry the simulation at all — CI proves that gate fires on every
-  push.
+  which is what the bench ran *against modelled drums* in August.  It is **not**
+  what `docs/BRINGUP.md` §28b assumes today: that session runs the `.bench`
+  flavour, built locally, and no published image is one.  A release build cannot
+  carry the simulation at all — CI proves that gate fires on every push.
+- **Settings survive, which is not the same as settings being valid.**  None of
+  this touches `nvs`, so `motion.cal[5]` comes back — but a calibration offset
+  is stored in **µsteps**, and a µstep is 2.58× more drum angle after the drive
+  change.  A cal_offset saved under one geometry is meaningless under the other.
+  Re-calibrate rather than trusting what survived.
 
 Checksums for every published file are in `SHA256SUMS.txt` on the release.
 `GET /api/state` reports `sys.version` and `sys.ota_partition`, which together
