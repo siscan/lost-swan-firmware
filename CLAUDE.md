@@ -126,6 +126,10 @@ docs/FIRMWARE_SPEC.md          the spec (source of truth for behaviour)
 docs/BRINGUP.md                bench checklists + results as they come in
 docs/OWNER.md                  living with the display: the owner's manual
 docs/MOTION_SYNC.md            motion ownership/atomics/critical-section contract
+docs/BENCH_WIRING.md           the prose bench wiring guide, and the source the
+                               illustrated pages are checked against
+docs/wiring/                   GENERATED: p01..p21.svg + .png + bench-wiring.pdf,
+                               the illustrated guide. Never hand-edited
 docs/FUTURE.md                 planned-but-not-built shapes (the scriptable zero
                                choreography), and what shipped code must not break
 docs/ref/                      README.md (mechanical v6), BOM.md, manifest_cols1234.json +
@@ -173,6 +177,11 @@ tools/webpack.py               gzips web/ + ring.json into the LittleFS image
 tools/jscheck.py               web asset syntax scan (no node needed); run by
                                test-host.ps1 - a raw newline in a JS string
                                literal is a blank UI, not an error
+tools/wiringgen.py             docs/wiring/*.svg, generated from hal/pins.h +
+                               docs/BENCH_WIRING.md and REFUSING to draw if they
+                               disagree; --check runs in test-host.ps1 and CI
+tools/wiringgen_pages.py       the 21 page bodies; hard-codes no GPIO
+tools/wiringrender.ps1         SVG -> PNG + one PDF, via Edge headless
 tools/devserver/               host dev server: real /ws, real ModeManager, sim axes
 test/host/                     unit tests (build in build_host/, not build/)
 ```
@@ -363,6 +372,14 @@ Things later work must not undo:
   And on this machine `idf.py flash` writes a **stale** `storage.bin` — the
   LittleFS image is built by hand because Device Guard blocks the launcher
   (README), so a web change is not on the board until that command is re-run.
+- **A DRAWING OF A WIRING LOOM IS A CLAIM ABOUT GPIO NUMBERS, and a drawing
+  cannot be code-reviewed.** `docs/wiring/` is therefore generated:
+  `tools/wiringgen.py` parses the DevKitC-1 block of `hal/pins.h` and the
+  connection table, microstep table and Vref figures of `docs/BENCH_WIRING.md`,
+  cross-checks them, re-derives the TMC2209 current equation, and **emits
+  nothing at all if any of them disagree**. Do not hand-edit an SVG under
+  `docs/wiring/`; change the source and re-run the generator. CI diffs the
+  committed pages against a fresh run.
 - **MQTT publishes on change, ≥1 s apart, 30 s floor** — not the /ws cadence.
   `cd.remaining_s` is excluded from the change comparison; it ticks, and the
   state topic is RETAINED.

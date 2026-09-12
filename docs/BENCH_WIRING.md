@@ -8,6 +8,19 @@ source pin, a named destination pin, and how to identify each one on the actual
 part in front of you — because the one thing that would make a photograph
 useless is a module whose silkscreen differs from mine.
 
+> **THE ILLUSTRATED VERSION IS `docs/wiring/bench-wiring.pdf`** — twenty-one
+> pages, one connection per page, drawn parts with their real pin labels, the
+> Vref procedure with the meter probes on the pads, a continuity checklist and
+> numbered power-on / power-off sequences. Print it and take it to the bench.
+>
+> Those pages are **generated** by `tools/wiringgen.py` from
+> `components/swan_hal/include/hal/pins.h` and **this file**, and the generator
+> refuses to emit anything if the two disagree. So: this document is the prose
+> source of truth, the pages cannot contradict it, and `tools/wiringgen.py
+> --check` (run by `test-host.ps1` and CI) fails the build if they would.
+> After editing §2's table, §4's Vref figures or §2's microstep table, re-run
+> `python tools/wiringgen.py` and then `tools/wiringrender.ps1`.
+
 **What this round is and is not.** The Hall sensor and magnet are not fitted, so
 there is **no homing, no position, and no closed loop**. The firmware cannot
 know where the drum is and will not pretend to. What you *can* establish is

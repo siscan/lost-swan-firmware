@@ -1226,6 +1226,13 @@ design until this passes. The question is narrow and physical: *a NEMA 17 is
 sealed inside a PLA drum that softens at 55–60 °C, and the clock holds position
 99 % of the day — does it cook?*
 
+**WIRE IT FROM THE ILLUSTRATED GUIDE.** `docs/wiring/bench-wiring.pdf` is the
+twenty-one-page picture version of `docs/BENCH_WIRING.md` — one connection per
+page, the driver and the DevKitC-1 drawn with their real pin labels, Vref with
+the meter probes on the pads, a five-pair continuity checklist to beep before
+first power, and numbered power-on / power-off sequences. Its pin numbers are
+generated from `hal/pins.h`, so they cannot drift from the firmware.
+
 **WHAT YOU NEED ON THE BENCH — the whole list, so nothing is discovered
 missing mid-session.**  Derived from what the numbered steps below actually
 touch, not from memory.
