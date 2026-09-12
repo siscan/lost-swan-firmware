@@ -56,7 +56,7 @@ none of the Windows dev machine's constraints exist:
 | job | what |
 |---|---|
 | `ring-table` | `python3 tools/ringgen.py --check` — the committed header AND `data/ring.json` must match the two manifests |
-| `host-tests` | native CMake build + ctest of all eighteen pure-logic suites, then a freshness diff of the committed simulator traces against a live `gen_traces` run |
+| `host-tests` | native CMake build + ctest of all twenty pure-logic suites, then a freshness diff of the committed simulator traces against a live `gen_traces` run |
 | `firmware` | both board maps (`devkitc1`, `xiao`) built inside Espressif's official `espressif/idf:v5.5.5` Docker image |
 
 **Linux CI is the source of truth for reliability.** The Smart-App-Control
@@ -357,12 +357,14 @@ It uses the CMake and Ninja that `install.ps1` already put under
 `~/.espressif/tools` — no separate CMake install — plus the user-scope MinGW-w64
 GCC from winget. No Visual Studio, nothing needing admin.
 
-Three machine constraints are baked into that script and into
+Four machine constraints are baked into that script and into
 `test/host/CMakeLists.txt` — all one root cause: **Smart App Control is
 enforced on this machine** (`HKLM:...\CI\Policy\VerifiedAndReputablePolicyState
 = 1`) and blocks unsigned binaries it has no reputation for:
 
-- **`ar.exe` is permanently blocked** (WinLibs' bundled `cmake.exe` too). So the
+- **`ar.exe` has been blocked here** (WinLibs' bundled `cmake.exe` too) — it
+  read "permanently" until 2026-09-11, when both were observed running again;
+  see the next bullet for why that word was wrong. So the
   suite compiles the pure sources straight into each test executable rather
   than building a static library, and uses the **Ninja** generator — MinGW
   Makefiles archives objects with `ar` before linking and can never work here.
@@ -374,6 +376,34 @@ enforced on this machine** (`HKLM:...\CI\Policy\VerifiedAndReputablePolicyState
   were actually blocked**, keeping the ones that ran. Relinking the whole set
   each round needs every binary to clear the coin-flip at once, which stopped
   converging past a handful of tests. A real test failure is never retried.
+- **A stable TOOLCHAIN binary can be denied for a window too, and then allowed
+  again.** On 2026-09-11 every one of the 22 link steps failed with
+
+  ```
+  g++.exe: fatal error: cannot execute
+  '…/mingw64/bin/../libexec/gcc/x86_64-w64-mingw32/16.1.0/collect2.exe':
+  CreateProcess: No such file or directory
+  ```
+
+  for a file that was on disk, unchanged since the 2026-08-21 install, and had
+  linked the suite cleanly six days earlier. The message is a lie in the usual
+  way — `CreateProcess` reports a policy denial as "No such file or directory",
+  which sends you looking for a broken install. `collect2` is the linker driver
+  GCC spawns, so the compile succeeded and only the link failed, on every
+  target at once. **The window closed on its own**: a clean out-of-tree build
+  afterwards linked all 22 binaries in 22 s and ctest passed 20/20 with no
+  blocks. Nothing was reinstalled and nothing was changed.
+
+  Same enforcement as the two bullets above — same policy key, same denial —
+  but a different trigger, and the one that matters for how you read a failure:
+  the other two are *permanent* (a specific hash, permanently denied) and
+  *per-relink* (a new hash, new coin-flip). This one is neither. A binary with
+  a settled reputation can be refused for a while and then accepted again, so
+  **a total link failure is not evidence that the toolchain is broken.**
+  `test-host.ps1`'s retry does not help here — it retries *test* binaries after
+  ctest, and this fails earlier, during the build. Re-run it; if it still
+  fails, wait and re-run. Do not reinstall the toolchain and do not chase it.
+  **Linux CI is the source of truth for the host suites either way.**
 - The winget tools are not on the inherited PATH, so the script locates them.
 - **The firmware build hits it too, at the LittleFS image step.** The
   `joltwallet/littlefs` component creates its own venv per build directory and
