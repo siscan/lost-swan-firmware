@@ -262,15 +262,28 @@ int cmd_bench(int argc, char** argv) {
         std::printf("no run yet.  `bench soak <col>` starts the hour.\n");
         return 0;
     }
-    std::printf("  column %d  %u/%u s  flaps=%u revs=%u\n", st.column,
-                static_cast<unsigned>(st.elapsed_s), static_cast<unsigned>(st.total_s),
-                static_cast<unsigned>(st.flaps), static_cast<unsigned>(st.edges));
-    std::printf("  h2h %d..%d  worst err %d  minor=%u major=%u faults=%u\n",
-                static_cast<int>(st.h2h_min), static_cast<int>(st.h2h_max),
-                static_cast<int>(st.err_abs_max),
-                static_cast<unsigned>(st.resync_minor),
-                static_cast<unsigned>(st.resync_major),
-                static_cast<unsigned>(st.faults));
+    // Open loop: print the flap count and the faults, and say the edge figures
+    // do not exist rather than showing four zeroes that read as clean results.
+    // `flaps` is usteps ISSUED / 64 either way - it is a duty figure, never a
+    // measurement of drum motion.
+    if (st.open_loop) {
+        std::printf("  column %d  %u/%u s  flaps=%u (usteps issued)\n", st.column,
+                    static_cast<unsigned>(st.elapsed_s), static_cast<unsigned>(st.total_s),
+                    static_cast<unsigned>(st.flaps));
+        std::printf("  OPEN LOOP - no hall fitted.  revs / h2h / err / resyncs: "
+                    "n/a (no hall)\n");
+        std::printf("  faults=%u\n", static_cast<unsigned>(st.faults));
+    } else {
+        std::printf("  column %d  %u/%u s  flaps=%u revs=%u\n", st.column,
+                    static_cast<unsigned>(st.elapsed_s), static_cast<unsigned>(st.total_s),
+                    static_cast<unsigned>(st.flaps), static_cast<unsigned>(st.edges));
+        std::printf("  h2h %d..%d  worst err %d  minor=%u major=%u faults=%u\n",
+                    static_cast<int>(st.h2h_min), static_cast<int>(st.h2h_max),
+                    static_cast<int>(st.err_abs_max),
+                    static_cast<unsigned>(st.resync_minor),
+                    static_cast<unsigned>(st.resync_major),
+                    static_cast<unsigned>(st.faults));
+    }
     std::printf("  %s\n", motion::bench_running() ? "RUNNING" : st.stopped_because);
     return 0;
 }

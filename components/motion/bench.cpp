@@ -198,16 +198,31 @@ void bench_task(void* arg) {
         if (elapsed >= last_report_s + 60) {
             last_report_s = elapsed;
             const std::lock_guard<std::mutex> lk(g_mu);
-            ESP_LOGI(TAG, "%u/%u s  flaps=%u revs=%u h2h=%d..%d minor=%u major=%u heap=%u",
-                     static_cast<unsigned>(g_stats.elapsed_s),
-                     static_cast<unsigned>(g_stats.total_s),
-                     static_cast<unsigned>(g_stats.flaps),
-                     static_cast<unsigned>(g_stats.edges),
-                     static_cast<int>(g_stats.h2h_min),
-                     static_cast<int>(g_stats.h2h_max),
-                     static_cast<unsigned>(g_stats.resync_minor),
-                     static_cast<unsigned>(g_stats.resync_major),
-                     static_cast<unsigned>(g_stats.heap_now));
+            // OPEN LOOP prints no edge figures at all.  They would every one
+            // of them be zero for the whole hour, and a zero that means "not
+            // measured" is indistinguishable from a zero that means "perfect" -
+            // the operator either worries about them or stops reading the
+            // fields, and both are wrong.  The closing report has said this
+            // since 2026-09-11; this line and `bench` status had not.
+            if (g_stats.open_loop) {
+                ESP_LOGI(TAG, "%u/%u s  flaps=%u (usteps issued)  heap=%u  "
+                              "OPEN LOOP - edge figures n/a (no hall)",
+                         static_cast<unsigned>(g_stats.elapsed_s),
+                         static_cast<unsigned>(g_stats.total_s),
+                         static_cast<unsigned>(g_stats.flaps),
+                         static_cast<unsigned>(g_stats.heap_now));
+            } else {
+                ESP_LOGI(TAG, "%u/%u s  flaps=%u revs=%u h2h=%d..%d minor=%u major=%u heap=%u",
+                         static_cast<unsigned>(g_stats.elapsed_s),
+                         static_cast<unsigned>(g_stats.total_s),
+                         static_cast<unsigned>(g_stats.flaps),
+                         static_cast<unsigned>(g_stats.edges),
+                         static_cast<int>(g_stats.h2h_min),
+                         static_cast<int>(g_stats.h2h_max),
+                         static_cast<unsigned>(g_stats.resync_minor),
+                         static_cast<unsigned>(g_stats.resync_major),
+                         static_cast<unsigned>(g_stats.heap_now));
+            }
         }
 
         vTaskDelay(pdMS_TO_TICKS(100));
