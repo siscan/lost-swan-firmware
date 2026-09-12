@@ -20,6 +20,7 @@
 #include "hal/gpio_bank.h"
 #include "hal/pins.h"
 #include "modes/mode_manager.h"
+#include "motion/axis_control.h"
 #include "motion/motion.h"
 #include "motion/bench.h"
 #include "motion/bench_policy.h"
@@ -381,8 +382,40 @@ int cmd_revs(int argc, char** argv) {
 
     const MotionParams p = motion::params();
     const int64_t usteps = (n + 1) * USTEPS_PER_SPOOL_REV_NOMINAL;
-    if (motion::step_open_loop(col, usteps, p.flaps_s_home) != ESP_OK) {
-        std::printf("cannot start; column busy\n");
+
+    // `revs` measures the distance BETWEEN hall edges.  With no sensor or no
+    // magnet fitted there are none, so the old code stepped the whole distance
+    // - 35,200 usteps, 69 s at the default 8 flaps/s - counted nothing, and
+    // printed only "index is now unknown", which reads like success.  A silent
+    // no-op at a bench is how a session gets misled, so refuse up front and say
+    // which of the two exits the operator probably wanted.
+    //
+    // hall_valid is the right predicate and not "is it homed": it means one
+    // edge has been latched since the most recent homing pass began, which is
+    // a strictly lower bar, and bench.cpp already uses !hall_valid for exactly
+    // this question.  It is RAM-only, so it is false after every power cycle
+    // and false on the latched no_hall FAULT a hall-less module boots into.
+    if (!a.hall_valid) {
+        const long secs = static_cast<long>(usteps / (p.flaps_s_home * USTEPS_PER_FLAP_NUM /
+                                                      USTEPS_PER_FLAP_DEN));
+        std::printf("REFUSED: column %d has no hall reference - no edge has been seen.\n", col);
+        std::printf("  `revs` measures the distance BETWEEN hall edges.  Without one it would\n");
+        std::printf("  step %lld usteps (~%ld s at %ld flaps/s) and print nothing.\n",
+                    static_cast<long long>(usteps), secs, static_cast<long>(p.flaps_s_home));
+        std::printf("  If a magnet IS fitted: `home %d` first.\n", col);
+        std::printf("  If you just want the drum to turn: `spin %d <flaps_s> <seconds>`,\n", col);
+        std::printf("  or `step %d %lld` for exactly one revolution.\n",
+                    col, static_cast<long long>(USTEPS_PER_SPOOL_REV_NOMINAL));
+        return 1;
+    }
+
+    const esp_err_t started = motion::step_open_loop(col, usteps, p.flaps_s_home);
+    if (started != ESP_OK) {
+        // Same INVALID_STATE covers both, and "busy" sends you looking for a
+        // move that is not running.
+        std::printf("cannot start: column %d is %s\n", col,
+                    motion::columns().mode[col] == ColumnMode::Disabled ? "disabled (`col n real`)"
+                                                                     : "busy - homing or moving");
         return 1;
     }
 
@@ -413,7 +446,29 @@ int cmd_revs(int argc, char** argv) {
             std::printf("column faulted during measurement\n");
             break;
         }
-    }
+        if (a.state == AxisState::Homing) {
+            // A slip took the column into an automatic re-home.  Say so: the
+            // sample set is truncated and the stop below aborts that pass.
+            std::printf("column started re-homing mid-measurement; sample set is short\n");
+            break;
+        }
+        // The up-front check cannot see a hall that WORKED and has since died -
+        // hall_valid is stale true.  Bail at HOME_LIMIT past the last latched
+        // edge: 1.2 revolutions, the same distance spec 5.5 gives a homing pass
+        // before it calls the edge missing, and 960 usteps before the control
+        // core's own missed-edge threshold raises an unretried `jam`.  A dead
+        // sensor is not a stopped drum (spec 5.8) and should not enter the
+        // journal as one.  Measured from hall_abs, not from the run start, and
+        // only on a poll where revs did not change - info() promises each group
+        // is internally consistent, not that the groups agree with each other.
+        if (a.pos_abs - a.hall_abs > HOME_LIMIT) {
+            std::printf("no edge in %lld usteps (1.2 revolutions) - stopping.\n",
+                        static_cast<long long>(HOME_LIMIT));
+            std::printf("  Either the sensor has stopped answering, or an edge was late by\n");
+            std::printf("  more than 640 usteps and this cut it off.  It cannot tell them\n");
+            std::printf("  apart; `hall` reads the input directly.\n");
+            break;
+        }
 
     motion::stop(col);
     if (seen > 0) {
