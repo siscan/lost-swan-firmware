@@ -121,8 +121,8 @@ col 1 disabled ; col 2 disabled ; col 3 disabled ; col 4 disabled
 ```
 
 **Wiring is not documented anywhere, and this file cannot invent it.** A cold
-read looked for and did not find: the Hall JST pinout (which pin is 5 V, which
-is the open-collector output), the coil pairing for the NEMA 17s actually
+read looked for and did not find: the Hall JST pinout (which pin is 3V3, which
+is the open-drain output), the coil pairing for the NEMA 17s actually
 bought, the TMC2209 Vref procedure for the specific driver modules (`BOM.md`
 says "per-vendor formula to ~1.1–1.2 A RMS" and names no vendor), and whether
 anything must not be hot-plugged. **Nico: these belong here before the first
@@ -281,16 +281,16 @@ arrives. That is the correct behaviour, not a bug.
 
 Wave the magnet past the sensor.
 
-- [ ] `raw` goes 1 → 0 as the magnet approaches (A3144 is open-collector, pulls
-      LOW on assert).
+- [ ] `raw` goes 1 → 0 as the magnet approaches (the A1121LUA-T is open-drain,
+      pulls LOW on assert).
 - [ ] `magnet` reads `YES` while the magnet is present.
 
 If `magnet` is inverted, the config default is wrong, not the code — set
 `motion.hall_active_low` false, by the route in the warning at the top of this
 file (Calibrate page or `curl`; there is no console command), then `save`.
 
-If `raw` never moves at all, it is the magnet **face** (A3144 is unipolar —
-BOM gotcha #2) or the 5 V supply, not firmware. `hall` prints `raw` straight off
+If `raw` never moves at all, it is the magnet **face** (the A1121 is unipolar —
+`HARDWARE_PLAN_2` §9 gotcha 3) or the **3V3** supply, not firmware. `hall` prints `raw` straight off
 the GPIO bank, so a `raw` that never changes is a wiring fact, not a software
 one.
 
@@ -1241,8 +1241,12 @@ touch, not from memory.
 
 - the assembled stand-in: drum, **NEMA 17 inside it**, **Ø8 × Ø6 support tube**,
   **printed spacers**, **03a coupling** — grub screw onto the shaft's D-flat
-- the **A3144 Hall and its magnet at R52**, installed and **marked at spool
-  assembly** (the mark is the reference; you are not positioning it here)
+- **no Hall and no magnet this round.** They are **not fitted** on module V1, so
+  there is no homing, no position and no closed loop — expected, not a fault
+  (`docs/BENCH_WIRING.md` §0, wiring page 1). This line said the opposite until
+  2026-09-11 and would have sent you looking for a part that is not on the
+  column. When it is fitted the sensor is an **A1121LUA-T on 3V3**, not an
+  A3144 on 5 V (`HARDWARE_PLAN_2` §4 rev 2)
 - a vise or fixture to hold the column still for an hour
 
 *Electrical*
@@ -1255,7 +1259,8 @@ touch, not from memory.
   step 6b: the downstream rocker, or just be willing to unplug
 - **100 µF electrolytic across the driver's VM/GND**, legs short — do not drive
   a motor off a bench lead without bulk capacitance at the driver
-- hook-up wire for STEP/DIR/EN/GND and the Hall's 5 V, GND and pulled-up output
+- hook-up wire for STEP/DIR/EN/GND — **no Hall wiring this round**, and when
+  there is, its supply is 3V3 and not 5 V
 
 *Instruments and tools*
 

@@ -516,8 +516,8 @@ esp_err_t init(const MotionParams& p) {
     gpio_config_t in_cfg = {};
     in_cfg.pin_bit_mask = in_mask;
     in_cfg.mode = GPIO_MODE_INPUT;
-    // The harness carries an external 10k to 3V3 for the open-collector A3144
-    // output (spec 2).  The internal pull-up is belt-and-braces so a missing
+    // The harness carries an external pull-up to 3V3 for the open-drain
+    // A1121LUA-T output (spec 2, which tags the resistor value VERIFY).  The internal pull-up is belt-and-braces so a missing
     // resistor during bring-up reads as "no magnet" rather than floating.
     in_cfg.pull_up_en = GPIO_PULLUP_ENABLE;
     ESP_RETURN_ON_ERROR(gpio_config(&in_cfg), TAG, "hall gpio_config");

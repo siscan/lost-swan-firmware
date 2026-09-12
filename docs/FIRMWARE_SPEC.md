@@ -29,12 +29,12 @@ Columns are physically grouped 3 + 2 with a band between (no colon column).
 |---|---|---|
 | MCU | **ESP32-C5-DevKitC-1-N8R8**, board V1.2 — **on the bench since 2026-08-23**. Pin map in §2.2. | 8 MB flash, 8 MB PSRAM, USB-Serial-JTAG + USB-UART bridge. **Chip revision v1.2, verified** (§2.0) — production silicon; the revision risk is closed. XIAO ESP32-C5 is the spare / project-#2 board; Pico 2 W remains plan B. |
 | Motors | 5 × NEMA 17, 17HS4401-class, 1.8° (200 full steps/rev) | `VERIFY` step angle on the motors actually bought. Run current **0.7 A RMS**, hold ~0.35 A via standstill reduction (§5.7a). Sealed inside a PLA drum, so heat is a hard requirement rather than a preference. |
-| Drivers | 5 × TMC2209 modules, **standalone (no UART)** | MS1 = MS2 = high → 1/16 microstep, internal 256 interpolation. `VERIFY` against the vendor's silkscreen/doc; a different default pull changes every motion constant. Vref set for ~1.1–1.2 A RMS. Standstill current reduction left enabled. |
+| Drivers | 5 × TMC2209 modules, **standalone (no UART)** | MS1 = MS2 = high → 1/16 microstep, internal 256 interpolation. `VERIFY` against the vendor's silkscreen/doc; a different default pull changes every motion constant. **Run current is 0.7 A RMS — see §5.7a**, which is the plan of record since 2026-09-06 and the number the bench is held to; this row said ~1.1–1.2 A until 2026-09-11 and was three weeks stale against its own spec. Standstill current reduction left enabled. |
 | Drive | **DIRECT, 1:1** — the NEMA 17 sits stationary INSIDE the drum and turns it directly (2026-09-06, `docs/ref/DRIVE_CHANGE.md`) | The 85T rim gear is dead: with 50 flaps loaded the pinion collided with the card edges at every angular position and a mesh sweep found no collision-free angle. 64 µsteps/flap, 3200/revolution, both exact. |
 | Rotation | **One direction only** (the rings are *descending* since v3, §4: one forward flip decrements). Reverse is mechanically forbidden (flaps jam on the bezel lip). | **DIR is a ganged GPIO again** on boards with a spare non-strapping pin — GPIO24 on the DevKitC-1, absent on the XIAO (§2.1). The motor now faces the other way inside the drum, so which level gives the descending sense is a bench measurement (step 3), and `motion.dir_invert` settles it without a soldering iron. EN is a single ganged GPIO. |
-| Home sensor | 5 × A3144 digital Hall (TO-92), Ø6×3 N35 magnet at R52 on the idler disc, one per column | A3144 supply is 4.5–24 V → must be fed **5 V**; output is open-collector, pull it up to **3V3** (10 k) so the GPIO sees 3.3 V logic. `VERIFY` the hall JST carries 5 V. Output is active-LOW when the magnet is present (`VERIFY`). One operate edge per spool revolution. |
+| Home sensor | 5 × **A1121LUA-T** digital Hall (TO-92), Ø6×3 magnet at R52 on the idler disc, one per column | **Changed from the A3144 on 2026-08-22** (`HARDWARE_PLAN_2` §4 rev 2): Allegro retired the A314x family and every A3144 in the channel is untraceable third-party die. The consequence that matters here is the supply: the A1121 runs from **3.0–24 V**, so it sits directly on **3V3** and **the 5 V sensor rail is deleted**. Output is **open-drain** — pull it up to **3V3**; the resistor value is `VERIFY`, HP2 specifies the rail and not the value, and the 10 k this row used to name came from A3144-era text. Unipolar, **95 G operate**, active-LOW with the magnet present (`VERIFY`). One operate edge per spool revolution. |
 | Audio | MAX98357A I2S mono amp + 40 mm 4 Ω 3 W speaker | 3 GPIOs (BCLK, LRCLK, DIN). Gain pin left at default 9 dB. `VERIFY` SD/shutdown pin handling on the module. No hardware volume → software gain. |
-| Power | **20 V USB-C PD** (trigger board, `HARDWARE_PLAN_2` §5, LOCKED) → drivers; buck → logic, halls, amp | Was "12 V 6 A PSU" here until 2026-09-06; the plan moved to 20 V PD and this row had not followed. There is no 24 V in USB-C PD, and 20 V leaves headroom under the TMC2209 ceiling for regen. **EN is a diode-OR node the rail can veto — §2.6**, which also says why Power Good is not read and why the node boots *enabled*. |
+| Power | **20 V USB-C PD** (trigger board, `HARDWARE_PLAN_2` §5, LOCKED) → drivers; buck → logic and amp; **halls run off 3V3** | Was "12 V 6 A PSU" here until 2026-09-06; the plan moved to 20 V PD and this row had not followed. There is no 24 V in USB-C PD, and 20 V leaves headroom under the TMC2209 ceiling for regen. **EN is a diode-OR node the rail can veto — §2.6**, which also says why Power Good is not read and why the node boots *enabled*. |
 | Status | Onboard LED on GPIO27 on either C5 board | XIAO: single yellow LED, active low → blink patterns. DevKitC-1: WS2812 RGB → colour-coded status. |
 | Button | One user button `[Q6]` — **built 2026-08-24, §2.5** | Wired in parallel with the onboard BOOT button (GPIO28, active low) on either C5 board. Costs no GPIO. GPIO28 is the BOOT **strapping** pin: held low at reset it selects the serial bootloader, which no firmware can override — §2.5 says what the firmware does about it instead. |
 
@@ -1650,8 +1650,8 @@ motion.dir_invert        default false.  Which level on the ganged DIR pin turns
                          MOVING - the driver samples DIR on the next STEP edge,
                          so flipping it mid-move walks the drum backwards.
                          NVS key m_dir_inv
-motion.hall_active_low   default true.  The A3144's output is active-LOW with a
-                         3V3 pull-up (§2, tagged VERIFY).  Settable live with
+motion.hall_active_low   default true.  The A1121LUA-T's output is active-LOW
+                         with a 3V3 pull-up (§2, tagged VERIFY).  Settable live with
                          motion.params, persisted by motion.save, and on the
                          Calibrate page - it was loaded and saved but settable
                          from nowhere until 2026-08-24.  NVS key m_hall_lo
@@ -3613,10 +3613,13 @@ numbered section — if you find one that disagrees, fix the section.
     beats this spec**: if `revs 0 10` does not report the expected figure, the
     spec is wrong and gets corrected, not explained away.
 
-    > **SUPERSEDED IN PART, 2026-09-06.**  This entry was written against the
-    > 85T/33T rim gear.  The drive is now **1:1 direct** and the expected
-    > `hall_to_hall` is **3200 exactly**, not 8242–8243; `en_idle_off` no longer
-    > exists; and DIR is a GPIO on the DevKitC-1.  The paragraph above is left
+    > **SUPERSEDED IN PART, 2026-09-06 and 2026-09-11.**  This entry was written
+    > against the 85T/33T rim gear.  The drive is now **1:1 direct** and the
+    > expected `hall_to_hall` is **3200 exactly**, not 8242–8243; `en_idle_off`
+    > no longer exists; and DIR is a GPIO on the DevKitC-1.  The Hall named above
+    > is also no longer the part: it is an **A1121LUA-T on 3V3** (§2,
+    > `HARDWARE_PLAN_2` §4 rev 2), so "the A3144's active level" now means the
+    > A1121's — still unverified, still the point.  The paragraph above is left
     > as it was written because the log is history — see the entry at the end of
     > this section for what changed.  Everything it says about the MECHANISM
     > being unverified is still true, and more so: the machine described here

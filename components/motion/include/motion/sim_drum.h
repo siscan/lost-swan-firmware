@@ -38,7 +38,8 @@ struct SimDrum {
     // degrees, which was 60 usteps under the rim gear and is 23 at 1:1.  Left
     // at 60 it would have silently modelled a magnet almost three times wider
     // than the one on the disc - a model that flatters homing.  VERIFY: the
-    // real arc is set by the A3144 and the 6x3 N35 at R52, and has never been
+    // real arc is set by the A1121LUA-T (95 G operate) and the 6x3 magnet at
+    // R52, and has never been
     // measured.
     int32_t window = static_cast<int32_t>(USTEPS_PER_SPOOL_REV_NUM /
                                           (USTEPS_PER_SPOOL_REV_DEN * 137));

@@ -33,7 +33,7 @@ struct MotionParams {
     // trade against motor heat any more; it is a guarantee that the display
     // loses its position.  Holding current is the holding contract, and the
     // TMC2209 standstill reduction is what makes that affordable.
-    // A3144 is open-collector and pulls LOW with the magnet present, but which
+    // The A1121LUA-T is open-drain and pulls LOW with the magnet present, but which
     // magnet face works is an assembly convention (handoff 3, UNCERTAIN), so
     // this stays configurable rather than baked in.
     bool hall_active_low = true;

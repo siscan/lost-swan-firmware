@@ -62,7 +62,8 @@ What changed, and why:
 - One **Ø6×3 N35 magnet** per drum, glued into the pocket in the **idler-side
   disc** at **R52** (pocket Ø6.2 × 3.0 deep, faces outward past the idler
   disc's outer face).
-- One digital Hall switch (BOM: **A3144, unipolar**) per column, mounted on
+- One digital Hall switch (**A1121LUA-T, unipolar** — was A3144, see §5) per
+  column, mounted on
   the **idler side**, fixed to the module wall, gap ~1-2 mm from the disc
   face as it passes R52.
 - Homing = seek Hall edge, then apply a **per-column software calibration
@@ -71,7 +72,7 @@ What changed, and why:
   **assembly convention**, not a print feature — hence the offset.
 - **UNCERTAIN:** exact sensor bracket position/geometry (not yet designed);
   which Hall edge (approach vs. leave) is cleaner; magnet polarity facing
-  the sensor (A3144 is unipolar — BOM says bench-test one pair and mark the
+  the sensor (the A1121 is unipolar too — BOM says bench-test one pair and mark the
   working face before gluing all ten).
 
 ## 4. Rotation direction — UNCERTAIN
@@ -93,10 +94,13 @@ mounts and pinion meshing — **not yet fixed**. Provide a per-column
 - Audio: **MAX98357A I2S** mono amp + 40 mm 4 Ω speaker. WAVs in
   LittleFS. Gain pin default (9 dB). Volume + mute in the web UI.
 - Power: 12 V 6 A brick → drivers; buck to 5 V for logic/sensors/audio.
-- Hall supply: **A3144 requires 4.5-24 V — run it at 5 V.** Output is
+- Hall supply: ~~**A3144 requires 4.5-24 V — run it at 5 V.** Output is
   open-collector: pull-up to **3V3** (10 k) at the ESP32 pin so the input
-  never sees 5 V. (Recommended-not-yet-wired; if sensors are swapped for a
-  3.3 V-capable part later, same firmware.)
+  never sees 5 V.~~ **SUPERSEDED 2026-08-22 by `HARDWARE_PLAN_2.md` §4:** the
+  part is an **A1121LUA-T**, 3.0-24 V, run at **3V3** with the pull-up to 3V3;
+  there is no 5 V sensor rail. This bullet's own parenthesis called it — *"if
+  sensors are swapped for a 3.3 V-capable part later, same firmware"* — and it
+  was right: the firmware did not change.
 - Network: WiFi (C5 is dual-band), NTP for clock, web UI + MQTT for Home
   Assistant, OTA.
 
@@ -105,9 +109,10 @@ mounts and pinion meshing — **not yet fixed**. Provide a per-column
   (200 steps, 1.5-1.7 A, 5 mm D-shaft). Firmware only cares about
   200 steps/rev; keep steps/rev a constant anyway.
 - **TMC2209 vendor: not chosen** (BTT vs FYSETC). Vref formula is
-  vendor-specific; target ≈ 1.1-1.2 A RMS. Hardware-side concern only.
+  vendor-specific; target ≈ 1.1-1.2 A RMS — **superseded: 0.7 A RMS**, spec
+  §5.7a. Hardware-side concern only.
 - **JST pin order: TBD.** Plan is JST-XH: 4-pin motor (coil pairs), 3-pin
-  Hall (5V / GND / OUT), MorganManly-style chaining — exact pin assignment
+  Hall (**3V3** / GND / OUT — see §5), MorganManly-style chaining — exact pin assignment
   to be fixed when the harness is built. Document it in this file's repo
   copy when crimped.
 - Whether Hall OUT gets its pull-up at the sensor or at the board: TBD.

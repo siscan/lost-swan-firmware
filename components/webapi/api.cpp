@@ -485,7 +485,7 @@ std::string do_motion_params(Context& ctx, const json::Value& p) {
         return err_result("en_idle_off is gone: the drum is unbalanced past its "
                           "detent and the coils must stay energised (spec 5.7)");
     }
-    // Loaded from NVS, persisted by `motion.save`.  Spec 2 tags the A3144's
+    // Loaded from NVS, persisted by `motion.save`.  Spec 2 tags the A1121LUA-T's
     // polarity `VERIFY`, so the one value that a bench measurement is most
     // likely to overturn must be settable without recompiling.
     if (const json::Value* hl = member(p, "hall_active_low")) {

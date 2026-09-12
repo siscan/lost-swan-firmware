@@ -3,6 +3,23 @@
 Quantities include spares. ⏱ = order now, longest/most annoying lead times.
 Prices are ballparks for sanity, not quotes.
 
+> **SUPERSEDED IN PART — read `docs/HARDWARE_PLAN_2.md` first.** This file is
+> kept as supplied. Four of its hardware facts have since been overturned and
+> are wrong as written:
+>
+> - **Hall sensor A3144 → `A1121LUA-T`** (HP2 §4 rev 2, 2026-08-22). Allegro
+>   retired the A314x family. The A1121 runs from 3.0 V, so it sits on **3V3**
+>   and the 5 V sensor rail is gone.
+> - **`Buck 12→5 V` no longer feeds the sensors** — HP2 §5 is a 20→5 V
+>   R-78B5.0-2.0 for logic and audio only.
+> - **Gotcha 1's "~1.1-1.2 A RMS" is superseded by 0.7 A RMS** (spec §5.7a,
+>   2026-09-06 — the motor is sealed in a PLA drum and holds current all day).
+>   Its second sentence still stands.
+> - **12 V is now 20 V USB-C PD** (HP2 §5, LOCKED).
+>
+> Gotchas 2 and 3 — flipped magnet, same-batch drivers — survive every one of
+> those changes and are still exactly right.
+
 ## 0. Already sorted
 | Item | Qty | Note |
 |---|---|---|
