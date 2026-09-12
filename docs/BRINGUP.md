@@ -1405,6 +1405,29 @@ exceed it is a different build.
 
 ---
 
+### WHICH BRANCH YOU ARE ON
+
+Gate 3 has two forms, and the difference is one part.
+
+> **On module V1 the Hall and the magnet are NOT fitted.** That is branch B, and
+> it is the one to follow today. Branch A is written for the round the sensor
+> arrives; every step below marks which parts of it wait.
+
+| | **A — Hall fitted** | **B — no Hall (module V1, this round)** |
+|---|---|---|
+| position | closed loop, homing works | **none.** No index, no `go`, no `revs` |
+| step 3, direction | `home 0`, `go 0 1` | `step 0 64`, watch one flap |
+| step 4, identity | `home 0`, `revs 0 10` → 3200 flat | `step 0 3200` against a pen mark |
+| step 6, the soak | closed loop, edge figures | **OPEN LOOP**, thermal answer only |
+| what the hour proves | thermal **and** motion | **thermal only** |
+
+**Branch B is not a degraded run.** The gate-3 question is thermal — a NEMA 17
+sealed in a PLA drum, holding current all day — and the heat is in the holding
+current, which needs no sensor. What waits for the magnet is the *motion* data.
+
+`docs/BENCH_WIRING.md` §5 carries branch B end to end; this section cites it
+rather than keeping a second copy that can drift.
+
 ### Step 1 — wire it, and check the Hall before the motor moves
 
 - [ ] `pins` — confirm the map, and that **DIR=GPIO24** appears
@@ -1419,8 +1442,18 @@ explain.
       flat — check it with the hex key in, by eye, before the drum goes on
 - [ ] the screw is tight on the flat, not on the corner where the flat begins
 
-**The Hall and magnet are already fitted**, at R52, and their relative position
-was **marked at spool assembly** — you are confirming that mark, not setting it.
+**BRANCH B — the Hall and magnet are NOT fitted.** This said the opposite until
+2026-09-11, two lines above the checkbox a reader acts on, while the kit list
+170 lines up said they were absent. The kit list was right.
+
+- [ ] `hall` — still worth running, but only to confirm the **inputs** read
+      high: all five should say `raw=1 magnet=no`, which is the correct unwired
+      state for an active-low input with a pull-up and says nothing is shorted
+      low. **`hall_active_low` cannot be settled this round** — with no magnet
+      there is nothing to read inverted. It waits for branch A.
+
+**BRANCH A — once the sensor is fitted**, at R52, its relative position was
+**marked at spool assembly**, so you are confirming that mark, not setting it:
 
 - [ ] `hall` — turn the drum slowly by hand through the marked position;
       `magnet=YES` as it passes.  If it reads inverted,
@@ -1505,6 +1538,22 @@ a calculation.
 The motor now faces the opposite way inside the drum, so which DIR level gives
 the show's sense is not knowable on paper.
 
+**BRANCH B — no Hall.** `home 0` cannot complete and `go 0 1` is refused
+outright (`motion::go` returns INVALID_STATE without a hall reference), so
+neither of the commands this step used to open with can run. Use the open-loop
+form, which is `docs/BENCH_WIRING.md` §5's "the direction bit":
+
+- [ ] `maint on`, `col 0 real`, `en 1`
+- [ ] `dir` — read the setting you are starting from
+- [ ] `step 0 64` — exactly one flap. Watch the cards: **the fronts must fall
+      forward**, which on the descending rings is the direction the displayed
+      digit DECREMENTS (spec §4)
+- [ ] wrong way → `dir 1`, then `step 0 64` again
+- [ ] `save`
+
+**BRANCH A — with the Hall fitted**, the closed-loop form is the better test
+because it proves the same thing against a known index:
+
 - [ ] `en 1`, `home 0`
 - [ ] `go 0 1` and watch: **one forward flip must DECREMENT the displayed
       digit** (spec §4 — the rings are descending).
@@ -1515,6 +1564,30 @@ Refused while a column is moving, deliberately: the driver samples DIR on the
 next STEP edge, so flipping it mid-move walks the drum backwards.
 
 ### Step 4 — homing and the machine's identity
+
+**BRANCH B — no Hall.** Both commands need a hall reference. `home 0` runs
+1.2 revolutions, sees nothing and latches `no_hall`; **`revs` now refuses**
+rather than stepping for 69 seconds and printing an empty report — which is the
+one code change this pass made, because a silent no-op at a bench is how a
+session gets misled. The substitute is `docs/BENCH_WIRING.md` §5, *"Prove the
+geometry — the check that replaces homing"*, and it is **broader** than `revs`,
+not a consolation prize: it catches a wrong microstep setting, a non-1:1 drive,
+a slipped coupling and wrong coil pairing, where `revs` reports one number.
+
+- [ ] mark the drum against the frame — a pen line across the seam
+- [ ] `step 0 3200` — one full revolution at `flaps_s_home`, about 6.3 s
+- [ ] the mark returns to **exactly** where it started
+
+   ```
+   mark returned to start? yes / no
+   if no, what you saw    : ______________________________________
+   ```
+
+   Read the six-row diagnosis table in BENCH_WIRING §5 before concluding
+   anything: two revolutions means MS1/MS2 are giving 1/8, four means 1/4,
+   judder with no net rotation is the coil pairing.
+
+**BRANCH A — with the Hall fitted:**
 
 - [ ] `home 0` completes without a fault
 - [ ] `revs 0 10` — record it:
