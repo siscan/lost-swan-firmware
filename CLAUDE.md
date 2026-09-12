@@ -128,7 +128,7 @@ docs/OWNER.md                  living with the display: the owner's manual
 docs/MOTION_SYNC.md            motion ownership/atomics/critical-section contract
 docs/BENCH_WIRING.md           the prose bench wiring guide, and the source the
                                illustrated pages are checked against
-docs/wiring/                   GENERATED: p01..p21.svg + .png + bench-wiring.pdf,
+docs/wiring/                   GENERATED: p01..p28.svg + .png + bench-wiring.pdf,
                                the illustrated guide. Never hand-edited
 docs/FUTURE.md                 planned-but-not-built shapes (the scriptable zero
                                choreography), and what shipped code must not break
@@ -180,7 +180,8 @@ tools/jscheck.py               web asset syntax scan (no node needed); run by
 tools/wiringgen.py             docs/wiring/*.svg, generated from hal/pins.h +
                                docs/BENCH_WIRING.md and REFUSING to draw if they
                                disagree; --check runs in test-host.ps1 and CI
-tools/wiringgen_pages.py       the 21 page bodies; hard-codes no GPIO
+tools/wiringgen_pages.py       the 28 page bodies and PAGE_ORDER, the registry
+                               that makes "page N" in the prose a symbol; no GPIO
 tools/wiringrender.ps1         SVG -> PNG + one PDF, via Edge headless
 tools/devserver/               host dev server: real /ws, real ModeManager, sim axes
 test/host/                     unit tests (build in build_host/, not build/)
@@ -380,6 +381,13 @@ Things later work must not undo:
   nothing at all if any of them disagree**. Do not hand-edit an SVG under
   `docs/wiring/`; change the source and re-run the generator. CI diffs the
   committed pages against a fresh run.
+  **The physical pages (level 0, 2026-09-12) are a weaker claim and say so.**
+  They take their connections from the same parsed sources, but a breadboard
+  row/column coordinate is layout — no source states which hole anything sits
+  in, so nothing checks it. `LAYOUT_CAVEAT` in `wiringgen_pages.py` is the one
+  sentence those pages carry; keep it on every one of them. Page numbers are a
+  registry (`PAGE_ORDER`), so inserting a page cannot falsify a cross-reference:
+  never write a literal page number in page prose.
 - **MQTT publishes on change, ≥1 s apart, 30 s floor** — not the /ws cadence.
   `cd.remaining_s` is excluded from the change comparison; it ticks, and the
   state topic is RETAINED.

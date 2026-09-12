@@ -8,10 +8,19 @@ source pin, a named destination pin, and how to identify each one on the actual
 part in front of you — because the one thing that would make a photograph
 useless is a module whose silkscreen differs from mine.
 
-> **THE ILLUSTRATED VERSION IS `docs/wiring/bench-wiring.pdf`** — twenty-one
+> **THE ILLUSTRATED VERSION IS `docs/wiring/bench-wiring.pdf`** — twenty-eight
 > pages, one connection per page, drawn parts with their real pin labels, the
 > Vref procedure with the meter probes on the pads, a continuity checklist and
 > numbered power-on / power-off sequences. Print it and take it to the bench.
+>
+> **Pages 1–2 and the three physical pages are LEVEL 0**, added 2026-09-12
+> because this file and the schematic pages together were a correct *schematic*
+> and not a build guide: page 1 is the bill of materials with a tick box per
+> object, page 2 prepares the three parts the schematic silently assumes (the
+> JST pigtail, the RotoPD's two wires, the capacitor's legs), and pages 20, 21
+> and 27 draw the breadboard as a breadboard — rails, row numbers, where the
+> module straddles, which hole every wire goes in. The schematic pages remain
+> the electrical truth and the physical pages cite them.
 >
 > Those pages are **generated** by `tools/wiringgen.py` from
 > `components/swan_hal/include/hal/pins.h` and **this file**, and the generator
@@ -27,6 +36,18 @@ useless is a module whose silkscreen differs from mine.
 > reader following the markdown and a reader following the PDF would have wired
 > the motor at different times. Fixed 2026-09-11; the guard's reach is stated
 > here so the next gap is looked for rather than assumed away.
+>
+> **AND THE PHYSICAL PAGES ARE A WEAKER CLAIM AGAIN, SAID ON THEIR OWN FACE.**
+> They derive their *connections* from the same parsed sources, so which pin
+> reaches which pin is checked exactly as it is everywhere else. **A row and
+> column coordinate is layout, and nothing checks it** — no source in this
+> repository states which hole anything sits in, so the coordinates are chosen
+> in `tools/wiringgen.py`, are consistent with each other, and consistent is not
+> verified. Build it elsewhere on the board and the electrical pages are still
+> true while the row numbers are not. That is the same distinction the parts
+> page already draws between a silkscreen LABEL and a drawn position, and every
+> physical page carries it in the corner.
+>
 > After editing §2's table, §4's Vref figures or §2's microstep table, re-run
 > `python tools/wiringgen.py` and then `tools/wiringrender.ps1`.
 
