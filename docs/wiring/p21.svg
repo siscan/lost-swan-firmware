@@ -13,11 +13,11 @@
 <rect x="52" y="246" width="720" height="54" rx="6" fill="#eff8f2" stroke="#1a7f45" stroke-width="2"/>
 <circle cx="88" cy="273" r="19" fill="#1a7f45" stroke="none" stroke-width="1"/>
 <text x="88" y="280" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#ffffff" text-anchor="middle" font-weight="bold">2</text>
-<text x="122" y="280" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">Confirm EN reads high (disabled) — page 7.</text>
+<text x="122" y="280" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">USB-C from the PC to the ESP32.  VIO comes up; logic defined.</text>
 <rect x="52" y="312" width="720" height="54" rx="6" fill="#eff8f2" stroke="#1a7f45" stroke-width="2"/>
 <circle cx="88" cy="339" r="19" fill="#1a7f45" stroke="none" stroke-width="1"/>
 <text x="88" y="346" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#ffffff" text-anchor="middle" font-weight="bold">3</text>
-<text x="122" y="346" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">USB-C from the PC to the ESP32.  VIO comes up; logic defined.</text>
+<text x="122" y="346" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">Confirm EN reads high (disabled) — page 7.  USB in, VM still off.</text>
 <rect x="52" y="378" width="720" height="54" rx="6" fill="#eff8f2" stroke="#1a7f45" stroke-width="2"/>
 <circle cx="88" cy="405" r="19" fill="#1a7f45" stroke="none" stroke-width="1"/>
 <text x="88" y="412" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#ffffff" text-anchor="middle" font-weight="bold">4</text>

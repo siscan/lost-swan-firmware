@@ -15,9 +15,18 @@ useless is a module whose silkscreen differs from mine.
 >
 > Those pages are **generated** by `tools/wiringgen.py` from
 > `components/swan_hal/include/hal/pins.h` and **this file**, and the generator
-> refuses to emit anything if the two disagree. So: this document is the prose
-> source of truth, the pages cannot contradict it, and `tools/wiringgen.py
-> --check` (run by `test-host.ps1` and CI) fails the build if they would.
+> refuses to emit anything if the two disagree. **What is actually checked** is
+> narrower than "the pages cannot contradict it", which is what this paragraph
+> used to claim: the STEP/DIR/EN pin numbers in §2's table, that VIO and MS1/MS2
+> go to 3V3, §2's four-row microstep table, §4's Vref figures against the
+> TMC2209 equation, and §4 Step 2's motor-disconnected precondition.
+> `tools/wiringgen.py --check` (run by `test-host.ps1` and CI) fails the build
+> on any of those. **Everything else on the pages is prose the guard does not
+> police** — and that gap is exactly how the pages came to carry a corrected
+> build order and a fifth rule that this file did not, for long enough that a
+> reader following the markdown and a reader following the PDF would have wired
+> the motor at different times. Fixed 2026-09-11; the guard's reach is stated
+> here so the next gap is looked for rather than assumed away.
 > After editing §2's table, §4's Vref figures or §2's microstep table, re-run
 > `python tools/wiringgen.py` and then `tools/wiringrender.ps1`.
 
@@ -38,12 +47,13 @@ everything that does not need a sensor:
 
 ## 0. Before anything is powered
 
-Four rules. The first two are how TMC2209s die.
+Five rules. The first two are how TMC2209s die; the fifth is the one that
+decides the order of everything below it.
 
 > **1. Never connect or disconnect the motor while VM is on.** An open coil on a
 > live driver produces an inductive spike straight into the output stage. This
-> kills more StepSticks than every other cause combined. Motor first, power
-> second, always.
+> kills more StepSticks than every other cause combined. Power down **first**,
+> then touch the motor plug — every time, including "just for a second".
 >
 > **2. Never insert or remove the driver module while VM is on.** Same reason,
 > plus you will short something on the way past.
@@ -55,6 +65,13 @@ Four rules. The first two are how TMC2209s die.
 > **4. The bulk capacitor goes at the driver's own VM/GND pins.** Not on the
 > breadboard rail at the far end. This is the single thing a breadboard build
 > gets wrong.
+>
+> **5. Set Vref BEFORE the motor is ever connected.** Vref sets the coil
+> current. Set it with the motor attached and the first thing your motor sees is
+> wherever the pot happened to be when it left the factory — often well over
+> 1.5 A. **So the coils are the LAST connection you make:** §4 sets Vref with
+> the motor unplugged, then §4a plugs it in with VM still off. This rule is why
+> §1 measures the coil pairs and then tells you to leave the plug off.
 
 **Breadboard or perfboard?** Breadboard is acceptable at 0.7 A — you are well
 inside a contact's rating. Two caveats, and if either bothers you use perfboard:
@@ -117,32 +134,9 @@ measurement disagrees with that, **your measurement is right.** The wires have
 been cut and re-terminated, which is exactly the circumstance in which a
 convention stops being evidence.
 
-### 1b. Wire the coils to the driver
-
-The driver has four motor outputs. On a TMC2209 StepStick they are labelled
-**`1A 1B 2A 2B`** — or **`M1A M1B M2A M2B`**, or **`OA1 OA2 OB1 OB2`** — read
-your module's silkscreen. `1A/1B` is one H-bridge, `2A/2B` is the other.
-
-> **Connection 1 — coil A**
-> ```
-> motor wire ____________  ->  driver  1A
-> motor wire ____________  ->  driver  1B      (the OTHER end of the SAME coil)
-> ```
->
-> **Connection 2 — coil B**
-> ```
-> motor wire ____________  ->  driver  2A
-> motor wire ____________  ->  driver  2B      (the OTHER end of the SAME coil)
-> ```
-
-**Which coil goes to which bridge does not matter.** Swapping coil A for coil B
-reverses rotation, and so does swapping the two ends of one coil — and direction
-is a firmware bit on this build (`dir`, §5 below), so there is nothing to get
-right here. What matters is only that **each bridge gets both ends of one coil
-and never one end of each.** That mistake does not turn the motor; it makes it
-buzz, lock, or judder, and it stresses the driver.
-
-Fill the blanks in above once you have measured. They are the record.
+> **Do not connect the motor yet.** Write your pairs into the blanks above and
+> leave the plug off. The coils are the last connection you make, after Vref is
+> set with the motor unplugged — §4 Step 2, then §4a. That is rule 5.
 
 ---
 
@@ -154,6 +148,12 @@ Every pin you need is labelled on the board.
 
 The ESP32 side is fixed and comes from `hal/pins.h`; `pins` on the console
 prints it back to you.
+
+**The numbers in the first column are labels from the connection list, not the
+order you make the connections in.** Connections 1 and 2 are the motor coils and
+they go on **last** (§4a); 13 is the bulk capacitor (§3). Work down this table
+first. The illustrated pages number themselves the same way — pages 5-14 carry
+connections 3-12, pages 18-19 carry 1-2.
 
 | # | driver pin (silkscreen) | goes to | ESP32-C5 pin | notes |
 |---|---|---|---|---|
@@ -293,28 +293,10 @@ the motor's current draw steps.
   current step that the supply lead is too inductive to deliver; twenty
   centimetres of breadboard wire defeats it entirely.
 
-### Power-on order
-
-```
-1.  Everything wired, motor INCLUDED, nothing powered
-2.  Confirm EN reads high (disabled) — §2
-3.  USB-C from the PC to the ESP32          <- VIO comes up, logic defined
-4.  Watch the console come up               <- board healthy before any VM
-5.  Apply VM (9 V PD)                       <- output stage now live
-6.  `en 1` on the console                   <- and only now are coils energised
-```
-
-### Power-off order
-
-```
-1.  `en 0`            <- de-energise the coils first
-2.  Remove VM
-3.  Remove USB
-```
-
-**If you need to touch the motor wiring at any point: `en 0`, remove VM, and
-verify the bulk cap has discharged** — it holds charge after the supply is
-gone. Then rewire.
+> **The power-on and power-off sequences are in §5**, where the pages put them
+> (page 21). They used to sit here, two sections above the step that requires VM
+> off and the motor unplugged — a complete numbered sequence in front of a
+> reader who has not set Vref yet is an invitation to run it.
 
 ---
 
@@ -355,8 +337,10 @@ Two small SMD resistors sit near the motor output pins. Read the marking:
 sense resistor marking : ______________   ->  target Vref ______ V
 ```
 
-If they are unreadable, use 0.11 Ω (much the more common) and treat §6's
-current check as the thing that confirms it.
+If they are unreadable, use 0.11 Ω (much the more common) and treat **Step 3's
+peak-current measurement below** as the thing that confirms it. (§6 has no
+current-magnitude check — its supply-current bullet is the standstill step-down,
+which confirms PDN_UART's polarity and not the run current.)
 
 ### Step 2 — set it
 
@@ -378,7 +362,49 @@ driver silkscreen rev  : ______________
 date / who             : ______________
 ```
 
-### Step 3 — confirm it is really 0.7 A
+> **VM is still off and the motor is still unplugged. Do not power up to admire
+> the number** — the next thing that happens is the coils going on.
+
+### 4a. Now connect the coils — VM off, and only now
+
+This is the last connection you make, and it is here rather than in §1 because
+of rule 5: the current is set before the motor can be subjected to it. The
+illustrated pages do the same thing — Vref is page 17, the coils are pages
+18-19.
+
+The driver has four motor outputs. On a TMC2209 StepStick they are labelled
+**`1A 1B 2A 2B`** — or **`M1A M1B M2A M2B`**, or **`OA1 OA2 OB1 OB2`** — read
+your module's silkscreen. `1A/1B` is one H-bridge, `2A/2B` is the other.
+
+> **Connection 1 — coil A**
+> ```
+> motor wire ____________  ->  driver  1A
+> motor wire ____________  ->  driver  1B      (the OTHER end of the SAME coil)
+> ```
+>
+> **Connection 2 — coil B**
+> ```
+> motor wire ____________  ->  driver  2A
+> motor wire ____________  ->  driver  2B      (the OTHER end of the SAME coil)
+> ```
+
+**Which coil goes to which bridge does not matter.** Swapping coil A for coil B
+reverses rotation, and so does swapping the two ends of one coil — and direction
+is a firmware bit on this build (`dir`, §5 below), so there is nothing to get
+right here. What matters is only that **each bridge gets both ends of one coil
+and never one end of each.** That mistake does not turn the motor; it makes it
+buzz, lock, or judder, and it stresses the driver.
+
+Fill in the pairs you measured in §1a. They are the record.
+
+**With the motor connected and the power still off, one last meter check:** 1A
+to 1B beeps, 2A to 2B beeps, and 1A to 2A does **not**.
+
+### Step 3 — confirm it is really 0.7 A  (do this during §5)
+
+**Do this during §5, not here.** It needs the firmware up, maintenance on and
+EN asserted, and all three of those happen in §5. Come back to it once the board
+is running.
 
 You have a scope, which makes this a real measurement rather than a guess.
 
@@ -390,7 +416,9 @@ You have a scope, which makes this a real measurement rather than a guess.
   microstep positions where that phase is at full amplitude. This also shows you
   whether the chopper is behaving.
 - **With the DMM alone**: put it in series with **one** coil on the 10 A range —
-  **with the power off while you insert it** — energise, and step slowly with
+  **with VM off and the bulk cap verified discharged while you insert it** (§0
+  rule 1 — putting a meter in series with a coil is touching the motor wiring)
+  — energise, and step slowly with
   `step 0 1` repeatedly. The reading sweeps between roughly 0 and 0.99 A as the
   microstep angle rotates through that phase. **The maximum you see over a full
   electrical cycle is the peak**, and it should be ~0.99 A.
@@ -422,6 +450,52 @@ we decide with a number in hand.
 ---
 
 ## 5. Flash and run
+
+### Before the first power-on — beep five pairs
+
+Meter on continuity, everything unpowered, USB out. Page 16 of the illustrated
+guide is this check drawn; it is the last gate before VM exists and it is the
+difference between finding a mistake with a meter and finding it with smoke.
+
+```
+VM        <-> GND            must NOT beep      <- a short across the supply
+VM        <-> 3V3            must NOT beep      <- motor voltage on the ESP32
+3V3       <-> GND            must NOT beep      <- shorts the regulator
+ESP GND   <-> driver GND     MUST beep          <- no common ground, no logic
+ESP 3V3   <-> driver VIO     MUST beep          <- and MS1/MS2 are on that net
+```
+
+### Power-on order
+
+```
+1.  Everything wired, motor INCLUDED, nothing powered
+2.  USB-C from the PC to the ESP32          <- VIO comes up, logic defined
+3.  Confirm EN reads high (disabled) — §2   <- USB in, VM still off
+4.  Watch the console come up               <- board healthy before any VM
+5.  `maint on`                              <- stops it hunting for a Hall
+6.  Apply VM (9 V PD)                       <- output stage now live
+7.  `en 1` on the console                   <- and only now are coils energised
+```
+
+Two of those changed on 2026-09-11 and both matter. **The EN check moved after
+USB** because §2 measures EN against GND expecting ~3.3 V, and with no rail up
+there is nothing to measure — the old order asked for a reading that cannot
+exist. **`maint on` was missing entirely:** without it, step 7's `en 1` posts a
+home to every non-disabled column, which on a hall-less module is five 7.5-second
+hunts with current in the coils on a printed stand-in.
+
+### Power-off order
+
+```
+1.  `en 0`            <- de-energise the coils first
+2.  Remove VM
+3.  Remove USB
+4.  Before touching the motor plug: confirm the bulk cap has discharged
+```
+
+**If you need to touch the motor wiring at any point: `en 0`, remove VM, and
+verify the bulk cap has discharged** — it holds charge after the supply is
+gone. Then rewire.
 
 ### Build and flash the bench image
 

@@ -579,8 +579,8 @@ def TMC_RIGHT_OFFSET(pin):
 def page21(pins, table):
     p = Page(21, "Power on, and power off", "In this order, every time")
     on = ["Everything wired, MOTOR INCLUDED, nothing powered.",
-          "Confirm EN reads high (disabled) — page 7.",
           "USB-C from the PC to the ESP32.  VIO comes up; logic defined.",
+          "Confirm EN reads high (disabled) — page 7.  USB in, VM still off.",
           "Watch the console boot.  Board healthy BEFORE any motor voltage.",
           "maint on     — stops it hunting for a Hall that is not there.",
           "Apply VM (9 V).  Output stage now live.",
