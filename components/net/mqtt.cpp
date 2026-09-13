@@ -9,6 +9,7 @@
 
 #include "config/config.h"
 #include "esp_log.h"
+#include "esp_timer.h"   // esp_timer_get_time: the reconnect-log rate limiter
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
@@ -115,6 +116,98 @@ bool topic_is(const esp_mqtt_event_handle_t e, const char* leaf) {
 // (which takes ModeManager's lock, held by the modes task while it publishes
 // through our queue) and it must not block.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// AN UNREACHABLE BROKER MUST NOT BE ABLE TO EVICT THE LOG RING.
+//
+// Measured 2026-09-12, after the first real gate-3 soak: the configured broker
+// was a dev machine that no longer answers, esp-mqtt retried every ~10.5 s for
+// the whole hour, and FIVE lines went into the §12 ring per attempt - three from
+// IDF (esp-tls, transport_base, mqtt_client) and two of ours.  Read back
+// afterwards the 8 KB ring held 160 lines, every one of them MQTT, with 6835
+// evicted since boot.  The soak's own per-minute record was gone, and the ~26 KB
+// heap dip it would have explained is still unexplained because of it.
+//
+// Three changes, because the noise had three sources:
+//
+//   1. OUR two lines are rate-limited to one a minute, carrying the outage
+//      duration and the attempt count.  The first failure still logs at once -
+//      a broker that is down from the start should say so immediately.
+//   2. THE RETRY INTERVAL goes from 5 s to 30 s.  A broker that has been down
+//      for an hour does not need probing every ten seconds, and the attempt
+//      rate is what multiplies every other line.
+//   3. IDF's THREE lines are muted while we are in a failing state and restored
+//      on a successful connect.  We do not own that logging and cannot
+//      rate-limit it, so the only lever is the level.  Checked before doing it:
+//      esp-tls, transport_base and mqtt_client are reachable ONLY through this
+//      client in this firmware - there is no HTTPS client, and OTA is a local
+//      plain-HTTP upload - so nothing else loses diagnostics.  The tags come
+//      back the moment a connection succeeds.
+constexpr int64_t MQTT_LOG_QUIET_US = 60 * 1000 * 1000;  // one line a minute
+
+// Touched by the esp-mqtt EVENT task only, so no atomics and no lock: a
+// counter read from two tasks would need them, and these are not.
+int64_t g_fail_since_us = 0;    // 0 = not currently failing
+int64_t g_last_fail_log_us = 0;
+uint32_t g_fail_count = 0;
+// Why the last attempt failed, captured from MQTT_EVENT_ERROR so the one line a
+// minute can say it.  A refusal and an unreachable host are completely
+// different problems and must not read the same.
+const char* g_fail_reason = "";
+// This one IS touched by two tasks - the event task while failing, and the
+// transport task when a client is started or torn down - so it is atomic.
+std::atomic<bool> g_idf_muted{false};
+
+void mute_idf_mqtt_logs(bool mute) {
+    if (g_idf_muted.exchange(mute, std::memory_order_relaxed) == mute) return;
+    const esp_log_level_t lvl = mute ? ESP_LOG_NONE : ESP_LOG_WARN;
+    for (const char* tag : {"esp-tls", "transport_base", "mqtt_client"}) {
+        esp_log_level_set(tag, lvl);
+    }
+}
+
+// Call on every failed attempt.  Returns true if THIS one should be logged.
+bool fail_should_log() {
+    const int64_t now = esp_timer_get_time();
+    ++g_fail_count;
+    if (g_fail_since_us == 0) {          // first failure of an outage
+        g_fail_since_us = now;
+        g_last_fail_log_us = now;
+        return true;
+    }
+    if (now - g_last_fail_log_us >= MQTT_LOG_QUIET_US) {
+        g_last_fail_log_us = now;
+        return true;
+    }
+    return false;
+}
+
+void fail_reset() {
+    g_fail_since_us = 0;
+    g_fail_count = 0;
+    g_fail_reason = "";
+    mute_idf_mqtt_logs(false);
+}
+
+// esp-mqtt logs the refusal reason itself under the `mqtt_client` tag - which is
+// one of the tags muted during an outage - so it has to be re-said here or a bad
+// password becomes indistinguishable from a dead host.
+const char* refusal_text(int rc) {
+    switch (rc) {
+        case MQTT_CONNECTION_REFUSE_PROTOCOL: return "refused: protocol version";
+        case MQTT_CONNECTION_REFUSE_ID_REJECTED: return "refused: client id rejected";
+        case MQTT_CONNECTION_REFUSE_SERVER_UNAVAILABLE: return "refused: server unavailable";
+        case MQTT_CONNECTION_REFUSE_BAD_USERNAME: return "refused: BAD USERNAME OR PASSWORD";
+        case MQTT_CONNECTION_REFUSE_NOT_AUTHORIZED: return "refused: NOT AUTHORIZED";
+        default: return "refused by the broker";
+    }
+}
+
+uint32_t fail_seconds() {
+    if (g_fail_since_us == 0) return 0;
+    return static_cast<uint32_t>((esp_timer_get_time() - g_fail_since_us) / 1000000);
+}
+
 void on_mqtt_event(void*, esp_event_base_t, int32_t id, void* data) {
     auto* e = static_cast<esp_mqtt_event_handle_t>(data);
     switch (static_cast<esp_mqtt_event_id_t>(id)) {
@@ -131,12 +224,30 @@ void on_mqtt_event(void*, esp_event_base_t, int32_t id, void* data) {
             const std::string psub = topic_for(api::TOPIC_PROP_TERMINAL);
             esp_mqtt_client_subscribe(g_client, psub.c_str(), 1);
             g_announce.store(true, std::memory_order_relaxed);
+            // The outage is over: un-mute IDF's tags and forget the count.
+            if (g_fail_count != 0) {
+                ESP_LOGI(TAG, "broker reachable again after %us and %u attempts",
+                         static_cast<unsigned>(fail_seconds()),
+                         static_cast<unsigned>(g_fail_count));
+            }
+            fail_reset();
             kick();   // the task re-asserts availability and the retained set
             break;
         }
         case MQTT_EVENT_DISCONNECTED:
             g_connected.store(false, std::memory_order_relaxed);
-            ESP_LOGW(TAG, "disconnected from the broker");
+            // Rate-limited: see the block above client_stop_locked_free.  The
+            // count and the elapsed outage go in the line, so one line a minute
+            // still says how bad it is.
+            if (fail_should_log()) {
+                ESP_LOGW(TAG,
+                         "broker unreachable: %s (down %us, %u attempts) - "
+                         "further attempts logged once a minute",
+                         g_fail_reason[0] != 0 ? g_fail_reason : "no reason reported",
+                         static_cast<unsigned>(fail_seconds()),
+                         static_cast<unsigned>(g_fail_count));
+            }
+            mute_idf_mqtt_logs(true);
             break;
 
         case MQTT_EVENT_DATA: {
@@ -191,7 +302,18 @@ void on_mqtt_event(void*, esp_event_base_t, int32_t id, void* data) {
             break;
         }
         case MQTT_EVENT_ERROR:
-            ESP_LOGW(TAG, "transport error");
+            // Silent ON ITS OWN, but not ignored.  Verified against
+            // mqtt_client.c: BOTH emission sites are followed by
+            // esp_mqtt_abort_connection(), which dispatches DISCONNECTED - so
+            // every ERROR is half of a pair and logging both doubled the line
+            // count for one failure.  What is NOT redundant is the reason, so
+            // it is captured here and printed on the DISCONNECTED line.
+            if (e->error_handle != nullptr) {
+                g_fail_reason =
+                    e->error_handle->error_type == MQTT_ERROR_TYPE_CONNECTION_REFUSED
+                        ? refusal_text(e->error_handle->connect_return_code)
+                        : "transport error - host unreachable, or refusing the port";
+            }
             break;
         default:
             break;
@@ -200,9 +322,10 @@ void on_mqtt_event(void*, esp_event_base_t, int32_t id, void* data) {
 
 // ---------------------------------------------------------------------------
 // Client lifecycle, all on the transport task
-// ---------------------------------------------------------------------------
+
 void client_stop_locked_free() {
     if (g_client == nullptr) return;
+    mute_idf_mqtt_logs(false);
     esp_mqtt_client_stop(g_client);
     esp_mqtt_client_destroy(g_client);
     g_client = nullptr;
@@ -241,10 +364,17 @@ void client_start() {
     // floor, a prop learns the display is gone within ~45 s instead of minutes.
     c.session.keepalive = 30;
     c.network.timeout_ms = 3000;
-    c.network.reconnect_timeout_ms = 5000;
+    // 30 s, not 5: the attempt rate multiplies every line IDF and we emit,
+    // and a broker that is down is not going to be up in five seconds.  A
+    // broker that is merely restarting costs at most 30 s of reconnect.
+    c.network.reconnect_timeout_ms = 30000;
     c.task.priority = MQTT_TASK_PRIO;
     c.task.stack_size = ESP_MQTT_TASK_STACK;
 
+    // A fresh client starts with IDF's logging on.  Without this, `mqtt off`
+    // during an outage would destroy the client while the tags were still
+    // muted - no CONNECTED event ever arrives to restore them.
+    mute_idf_mqtt_logs(false);
     g_client = esp_mqtt_client_init(&c);
     if (g_client == nullptr) {
         ESP_LOGE(TAG, "client init failed");
