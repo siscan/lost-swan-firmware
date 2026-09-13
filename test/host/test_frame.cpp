@@ -23,6 +23,12 @@ void test_duration_vs_simulation() {
             sim::SimAxis ax;
             ax.ctl.cal_offset.store(40, std::memory_order_relaxed);
             ax.params.flaps_s_normal = flaps;
+            // The model below is evaluated at `accel`; the axis must RUN at it
+            // too.  These matched only because the literal happened to equal
+            // MotionParams' default - so changing the default (2026-09-12,
+            // 82000 -> 12000) broke a test that was really comparing two
+            // different machines.
+            ax.params.accel = accel;
             ax.post_home();
             if (!ax.run_until_idle()) {
                 CHECK(false);

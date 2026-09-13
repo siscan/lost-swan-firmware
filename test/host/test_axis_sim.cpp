@@ -137,7 +137,16 @@ SlipResult run_slip(int64_t slip) {
 
     // Spin several revolutions open-loop; edge verification stays live.
     ax.post_step_open(6 * USTEPS_PER_SPOOL_REV_NOMINAL, 20);
-    ax.run(5000);  // well inside the first revolution
+    // Wait by DISTANCE, not by ticks.  This was `ax.run(5000)` with the comment
+    // "well inside the first revolution", which was only true at the old
+    // 82000 accel: at 12000 the axis is still ramping after 5000 ticks and the
+    // slip landed at a different phase, changing its classification.  A slip
+    // test must not be coupled to the ramp constant.
+    {
+        const int64_t start = ax.isr.pos_abs;
+        const int64_t want = start + USTEPS_PER_SPOOL_REV_NOMINAL / 4;
+        for (int64_t i = 0; i < 2'000'000 && ax.isr.pos_abs < want; ++i) ax.tick();
+    }
 
     const uint32_t revs_before = ax.ctl.revs.load(RLX);
     const uint32_t minor_before = ax.ctl.resync_minor.load(RLX);

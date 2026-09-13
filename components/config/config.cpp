@@ -149,8 +149,31 @@ esp_err_t load(MotionParams& p) {
     get_i32(h, K_FS_NORM, &p.flaps_s_normal);
     get_i32(h, K_FS_ALRM, &p.flaps_s_alarm);
     get_i32(h, K_FS_HOME, &p.flaps_s_home);
-    get_i32(h, K_ACCEL, &p.accel);
-    get_i32(h, K_HALL_TOL, &p.hall_tol);
+    // Validated, not trusted - same reason as hall_tol below.  accel == 0
+    // divides by zero in the ramp, and a value from the rim-gear era commands
+    // 2.58x the drum angular acceleration it used to.
+    int32_t stored_accel = p.accel;
+    get_i32(h, K_ACCEL, &stored_accel);
+    if (accel_plausible(stored_accel)) {
+        p.accel = stored_accel;
+    } else {
+        ESP_LOGW(TAG, "accel %d in NVS is outside %d..%d; using the default %d. "
+                      "`save` to make it permanent.",
+                 static_cast<int>(stored_accel), static_cast<int>(ACCEL_MIN),
+                 static_cast<int>(ACCEL_MAX), static_cast<int>(p.accel));
+    }
+    // Validated, not trusted - see the block on hall_tol_migrated in
+    // motion_types.h.  A board configured under the rim gear carries 41 here.
+    int32_t stored_tol = p.hall_tol;
+    get_i32(h, K_HALL_TOL, &stored_tol);
+    p.hall_tol = hall_tol_migrated(stored_tol);
+    if (p.hall_tol != stored_tol) {
+        ESP_LOGW(TAG,
+                 "hall_tol %d in NVS is not a fraction of THIS flap (%d usteps); "
+                 "using the derived %d. `save` to make it permanent.",
+                 static_cast<int>(stored_tol), static_cast<int>(ring_target_usteps(1)),
+                 static_cast<int>(p.hall_tol));
+    }
     get_bool(h, K_HALL_LO, &p.hall_active_low);
     get_bool(h, K_DIR_INV, &p.dir_invert);
 

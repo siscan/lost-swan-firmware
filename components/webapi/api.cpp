@@ -469,7 +469,9 @@ std::string do_motion_params(Context& ctx, const json::Value& p) {
         mp.flaps_s_home = v;
     }
     if (as_int_field(p, "accel", v)) {
-        if (v < 1000 || v > 1000000) return err_result("accel out of range");
+        // The bound lives in motion_types.h so the load path, this check and the
+        // web slider cannot drift apart.
+        if (!accel_plausible(static_cast<int32_t>(v))) return err_result("accel out of range");
         mp.accel = v;
     }
     if (as_int_field(p, "hall_tol", v)) {

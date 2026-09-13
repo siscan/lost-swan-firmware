@@ -4,6 +4,7 @@
 
 #include "check.h"
 #include "motion/motion_math.h"
+#include "motion/motion_types.h"  // hall_tol_migrated: the drive-change guard
 
 using namespace swan;
 
@@ -393,6 +394,55 @@ void test_ramp_edges() {
           TICK_HZ);
 }
 
+
+// A PERSISTED TOLERANCE FROM THE DEAD DRIVE MUST NOT SURVIVE A BOOT.
+//
+// Found on the bench board 2026-09-12: hall_tol = 41 in NVS, which is a quarter
+// of the 85T/33T rim gear's 164.85-ustep flap and 64% of this machine's 64-ustep
+// flap.  It had survived the drive change, a reflash and six reboots, because
+// the derivation only ever set the DEFAULT and config::load overwrote it.
+//
+// The test is written against the RULE, not against 41: anything that cannot be
+// a fraction of the current flap is discarded, whatever it is.
+void test_hall_tol_migration() {
+    const int32_t flap = static_cast<int32_t>(ring_target_usteps(1));
+    CHECK_EQ(flap, 64);
+    CHECK_EQ(HALL_TOL_MAX, flap / 2);
+
+    // The derived quarter flap is what a healthy board holds, and it survives.
+    CHECK_EQ(hall_tol_migrated(flap / 4), flap / 4);
+    CHECK(hall_tol_plausible(flap / 4));
+
+    // The rim gear's quarter flap is not a quarter of anything here.
+    const int32_t rim_gear_quarter = 41;
+    CHECK(!hall_tol_plausible(rim_gear_quarter));
+    CHECK_EQ(hall_tol_migrated(rim_gear_quarter), flap / 4);
+
+    // The bound is the rule, not a blocklist: every value at or past half a flap
+    // goes, because spec 5.4's major-resync band lives between hall_tol and one
+    // flap and a tolerance that big erases it.
+    CHECK(hall_tol_plausible(flap / 2));          // the ceiling itself is legal
+    CHECK(!hall_tol_plausible(flap / 2 + 1));
+    CHECK(!hall_tol_plausible(flap));
+    CHECK(!hall_tol_plausible(flap * 2));
+    CHECK_EQ(hall_tol_migrated(flap), flap / 4);
+
+    // Degenerate values a bad write or an old blob could leave behind.
+    CHECK(!hall_tol_plausible(0));                // every edge a resync
+    CHECK(!hall_tol_plausible(-1));
+    CHECK_EQ(hall_tol_migrated(0), flap / 4);
+    CHECK_EQ(hall_tol_migrated(-1), flap / 4);
+
+    // And the property that makes the whole thing worth having: whatever comes
+    // out is usable as spec 5.4 intends - strictly inside one flap, so the three
+    // bands are all non-empty.
+    for (int32_t stored : {-1000, -1, 0, 1, 16, 31, 32, 33, 41, 64, 165, 100000}) {
+        const int32_t got = hall_tol_migrated(stored);
+        CHECK(got >= 1 && got < flap);
+        CHECK(hall_tol_plausible(got));
+    }
+}
+
 }  // namespace
 
 void run_tests() {
@@ -407,4 +457,5 @@ void run_tests() {
     test_dda_rate();
     test_ramp_arrives_exactly();
     test_ramp_edges();
+    test_hall_tol_migration();
 }

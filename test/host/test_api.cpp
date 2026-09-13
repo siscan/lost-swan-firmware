@@ -349,9 +349,9 @@ void test_command_round_trip() {
 
     // Live params apply immediately and are NOT persisted by themselves.
     CHECK(is_ok(r.cmd(
-        R"({"cmd":"motion.params","payload":{"flaps_s_normal":22,"accel":90000}})")));
+        R"({"cmd":"motion.params","payload":{"flaps_s_normal":22,"accel":30000}})")));
     CHECK_EQ(r.motion.p.flaps_s_normal, 22);
-    CHECK_EQ(r.motion.p.accel, 90000);
+    CHECK_EQ(r.motion.p.accel, 30000);
     CHECK_EQ(r.cfg.motion_saves, 1);  // unchanged - save is a separate command
     CHECK(is_ok(r.cmd(R"({"cmd":"motion.save"})")));
     CHECK_EQ(r.cfg.motion_saves, 2);
