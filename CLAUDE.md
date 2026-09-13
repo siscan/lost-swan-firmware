@@ -139,6 +139,10 @@ build.ps1 / test-host.ps1      the documented build/test commands on this machin
 main/                          app_main.cpp, task wiring
 components/swan_hal/           pin map, GPIO bank writes, I2S init, LED (ESP-IDF owns the name `hal`)
 components/motion/             axis_control.{h,cpp}: pure control core (host-tested);
+                               bench.{h,cpp} keeps the soak's per-minute samples
+                               in its OWN bounded buffer - the §12 log ring is
+                               shared and an MQTT storm evicted a whole gate-3
+                               record once (`bench samples`, GET /api/bench);
                                soak.{h,cpp}: overnight wrap test (spec 15 phase 6);
                                bench_policy.h + bench.{h,cpp}: the stand-in bench
                                session and its compiled-in speed cap (phase 8);
@@ -186,6 +190,40 @@ tools/wiringrender.ps1         SVG -> PNG + one PDF, via Edge headless
 tools/devserver/               host dev server: real /ws, real ModeManager, sim axes
 test/host/                     unit tests (build in build_host/, not build/)
 ```
+
+## THE SERIAL CONSOLE BELONGS TO THE HUMAN
+
+**While a bench session is live — EN asserted, or a person at the vise — Claude
+reads state over HTTP and writes NOTHING to the serial port.** Not a query, not
+a newline to wake the prompt. The exception is narrow and explicit: Claude may
+use the serial console when *that message* asks for it.
+
+`GET /api/state`, `/api/log`, `/api/journal`, `/api/bench`, `/api/soak` and
+`/api/wear` cover everything the console reports and cost the board nothing. A
+config write over `POST /api/cmd` is fine when asked for — it is config, not
+motion. The port is the other thing entirely.
+
+**The incident, 2026-09-12.** A helper script opened COM3 and sent a bare
+newline to wake the prompt. A `step 0 64` was sitting half-typed in the REPL's
+line editor, left there by the person at the bench; the newline **submitted it**,
+and with EN asserted the drum turned one flap. Nothing was damaged — one flap
+against the 6,024 already on that column — but it was motion nobody asked for, on
+hardware somebody else was in the middle of using, from a process that was only
+supposed to be reading.
+
+Three things it taught, all of them cheap to keep:
+
+- **A newline is not a read.** Any write to a shared line editor can execute
+  whatever is already in it. If the console must be used, kill the line first
+  (`0x15`, Ctrl-U) and never assume the buffer is empty.
+- **Two writers on one console is the bug, not the symptom.** The mitigation
+  above makes the accident less likely; the rule makes it impossible.
+- **pyserial asserts DTR and RTS on open**, which on USB-Serial-JTAG drives EN
+  and the BOOT strap — so even *opening* the port is not free. That one was
+  already documented (README, spec §17) and is the same lesson one level down.
+
+When the bench is quiet and Nico is not at it, the console is fine — that is how
+the bench-prep state was set and verified. The rule is about a live session.
 
 ## Git and GitHub — Claude manages both
 

@@ -1793,6 +1793,16 @@ says how many lines fit and how many were evicted. A persistent **event
 journal** sits beside it at `GET /api/journal` — significant events only,
 across reboots.
 
+**THE LOG RING IS SHARED, SO NOTHING THAT MATTERS MAY LIVE ONLY IN IT.**  It has
+no per-component reservation: whichever component is noisiest evicts everyone
+else's lines, and on 2026-09-12 an unreachable MQTT broker evicted the entire
+record of the first gate-3 soak — 6835 lines, the whole ring, one component.  The
+ring is for *reading along*, not for keeping anything.  A subsystem whose record
+is the deliverable owns its own bounded buffer: `bench.{h,cpp}` does, reported by
+`bench samples` and **`GET /api/bench`**, and that route exists partly so a bench
+record can be read while a session is live without touching the serial console
+(`CLAUDE.md`, *the serial console belongs to the human*).
+
 **`GET /api/journal` is a frozen two-consumer contract** (2026-08-24): this
 display's own Diagnostics page and the separate terminal prop, which renders
 these lines as the Pearl station's printout. It is therefore documented
@@ -3795,6 +3805,49 @@ numbered section — if you find one that disagrees, fix the section.
   response (`/api/ring` is a ~9.4 KB document and the largest single allocation a
   browser request makes).  Recorded as an open question with `mqtt off` as the
   first command of the next session.
+
+- 2026-09-12 — **THE SERIAL CONSOLE BELONGS TO WHOEVER IS AT THE BENCH, and the
+  gate's own record no longer shares a buffer with anything.**  Three changes
+  from one incident and one measurement.
+
+  **The incident.**  A helper script opened COM3 to read state and sent a bare
+  newline to wake the prompt.  A `step 0 64` was sitting half-typed in the REPL's
+  line editor, left by the person at the bench; the newline **submitted it**, and
+  with EN asserted the drum turned one flap.  Nothing was damaged.  What it
+  showed is that two writers on one console is the defect, not the accident:
+  **any** write to a shared line editor can execute whatever is already in it,
+  and on USB-Serial-JTAG even *opening* the port asserts DTR/RTS onto EN and the
+  BOOT strap (§17, 2026-08-23).  `CLAUDE.md` now carries the rule — while a
+  session is live, the board is read over HTTP and the serial port is written to
+  only when that message asks for it — and the helper kills the line (Ctrl-U)
+  before asking for a prompt.  `GET /api/state`, `/api/log`, `/api/journal`,
+  `/api/bench` and `/api/soak` cover everything the console reports.
+
+  **The soak's record is no longer evictable.**  Gate 3's per-minute samples
+  existed only as `ESP_LOGI`, i.e. only in §12's 8 KB ring, shared with every
+  component — and the first real soak had its entire record evicted by an
+  unrelated MQTT retry storm.  `bench.cpp` now keeps them in a fixed 96-entry
+  buffer with exactly one writer, reported by `bench samples` and
+  `GET /api/bench`, with a `dropped` count so a run longer than 96 minutes says
+  what is missing instead of presenting a partial hour as a whole one.  It is
+  RAM-only on purpose: the failure observed was **eviction, not power loss**, and
+  pushing an hour of progress lines through §12's frozen cross-repo contract
+  would put them in the terminal prop's Pearl printout for no gain.
+
+  **And the storm itself is capped.**  The broker was a dev machine that no
+  longer answers; esp-mqtt retried every ~10.5 s for the whole hour at five log
+  lines an attempt — three of them IDF's, two ours — evicting 6835 lines.  Now:
+  our two lines are rate-limited to one a minute carrying the outage duration and
+  the attempt count; `MQTT_EVENT_ERROR` is silent because it arrives paired with
+  `MQTT_EVENT_DISCONNECTED` and was doubling the count for one event; the retry
+  interval goes 5 s → 30 s; and IDF's three tags (`esp-tls`, `transport_base`,
+  `mqtt_client`) are muted while failing and restored on connect.  That last one
+  was checked before doing it: those tags are reachable **only** through this
+  client in this firmware — there is no HTTPS client and OTA is a local
+  plain-HTTP upload — so nothing else loses diagnostics.
+
+  `mqtt.enabled` is also set **false** in the bench board's NVS, so the next
+  session starts quiet without anyone remembering to type it.
 
 - 2026-09-12 — **A PERSISTED VALUE THAT PREDATES THE DRIVE CHANGE MUST NOT
   SURVIVE A BOOT.**  Found on the bench board: **`hall_tol` = 41 in NVS**.  That

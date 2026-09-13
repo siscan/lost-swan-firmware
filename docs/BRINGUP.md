@@ -1293,6 +1293,23 @@ touch, not from memory.
 - **a timer, an hour you do not need the bench for, and a pen** — the blanks
   below are the deliverable
 
+### WHO OWNS THE CONSOLE WHILE YOU ARE AT THE BENCH
+
+**You do.** While a session is live — EN asserted, or you standing at the vise —
+the serial port is yours alone. Claude reads the board over HTTP
+(`/api/state`, `/api/log`, `/api/journal`, `/api/bench`) and writes nothing to
+COM3 unless you ask for it in the message you are writing.
+
+That is a rule with an incident behind it. On 2026-09-12 a helper opened the port
+and sent a newline to wake the prompt; a `step 0 64` was sitting half-typed in
+the line editor and the newline **entered it**, turning the drum one flap while
+EN was on. No damage, and the helper now clears the line first — but the fix that
+matters is that two people were typing at one console at all.
+
+So: **if you want something read off the console, say so.** Otherwise assume
+nothing is touching it but you, and leave half-typed commands at the prompt
+safely — which is exactly what you could not do before.
+
 ### THE CONSOLE CAN COME UP IN DOWNLOAD MODE — RST GETS YOU OUT
 
 **Observed at the bench, 2026-09-12.** Attaching `idf.py monitor` (or any serial
@@ -1467,6 +1484,44 @@ current, which needs no sensor. What waits for the magnet is the *motion* data.
 
 `docs/BENCH_WIRING.md` §5 carries branch B end to end; this section cites it
 rather than keeping a second copy that can drift.
+
+### Step 0 — VERIFY THE `maint off` FIX, before anything else
+
+**This is the one change in the tree that has never run on hardware.** The
+console's `maint off` did not re-home (spec §17, 2026-09-12): `set_columns`
+called `enable()` before assigning `g_cols`, so leaving maintenance took the
+exemption meant for entering it and posted no Home to any column, while printing
+`maintenance off; re-homing`. `motion.cpp` is the IDF shell and has no host test,
+so **inspection is all the fix has**. It costs thirty seconds to settle here, and
+it is worth doing before the hall session depends on homing.
+
+Do it with the **magnet fitted** (this session) so a home can actually complete:
+
+- [ ] `maint` — confirm it says `maintenance: ON`
+- [ ] `col` — confirm column 0 is `real`
+- [ ] `en 1`
+- [ ] `maint off`
+
+   The console must print `maintenance off; re-homing`, **and the log must then
+   show homing actually start**. That second half is the whole test:
+
+   ```
+   expected: motion: maintenance off; EN asserted
+   expected: a homing pass on column 0 - state goes HOMING, not IDLE
+   THE BUG LOOKED LIKE: "maintenance off; re-homing" and then nothing at all,
+   plus "EN asserted, maintenance on - NOT homing (spec 5.9)" in the log, which
+   is the tell.
+   ```
+
+- [ ] `stats` within a second or two — column 0 reads **HOMING**
+
+   ```
+   did `maint off` start a home?  yes / no : ______________
+   ```
+
+- [ ] If it says `NOT homing (spec 5.9)`, the fix did not take — stop and report
+      it rather than working around it, because §5.9's re-home-on-leaving is a
+      safety claim about drums that have been moved by hand.
 
 ### Step 1 — wire it, and check the Hall before the motor moves
 
