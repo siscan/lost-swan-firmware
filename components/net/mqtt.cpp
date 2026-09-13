@@ -145,11 +145,31 @@ bool topic_is(const esp_mqtt_event_handle_t e, const char* leaf) {
 //      back the moment a connection succeeds.
 constexpr uint32_t MQTT_LOG_QUIET_S = 60;  // one line a minute
 
-// ALL OF THESE ARE TOUCHED BY TWO TASKS: the esp-mqtt event task while an outage
-// runs, and the transport task when a client is started or torn down.  Seconds
-// rather than microseconds so every one is a lock-free 32-bit atomic on RV32 - an
-// int64 would not be, and this is logging bookkeeping that must not take a lock
-// on the event task.  g_fail_reason only ever points at a string literal.
+// THERE IS NO "esp-mqtt EVENT TASK", and the comment here said there was.
+//
+// esp_mqtt_client_init creates a NO-TASK event loop (mqtt_client.c:899-903,
+// .task_name = NULL) and esp_mqtt_dispatch_event posts and then calls
+// esp_event_loop_run(handle, 0) ON THE CALLING TASK (mqtt_client.c:1068-1069).
+// So on_mqtt_event runs on whichever task dispatched, and in this firmware that
+// is at least three:
+//
+//   - esp-mqtt's own client task, on a retry;
+//   - the swan_mqtt TRANSPORT task, because publish_now() calls
+//     esp_mqtt_client_publish and a failed write aborts the connection INLINE
+//     (mqtt_client.c:2239-2240), dispatching DISCONNECTED on this task.  That is
+//     the ordinary "broker dies while we are publishing state" case, so the
+//     FIRST failure of an outage is routinely written from here;
+//   - the HTTP task, via mqtt_go_offline() on a reboot or an OTA.
+//
+// What actually serialises them is esp-mqtt's own recursive MQTT_API_LOCK, held
+// across every dispatch site - NOT single-task ownership, and NOT these atomics:
+// fail_should_log() is a read-modify-write across three of them and no
+// per-variable atomic would make that sequence safe on its own.  The atomics are
+// kept because they cost nothing and they make a torn read impossible if a future
+// diagnostics surface ever reads these from the modes or HTTP task, which is
+// exactly the mistake the old comment invited.  Seconds rather than
+// microseconds so each one is lock-free 32-bit on RV32; an int64 would not be.
+// g_fail_reason only ever points at a string literal.
 std::atomic<uint32_t> g_fail_since_s{0};   // 0 = not currently failing
 std::atomic<uint32_t> g_last_fail_log_s{0};
 std::atomic<uint32_t> g_fail_count{0};
@@ -378,10 +398,23 @@ void client_start() {
     // floor, a prop learns the display is gone within ~45 s instead of minutes.
     c.session.keepalive = 30;
     c.network.timeout_ms = 3000;
-    // 30 s, not 5: the attempt rate multiplies every line IDF and we emit,
-    // and a broker that is down is not going to be up in five seconds.  A
-    // broker that is merely restarting costs at most 30 s of reconnect.
-    c.network.reconnect_timeout_ms = 30000;
+    // BACK TO 5 s.  It was briefly 30 s on 2026-09-12, to cut the attempt rate
+    // during an outage - and that was the weakest of the three changes made for
+    // the log storm, because the other two already bound the logging completely:
+    // our lines are one a minute whatever the attempt rate, and IDF's are muted
+    // outright.  So the longer interval bought almost nothing, and it cost this:
+    //
+    //   In MQTT_STATE_WAIT_RECONNECT the client task sleeps for
+    //   wait_timeout_ms / 2 (mqtt_client.c:1830), and max_poll_timeout only
+    //   shortens that when events are already queued.  esp_mqtt_client_stop then
+    //   waits on STOPPED_BIT with portMAX_DELAY (mqtt_client.c:1996).  So the
+    //   teardown BLOCKS ITS CALLER for up to half the reconnect interval - 15 s
+    //   at 30000, against 2.5 s at 5000 - and the callers are mqtt_go_offline on
+    //   the HTTP task during a reboot or an OTA, and mqtt_reconfigure on the
+    //   transport task.  Spec 10.4 holds motion across an OTA; adding fifteen
+    //   seconds to it to save log lines that are already suppressed is a bad
+    //   trade in the one direction that matters.
+    c.network.reconnect_timeout_ms = 5000;
     c.task.priority = MQTT_TASK_PRIO;
     c.task.stack_size = ESP_MQTT_TASK_STACK;
 

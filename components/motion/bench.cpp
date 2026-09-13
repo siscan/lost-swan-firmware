@@ -45,9 +45,6 @@ uint32_t heap_now() {
 BenchSample g_samples[BENCH_MAX_SAMPLES];
 BenchSampleMeta g_samples_meta;
 
-// Caller holds g_mu.  Oldest falls off the front once the buffer is full - the
-// end of a run is the interesting part, and `dropped` keeps the record honest
-// about what is missing rather than silently presenting a partial hour.
 int16_t clamp_i16(int32_t v) {
     if (v > 32767) return 32767;
     if (v < -32768) return -32768;
@@ -61,6 +58,7 @@ T clamp_to(uint32_t v) {
                               : v);
 }
 
+// Caller holds g_mu.
 void record_sample_locked() {
     BenchSample s{};
     s.elapsed_s = clamp_to<uint16_t>(g_stats.elapsed_s);
