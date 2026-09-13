@@ -119,6 +119,65 @@ constexpr uint32_t bench_expected_flaps(const BenchSchedule& s) {
 
 // Start the clock-cadence heat soak on one column.  False if a run is already
 // going, the column cannot be driven, or this is not a bench build.
+// ---------------------------------------------------------------------------
+// THE RUN'S OWN RECORD, IN A BUFFER NOTHING ELSE CAN WRITE TO.
+//
+// The per-minute progress lines used to exist only as ESP_LOGI, i.e. only in
+// the §12 log ring - 8 KB shared with every other component.  On 2026-09-12 the
+// first real gate-3 soak ran for its full hour and the entire record was gone
+// by the time anyone read it: an unreachable MQTT broker had retried every
+// ~10.5 s for the whole run, five lines an attempt, and evicted 6835 lines.
+// The soak's own diagnostic was destroyed by a peripheral that was not part of
+// the test, and the ~26 KB heap dip it would have explained is still unexplained
+// because of it.
+//
+// So the samples are kept here as well.  Bounded, fixed at compile time, and
+// written by exactly one task - a log storm cannot touch it, because nothing
+// else has a pointer to it.  It is RAM only and does not survive a reboot; the
+// failure actually observed was EVICTION, not power loss, and putting an hour
+// of progress lines into the persistent journal would push them through a
+// frozen cross-repo contract (§12) and out of the terminal prop's Pearl
+// printout for no gain.
+//
+// 96 samples at one a minute covers a 96-minute run; a longer one keeps the
+// most recent 96 and says how many it dropped.
+inline constexpr int BENCH_MAX_SAMPLES = 96;
+
+// Narrow on purpose: 20 bytes, so the whole record is under 2 KB of BSS and a
+// single sample is trivial to copy.  elapsed_s as uint16 covers 18 hours; edges
+// and the resync counters cannot plausibly exceed 65535 in a bench run; h2h is
+// 3200 plus a spread.  flaps and heap need the full 32 bits.
+struct BenchSample {
+    uint16_t elapsed_s;
+    uint32_t flaps;
+    uint32_t heap_now;
+    uint16_t edges;
+    int16_t h2h_min;
+    int16_t h2h_max;
+    uint16_t resync_minor;
+    uint16_t resync_major;
+};
+
+struct BenchSampleMeta {
+    int count = 0;         // how many samples are held, oldest first
+    uint32_t dropped = 0;  // samples that fell off the front of a long run
+    bool open_loop = false;
+};
+
+// READ ONE AT A TIME, DELIBERATELY.  The obvious API - return the whole set by
+// value - puts ~2 KB on the caller's stack, and the callers are the console REPL
+// task and the single httpd task, neither of which has room to spare.  That is
+// the same shape as the 2026-08-24 defect where log_read built an 8 KB buffer on
+// the wrong side of a lock.  So: metadata first, then one sample per call, each
+// taking the lock for the length of a 20-byte copy.
+//
+// A reader is not atomic across the whole set.  It does not need to be: samples
+// are appended once a minute, so the worst a concurrent write can do is give a
+// reader the tail of the previous minute and the head of the next - and
+// `elapsed_s` on every row says which minute it came from.
+BenchSampleMeta bench_sample_meta();
+bool bench_sample_at(int i, BenchSample& out);
+
 bool bench_soak_start(int column, const BenchSchedule& s);
 
 // The slow inspection spin.  `flaps_s` above the cap is REFUSED, not clamped.

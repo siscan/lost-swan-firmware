@@ -218,6 +218,50 @@ int cmd_bench(int argc, char** argv) {
         std::printf("stopping\n");
         return 0;
     }
+    if (argc >= 2 && std::strcmp(argv[1], "samples") == 0) {
+        // The run's own per-minute record, out of the buffer that no other
+        // component can write to.  The log ring is shared and the first real
+        // gate-3 soak had its entire record evicted from it (bench.h).
+        const motion::BenchSampleMeta meta = motion::bench_sample_meta();
+        if (meta.count == 0) {
+            std::printf("no samples; `bench soak <col>` records one a minute\n");
+            return 0;
+        }
+        if (meta.dropped != 0) {
+            std::printf("  %u earlier sample(s) dropped - this is the tail of a long run\n",
+                        static_cast<unsigned>(meta.dropped));
+        }
+        if (meta.open_loop) {
+            std::printf("  %-8s %-10s %-10s\n", "t(s)", "flaps", "heap");
+        } else {
+            std::printf("  %-8s %-10s %-10s %-7s %-13s %-7s %-7s\n",
+                        "t(s)", "flaps", "heap", "revs", "h2h", "minor", "major");
+        }
+        // One at a time: the whole set by value is ~2 KB and this runs on the
+        // console REPL task.  See the note on bench_sample_at.
+        for (int i = 0; i < meta.count; ++i) {
+            motion::BenchSample b{};
+            if (!motion::bench_sample_at(i, b)) break;
+            if (meta.open_loop) {
+                std::printf("  %-8u %-10u %-10u\n", static_cast<unsigned>(b.elapsed_s),
+                            static_cast<unsigned>(b.flaps),
+                            static_cast<unsigned>(b.heap_now));
+            } else {
+                std::printf("  %-8u %-10u %-10u %-7u %-6d..%-6d %-7u %-7u\n",
+                            static_cast<unsigned>(b.elapsed_s),
+                            static_cast<unsigned>(b.flaps),
+                            static_cast<unsigned>(b.heap_now),
+                            static_cast<unsigned>(b.edges), static_cast<int>(b.h2h_min),
+                            static_cast<int>(b.h2h_max),
+                            static_cast<unsigned>(b.resync_minor),
+                            static_cast<unsigned>(b.resync_major));
+            }
+        }
+        if (meta.open_loop) {
+            std::printf("  OPEN LOOP - edge figures n/a (no hall)\n");
+        }
+        return 0;
+    }
     if (argc >= 2 && std::strcmp(argv[1], "spin") == 0) {
         if (argc != 5) {
             std::printf("usage: bench spin <col> <flaps_s> <seconds>   (cap %d flaps/s)\n",
@@ -238,6 +282,7 @@ int cmd_bench(int argc, char** argv) {
         if (argc < 3 || argc > 5) {
             std::printf("usage: bench soak <col> [minutes] [tick_s]\n");
             std::printf("  default 60 minutes, one flap a second\n");
+            std::printf("  `bench samples` prints the run's own per-minute record\n");
             return 1;
         }
         long col, mins = 60, tick = 1;
@@ -1135,7 +1180,8 @@ esp_err_t start() {
     reg("button", "button [seconds] - live BOOT/button level, and edges", cmd_button);
     reg("en", "en 0|1 - driver enable (ganged)", cmd_en);
     reg("dir", "dir [0|1] - ganged direction; bench step 3 sets it", cmd_dir);
-    reg("bench", "bench [soak <col> [min] [tick] | spin <col> <fs> <s> | stop] - stand-in session",
+    reg("bench",
+        "bench [soak <col> [min] [tick] | spin <col> <fs> <s> | stop | samples] - stand-in session",
         cmd_bench);
     reg("step", "step <col> <usteps> - open loop", cmd_step);
     reg("home", "home <col>|all", cmd_home);

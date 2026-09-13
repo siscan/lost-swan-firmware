@@ -42,6 +42,42 @@ uint32_t heap_now() {
     return static_cast<uint32_t>(heap_caps_get_free_size(MALLOC_CAP_8BIT));
 }
 
+BenchSample g_samples[BENCH_MAX_SAMPLES];
+BenchSampleMeta g_samples_meta;
+
+// Caller holds g_mu.  Oldest falls off the front once the buffer is full - the
+// end of a run is the interesting part, and `dropped` keeps the record honest
+// about what is missing rather than silently presenting a partial hour.
+template <typename T>
+T clamp_to(uint32_t v) {
+    return static_cast<T>(v > static_cast<uint32_t>(-1) >> ((4 - sizeof(T)) * 8)
+                              ? static_cast<uint32_t>(-1) >> ((4 - sizeof(T)) * 8)
+                              : v);
+}
+
+void record_sample_locked() {
+    BenchSample s{};
+    s.elapsed_s = clamp_to<uint16_t>(g_stats.elapsed_s);
+    s.flaps = g_stats.flaps;
+    s.heap_now = g_stats.heap_now;
+    s.edges = clamp_to<uint16_t>(g_stats.edges);
+    s.h2h_min = static_cast<int16_t>(g_stats.h2h_min);
+    s.h2h_max = static_cast<int16_t>(g_stats.h2h_max);
+    s.resync_minor = clamp_to<uint16_t>(g_stats.resync_minor);
+    s.resync_major = clamp_to<uint16_t>(g_stats.resync_major);
+    if (g_samples_meta.count < BENCH_MAX_SAMPLES) {
+        g_samples[g_samples_meta.count++] = s;
+    } else {
+        // Oldest falls off the front: the end of a run is the interesting part,
+        // and `dropped` keeps the record honest about what is missing rather
+        // than silently presenting a partial hour as a whole one.
+        for (int i = 1; i < BENCH_MAX_SAMPLES; ++i) g_samples[i - 1] = g_samples[i];
+        g_samples[BENCH_MAX_SAMPLES - 1] = s;
+        ++g_samples_meta.dropped;
+    }
+    g_samples_meta.open_loop = g_stats.open_loop;
+}
+
 void sample_locked(int col, int64_t started_us) {
     AxisInfo a{};
     motion::info(col, a);
@@ -198,6 +234,10 @@ void bench_task(void* arg) {
         if (elapsed >= last_report_s + 60) {
             last_report_s = elapsed;
             const std::lock_guard<std::mutex> lk(g_mu);
+            // Kept HERE as well as logged, because the log ring is shared and
+            // an unrelated component evicted the whole of the first real
+            // soak's record (bench.h).  This buffer has one writer.
+            record_sample_locked();
             // OPEN LOOP prints no edge figures at all.  They would every one
             // of them be zero for the whole hour, and a zero that means "not
             // measured" is indistinguishable from a zero that means "perfect" -
@@ -292,6 +332,9 @@ bool bench_soak_start(int column, const BenchSchedule& s) {
         g_stats.heap_start = heap_now();
         g_stats.heap_now = g_stats.heap_start;
         g_stats.heap_min = g_stats.heap_start;
+        // A new run starts a new record.  The previous one is gone the moment
+        // this one begins, which is the same rule the stats themselves follow.
+        g_samples_meta = BenchSampleMeta{};
         g_base_minor = a.resync_minor;
         g_base_major = a.resync_major;
         g_base_faults = a.faults;
@@ -346,6 +389,18 @@ void bench_stop(const char* why) {
 }
 
 bool bench_running() { return g_running.load(std::memory_order_relaxed); }
+
+BenchSampleMeta bench_sample_meta() {
+    const std::lock_guard<std::mutex> lk(g_mu);
+    return g_samples_meta;
+}
+
+bool bench_sample_at(int i, BenchSample& out) {
+    const std::lock_guard<std::mutex> lk(g_mu);
+    if (i < 0 || i >= g_samples_meta.count) return false;
+    out = g_samples[i];
+    return true;
+}
 
 BenchStats bench_report() {
     const std::lock_guard<std::mutex> lk(g_mu);

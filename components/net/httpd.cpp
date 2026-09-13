@@ -17,6 +17,7 @@
 
 #include "esp_heap_caps.h"
 #include "journal/journal.h"
+#include "motion/bench.h"   // the bench run's own record, served at /api/bench
 #include "motion/soak.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
@@ -461,6 +462,50 @@ esp_err_t journal_handler(httpd_req_t* req) {
 // Read-only: the soak is started from the console (it is bench tooling, like
 // `spin`), but an overnight run has to be readable from a phone in the morning
 // without a serial cable.
+// The bench run's own per-minute record.  Served over HTTP deliberately: the
+// console belongs to whoever is standing at the vise (CLAUDE.md), so this is how
+// the record is read while a session is live without touching the serial port.
+esp_err_t bench_handler(httpd_req_t* req) {
+    const motion::BenchStats st = motion::bench_report();
+    const motion::BenchSampleMeta meta = motion::bench_sample_meta();
+    json::Writer w;
+    w.obj()
+        .kv("running", st.running)
+        .kv("column", static_cast<int64_t>(st.column))
+        .kv("elapsed_s", static_cast<int64_t>(st.elapsed_s))
+        .kv("total_s", static_cast<int64_t>(st.total_s))
+        .kv("completed", st.completed)
+        .kv("open_loop", st.open_loop)
+        .kv("faults", static_cast<int64_t>(st.faults))
+        .kv("heap_start", static_cast<int64_t>(st.heap_start))
+        .kv("heap_now", static_cast<int64_t>(st.heap_now))
+        .kv("heap_min", static_cast<int64_t>(st.heap_min))
+        .kv("stopped_because", st.stopped_because)
+        .kv("dropped", static_cast<int64_t>(meta.dropped));
+    w.key("samples").arr();
+    // One at a time: the whole set by value is ~2 KB on the single httpd task,
+    // which is the shape of the 2026-08-24 log_read defect.  See bench.h.
+    for (int i = 0; i < meta.count; ++i) {
+        motion::BenchSample b{};
+        if (!motion::bench_sample_at(i, b)) break;
+        w.obj()
+            .kv("t", static_cast<int64_t>(b.elapsed_s))
+            .kv("flaps", static_cast<int64_t>(b.flaps))
+            .kv("heap", static_cast<int64_t>(b.heap_now));
+        if (!meta.open_loop) {
+            w.kv("revs", static_cast<int64_t>(b.edges))
+                .kv("h2h_min", static_cast<int64_t>(b.h2h_min))
+                .kv("h2h_max", static_cast<int64_t>(b.h2h_max))
+                .kv("minor", static_cast<int64_t>(b.resync_minor))
+                .kv("major", static_cast<int64_t>(b.resync_major));
+        }
+        w.end_obj();
+    }
+    w.end_arr();
+    w.end_obj();
+    return send_json(req, w.take());
+}
+
 esp_err_t soak_handler(httpd_req_t* req) {
     const motion::SoakReport r = motion::soak_report();
     json::Writer w;
@@ -785,7 +830,11 @@ esp_err_t httpd_start(api::Context& ctx) {
 
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
     cfg.uri_match_fn = httpd_uri_match_wildcard;  // one wildcard route for the UI
-    cfg.max_uri_handlers = 15;   // + ota, ota/status, log, journal, soak
+    // 14 are registered: 11 in `routes` below, /ws, and OTA's two.  The array
+    // registration is wrapped in ESP_ERROR_CHECK, so overflowing this ABORTS AT
+    // BOOT rather than dropping a route quietly - which is the right failure but
+    // a poor one to discover from a brick.  18 leaves room for the next few.
+    cfg.max_uri_handlers = 18;
     cfg.stack_size = 8192;   // JSON building plus a 2 KB file chunk
     cfg.lru_purge_enable = true;
     cfg.close_fn = on_socket_close;
@@ -834,6 +883,7 @@ esp_err_t httpd_start(api::Context& ctx) {
         {"/api/log", HTTP_GET, log_handler, nullptr, false, false, nullptr},
         {"/api/journal", HTTP_GET, journal_handler, nullptr, false, false, nullptr},
         {"/api/soak", HTTP_GET, soak_handler, nullptr, false, false, nullptr},
+        {"/api/bench", HTTP_GET, bench_handler, nullptr, false, false, nullptr},
         {"/api/cmd", HTTP_POST, cmd_handler, nullptr, false, false, nullptr},
         {"/api/ring/upload", HTTP_POST, ring_upload_handler, nullptr, false, false, nullptr},
         {"/api/audio/*", HTTP_POST, audio_upload_handler, nullptr, false, false, nullptr},
