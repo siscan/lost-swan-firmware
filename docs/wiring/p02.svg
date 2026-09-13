@@ -4,7 +4,7 @@
 <line x1="0" y1="88" x2="1600" y2="88" stroke="#c7ced6" stroke-width="2"/>
 <text x="52" y="47" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="29" fill="#14181d" text-anchor="start" font-weight="bold">What the schematic does not say</text>
 <text x="52" y="74" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">Three parts need preparing, one decision is already made, and one thing is deliberately NOT checked</text>
-<text x="1548" y="52" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="26" fill="#6b7683" text-anchor="end" font-weight="bold">2 / 28</text>
+<text x="1548" y="52" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="26" fill="#6b7683" text-anchor="end" font-weight="bold">2 / 29</text>
 <rect x="52" y="104" width="760" height="293" rx="8" fill="#ffffff" stroke="#14181d" stroke-width="2"/>
 <rect x="52" y="104" width="760" height="44" rx="8" fill="#eef2f6" stroke="none" stroke-width="2"/>
 <rect x="52" y="140" width="760" height="8" rx="0" fill="#eef2f6" stroke="none" stroke-width="2"/>
@@ -17,25 +17,25 @@
 <text x="120" y="201" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#14181d" text-anchor="middle" font-weight="bold">JST-XH</text>
 <rect x="196" y="180" width="44" height="32" rx="3" fill="#d7dce1" stroke="#14181d" stroke-width="2"/>
 <polyline points="240,186 288,174 318,174" fill="none" stroke="#1f8a4c" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
-<text x="328" y="180" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">2B  -&gt;  row 28 col J</text>
+<text x="328" y="180" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">2B  -&gt;  row 28 col B</text>
 <polyline points="240,193 288,196 318,196" fill="none" stroke="#22262b" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
-<text x="328" y="202" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">2A  -&gt;  row 29 col J</text>
+<text x="328" y="202" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">2A  -&gt;  row 29 col B</text>
 <polyline points="240,200 288,218 318,218" fill="none" stroke="#d0342c" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
-<text x="328" y="224" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">1A  -&gt;  row 30 col J</text>
+<text x="328" y="224" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">1A  -&gt;  row 30 col B</text>
 <polyline points="240,207 288,240 318,240" fill="none" stroke="#2f61c4" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
-<text x="328" y="246" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">1B  -&gt;  row 31 col J</text>
+<text x="328" y="246" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">1B  -&gt;  row 31 col B</text>
 <text x="84" y="286" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">The loom ends in a 4-way JST-XH. Its shell will not go into an 0.1 in board and</text>
 <text x="84" y="307" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">forcing it spreads the contacts permanently. The mating pigtail plugs onto it and</text>
 <text x="84" y="328" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">ends in four bare leads: strip 6 mm, twist each hard or tin it, and push them into</text>
-<text x="84" y="349" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">rows 28 to 31 of column J. WHICH lead goes where is decided by the meter on page 8,</text>
+<text x="84" y="349" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">rows 28 to 31 of column B. WHICH lead goes where is decided by the meter on page 9,</text>
 <text x="84" y="370" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">never by colour - these wires were cut and re-terminated.</text>
-<rect x="52" y="411" width="760" height="290" rx="8" fill="#ffffff" stroke="#14181d" stroke-width="2"/>
+<rect x="52" y="411" width="760" height="311" rx="8" fill="#ffffff" stroke="#14181d" stroke-width="2"/>
 <rect x="52" y="411" width="760" height="44" rx="8" fill="#eef2f6" stroke="none" stroke-width="2"/>
 <rect x="52" y="447" width="760" height="8" rx="0" fill="#eef2f6" stroke="none" stroke-width="2"/>
 <circle cx="80" cy="433" r="16" fill="#14181d" stroke="none" stroke-width="1"/>
 <text x="80" y="439" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#ffffff" text-anchor="middle" font-weight="bold">2</text>
-<text x="106" y="440" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#14181d" text-anchor="start" font-weight="bold">The RotoPD reaches the board on two wires</text>
-<text x="248" y="479" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="14" fill="#6b7683" text-anchor="start" font-weight="normal">screw terminals</text>
+<text x="106" y="440" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#14181d" text-anchor="start" font-weight="bold">The bench supply reaches the board on two wires</text>
+<text x="248" y="479" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="14" fill="#6b7683" text-anchor="start" font-weight="normal">PSU output terminals</text>
 <rect x="84" y="485" width="152" height="66" rx="4" fill="#f0f2f5" stroke="#14181d" stroke-width="2"/>
 <rect x="102" y="495" width="46" height="36" rx="3" fill="#c7ced6" stroke="#14181d" stroke-width="2"/>
 <circle cx="125" cy="513" r="11" fill="#9aa4ae" stroke="#14181d" stroke-width="2"/>
@@ -51,33 +51,34 @@
 <polyline points="191,531 191,571 400,571" fill="none" stroke="#22262b" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
 <circle cx="191" cy="531" r="6.82" fill="#22262b" stroke="none" stroke-width="1"/>
 <circle cx="400" cy="571" r="6.82" fill="#22262b" stroke="none" stroke-width="1"/>
-<text x="412" y="469" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="16" fill="#14181d" text-anchor="start" font-weight="normal">row 26 col I</text>
-<text x="412" y="577" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="16" fill="#14181d" text-anchor="start" font-weight="normal">row 27 col I</text>
-<text x="84" y="607" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">Strip 8 mm of the 22 AWG solid core, clamp it under the screw, and run the other end</text>
+<text x="412" y="469" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="16" fill="#14181d" text-anchor="start" font-weight="normal">row 26 col C</text>
+<text x="412" y="577" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="16" fill="#14181d" text-anchor="start" font-weight="normal">row 27 col C</text>
+<text x="84" y="607" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">Strip 8 mm of the 22 AWG solid core, clamp it in the terminal, and run the other end</text>
 <text x="84" y="628" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">straight into the driver's own row. VM never goes through a rail.</text>
-<text x="84" y="659" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#b8791a" text-anchor="start" font-weight="normal">BELIEVED to be screw terminals; the unit is unopened. If yours is not, STOP AND</text>
-<text x="84" y="680" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#b8791a" text-anchor="start" font-weight="normal">REPORT - do not improvise a connector on a 20 V rail.</text>
-<rect x="52" y="715" width="760" height="280" rx="8" fill="#ffffff" stroke="#14181d" stroke-width="2"/>
-<rect x="52" y="715" width="760" height="44" rx="8" fill="#eef2f6" stroke="none" stroke-width="2"/>
-<rect x="52" y="751" width="760" height="8" rx="0" fill="#eef2f6" stroke="none" stroke-width="2"/>
-<circle cx="80" cy="737" r="16" fill="#14181d" stroke="none" stroke-width="1"/>
-<text x="80" y="743" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#ffffff" text-anchor="middle" font-weight="bold">3</text>
-<text x="106" y="744" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#14181d" text-anchor="start" font-weight="bold">The capacitor needs its legs prepared</text>
-<text x="130" y="779" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="middle" font-weight="normal">stripe = negative</text>
-<rect x="97" y="787" width="66" height="84" rx="9" fill="#f0f2f5" stroke="#14181d" stroke-width="3"/>
-<rect x="145" y="790" width="15" height="78" rx="4" fill="#c7ced6" stroke="none" stroke-width="2"/>
-<text x="120" y="823" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="18" fill="#14181d" text-anchor="middle" font-weight="bold">100</text>
-<text x="120" y="847" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="middle" font-weight="normal">uF</text>
-<line x1="112" y1="871" x2="112" y2="899" stroke="#14181d" stroke-width="4" stroke-linecap="round"/>
-<line x1="140" y1="871" x2="140" y2="899" stroke="#14181d" stroke-width="4" stroke-linecap="round"/>
-<text x="96" y="895" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="18" fill="#d0342c" text-anchor="middle" font-weight="bold">+</text>
-<text x="156" y="897" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="22" fill="#22262b" text-anchor="middle" font-weight="bold">-</text>
-<text x="210" y="821" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="16" fill="#14181d" text-anchor="start" font-weight="normal">+   row 26 col J</text>
-<text x="210" y="851" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="16" fill="#14181d" text-anchor="start" font-weight="normal">-   row 27 col J</text>
-<text x="84" y="917" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">It bridges the driver's OWN VM and GND, which are adjacent rows - 2.54 mm apart,</text>
-<text x="84" y="938" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">against the 3.5 or 5 mm the leads came at. Trim both to about 12 mm, bend them</text>
-<text x="84" y="959" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">toward each other at the body, and check the bends cannot touch. The body may</text>
-<text x="84" y="980" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">overhang other rows; only the legs matter. Backwards, it vents.</text>
+<text x="84" y="659" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#b8791a" text-anchor="start" font-weight="normal">SET THE CURRENT LIMIT BEFORE THE VOLTAGE. 9 V at 0.5 A for first power: the whole</text>
+<text x="84" y="680" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#b8791a" text-anchor="start" font-weight="normal">column draws under 0.1 A at 0.7 A RMS coil current, so anything near the limit is a</text>
+<text x="84" y="701" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#b8791a" text-anchor="start" font-weight="normal">fault and the supply folds back instead of the driver dying.</text>
+<rect x="52" y="736" width="760" height="280" rx="8" fill="#ffffff" stroke="#14181d" stroke-width="2"/>
+<rect x="52" y="736" width="760" height="44" rx="8" fill="#eef2f6" stroke="none" stroke-width="2"/>
+<rect x="52" y="772" width="760" height="8" rx="0" fill="#eef2f6" stroke="none" stroke-width="2"/>
+<circle cx="80" cy="758" r="16" fill="#14181d" stroke="none" stroke-width="1"/>
+<text x="80" y="764" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#ffffff" text-anchor="middle" font-weight="bold">3</text>
+<text x="106" y="765" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#14181d" text-anchor="start" font-weight="bold">The capacitor needs its legs prepared</text>
+<text x="130" y="800" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="middle" font-weight="normal">stripe = negative</text>
+<rect x="97" y="808" width="66" height="84" rx="9" fill="#f0f2f5" stroke="#14181d" stroke-width="3"/>
+<rect x="145" y="811" width="15" height="78" rx="4" fill="#c7ced6" stroke="none" stroke-width="2"/>
+<text x="120" y="844" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="18" fill="#14181d" text-anchor="middle" font-weight="bold">100</text>
+<text x="120" y="868" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="middle" font-weight="normal">uF</text>
+<line x1="112" y1="892" x2="112" y2="920" stroke="#14181d" stroke-width="4" stroke-linecap="round"/>
+<line x1="140" y1="892" x2="140" y2="920" stroke="#14181d" stroke-width="4" stroke-linecap="round"/>
+<text x="96" y="916" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="18" fill="#d0342c" text-anchor="middle" font-weight="bold">+</text>
+<text x="156" y="918" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="22" fill="#22262b" text-anchor="middle" font-weight="bold">-</text>
+<text x="210" y="842" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="16" fill="#14181d" text-anchor="start" font-weight="normal">+   row 26 col A</text>
+<text x="210" y="872" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="16" fill="#14181d" text-anchor="start" font-weight="normal">-   row 27 col A</text>
+<text x="84" y="938" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">It bridges the driver's OWN VM and GND, which are adjacent rows - 2.54 mm apart,</text>
+<text x="84" y="959" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">against the 3.5 or 5 mm the leads came at. Trim both to about 12 mm, bend them</text>
+<text x="84" y="980" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">toward each other at the body, and check the bends cannot touch. The body may</text>
+<text x="84" y="1001" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">overhang other rows; only the legs matter. Backwards, it vents.</text>
 <rect x="840" y="104" width="708" height="242" rx="8" fill="#ffffff" stroke="#14181d" stroke-width="2"/>
 <rect x="840" y="104" width="708" height="44" rx="8" fill="#eef2f6" stroke="none" stroke-width="2"/>
 <rect x="840" y="140" width="708" height="8" rx="0" fill="#eef2f6" stroke="none" stroke-width="2"/>
@@ -86,12 +87,12 @@
 <text x="894" y="133" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#14181d" text-anchor="start" font-weight="bold">Heatsink: not needed this session</text>
 <text x="864" y="182" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">DECIDED: the driver runs bare. 0.7 A RMS against the module's 2 A rating is</text>
 <text x="864" y="203" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">roughly an eighth of rated dissipation, and the soak's thermal question is the</text>
-<text x="864" y="224" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">motor sealed in PLA, not the driver. Page 28's STOP NOW list already carries</text>
+<text x="864" y="224" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">motor sealed in PLA, not the driver. Page 29's STOP NOW list already carries</text>
 <text x="864" y="245" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">'the driver too hot to keep a finger on', so this is watched rather than</text>
 <text x="864" y="266" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">assumed.</text>
 <text x="864" y="301" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="14" fill="#b8791a" text-anchor="start" font-weight="normal">Not independently verified: the exact RDS(on)-derived junction temperature. IF one</text>
 <text x="864" y="320" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="14" fill="#b8791a" text-anchor="start" font-weight="normal">ever goes on, the adhesive pad MUST clear the Vref trimpot - a heatsink</text>
-<text x="864" y="339" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="14" fill="#b8791a" text-anchor="start" font-weight="normal">overhanging the pot ends page 23.</text>
+<text x="864" y="339" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="14" fill="#b8791a" text-anchor="start" font-weight="normal">overhanging the pot ends page 24.</text>
 <rect x="840" y="360" width="708" height="234" rx="8" fill="#ffffff" stroke="#14181d" stroke-width="2"/>
 <rect x="840" y="360" width="708" height="44" rx="8" fill="#eef2f6" stroke="none" stroke-width="2"/>
 <rect x="840" y="396" width="708" height="8" rx="0" fill="#eef2f6" stroke="none" stroke-width="2"/>

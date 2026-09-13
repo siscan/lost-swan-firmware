@@ -406,12 +406,14 @@ def draw_motor(p, x=None, y=None, hot=()):
     return x, y
 
 
-def draw_psu(p, volts="9 V"):
+def draw_psu(p, volts="9 V", limit="0.5 A limit"):
     p.rect(PSU_X, PSU_Y, PSU_W, PSU_H, fill="#f6f8fa", stroke=INK, sw=3, rx=6)
-    p.text(PSU_X + PSU_W / 2, PSU_Y - 18, "RotoPD trigger", 19, INK, "middle", "bold")
-    p.rect(PSU_X + 40, PSU_Y + 34, 230, 56, fill="#dfe6ea", stroke=INK, sw=2, rx=4)
-    p.text(PSU_X + PSU_W / 2, PSU_Y + 74, volts, 33, INK, "middle", "bold")
-    p.text(PSU_X + PSU_W / 2, PSU_Y + 118, "set the PDO before plugging in", 13, MUTE, "middle")
+    p.text(PSU_X + PSU_W / 2, PSU_Y - 18, "bench PSU", 19, INK, "middle", "bold")
+    p.rect(PSU_X + 40, PSU_Y + 30, 230, 50, fill="#dfe6ea", stroke=INK, sw=2, rx=4)
+    p.text(PSU_X + PSU_W / 2, PSU_Y + 68, volts, 30, INK, "middle", "bold")
+    p.text(PSU_X + PSU_W / 2, PSU_Y + 100, limit, 18, "#d0342c", "middle", "bold")
+    p.text(PSU_X + PSU_W / 2, PSU_Y + 124, "current limit is the safety net", 13, MUTE,
+           "middle")
     p.rect(PSU_X - 18, PSU_Y + 34, 18, 20, fill="#d0342c", stroke="none")
     p.mono(PSU_X + 12, PSU_Y + 50, "+", 20, "#d0342c", weight="bold")
     p.rect(PSU_X - 18, PSU_Y + 96, 18, 20, fill="#22262b", stroke="none")
@@ -440,8 +442,30 @@ BB_COLS_TOP = ["J", "I", "H", "G", "F"]
 BB_COLS_BOT = ["E", "D", "C", "B", "A"]
 
 DRIVER_ROW0 = 26                # the EN / VM end of the module
-DRIVER_COL_L = "D"              # EN MS1 MS2 PDN CLK STEP DIR (n/c)
-DRIVER_COL_R = "H"              # VM GND 2B 2A 1A 1B VIO GND   (0.6 in away)
+
+# THE MODULE SEATS POT-DOWN, AND EVERY COORDINATE BELOW FOLLOWS FROM IT.
+# Measured on the real part 2026-09-12: FYSETC solders the header strips so the
+# pins exit the COMPONENT face - the face carrying the Vref trimpot and the
+# heatsink pad.  To get those pins into a breadboard the component side must
+# therefore face DOWN, and two things follow that a schematic cannot show:
+#
+#   1. THE VREF POT IS UNREACHABLE ONCE THE MODULE IS IN.  It is pressed against
+#      the board.  So Vref is set with the driver FLOATING on flying VIO/GND
+#      leads, before it is ever inserted - which is also the only way to satisfy
+#      rule 3 (set the current before the motor can be subjected to it) without
+#      pulling the module back out afterwards.
+#   2. LEFT AND RIGHT SWAP.  The silkscreen names its two headers as you read
+#      them component-side UP.  Turning the module over about its long axis
+#      exchanges them: the header that reads left now lands in the far column.
+#      The order ALONG each header is unchanged - EN is still at the end row -
+#      so the trap is quiet: every pin is where you expect along the module and
+#      on the wrong side of it.  That is the one mistake this page set exists to
+#      stop, because a mirrored VM and GND is a reversed supply.
+SEATS_POT_DOWN = True
+
+_COL_NEAR, _COL_FAR = "D", "H"   # the two columns 0.6 in apart, board-fixed
+DRIVER_COL_L = _COL_FAR if SEATS_POT_DOWN else _COL_NEAR   # EN MS1 MS2 PDN CLK STEP DIR
+DRIVER_COL_R = _COL_NEAR if SEATS_POT_DOWN else _COL_FAR   # VM GND 2B 2A 1A 1B VIO GND
 # THE DEVKITC-1 STAYS OFF THE BREADBOARD, and that is a decision rather than an
 # omission.  Its header-to-header spacing is 0.9 in or 1.0 in depending on the
 # inset; on an 0.1 in board with an 0.3 in channel the two halves span 1.1 in,
@@ -451,11 +475,29 @@ DRIVER_COL_R = "H"              # VM GND 2B 2A 1A 1B VIO GND   (0.6 in away)
 # every wire that reaches it is male-to-FEMALE: male into the breadboard,
 # female onto the ESP pin the operator has read off the silkscreen.  That also
 # removes the last place a row number could be wrong in a way nobody notices.
-JUMPER_COL_L = "B"              # left-side jumpers, two holes clear of the module
-JUMPER_COL_R = "J"              # right-side jumpers, at the outer edge
-SUPPLY_COL = "I"                # the two RotoPD wires
-CAP_COL = "J"                   # the bulk cap, along the outer edge
-COIL_COL = "J"                  # the four pigtail leads
+# A pin's free holes are the ones on ITS OWN side of the channel, so these are
+# named by half-of-board rather than by the silkscreen's left and right - which
+# is exactly the naming that the flip would have made a lie.
+JUMPER_COL_TOP = "J"            # a top-half pin's wire, at the outer edge
+JUMPER_COL_BOT = "B"            # a bottom-half pin's wire
+SUPPLY_INNER = "C"              # the two bench-supply wires, inboard
+CAP_OUTER = "A"                 # the bulk cap, at the outer edge
+COIL_OUTER = "B"                # the four pigtail leads
+
+
+def _free_col(col):
+    """The column a wire goes into for a driver pin sitting in `col`."""
+    return JUMPER_COL_TOP if col in BB_COLS_TOP else JUMPER_COL_BOT
+
+
+# Kept as names because the pages and the prose refer to them; they now DERIVE
+# from which half the right-hand (power) header actually landed in.
+JUMPER_COL_L = _free_col(DRIVER_COL_L)
+JUMPER_COL_R = _free_col(DRIVER_COL_R)
+_PWR_TOP = DRIVER_COL_R in BB_COLS_TOP
+SUPPLY_COL = "I" if _PWR_TOP else SUPPLY_INNER
+CAP_COL = "J" if _PWR_TOP else CAP_OUTER
+COIL_COL = "J" if _PWR_TOP else COIL_OUTER
 # COLUMNS G, F AND E DO NOT EXIST as far as this build is concerned: the module
 # body sits over them.  A StepStick is 0.6 in between headers and ~0.8 in wide,
 # so the three columns between D and H are under the board and the two outside
@@ -476,7 +518,7 @@ def driver_row(pin, which=0):
 def jumper_hole(pin, which=0):
     """The free hole, on the driver pin's own node, that its wire goes into."""
     row, col = driver_row(pin, which)
-    return row, (JUMPER_COL_L if col == DRIVER_COL_L else JUMPER_COL_R)
+    return row, _free_col(col)
 
 
 # Where each connection LANDS, in physical terms.  The PIN names and the ESP
@@ -491,10 +533,10 @@ def board_dest(key, drv, dest, which=0):
     if key == "GNDL":
         return at + "  Jumper (M-M) row %d column %s  ->  the - rail." % (jrow, jcol)
     if key == "VM":
-        return at + ("  RotoPD  +  on its own 22 AWG wire into row %d column %s."
+        return at + ("  Bench PSU  +  on its own 22 AWG wire into row %d column %s."
                      % (row, SUPPLY_COL))
     if key == "GNDP":
-        return at + ("  RotoPD  -  on its own 22 AWG wire into row %d column %s."
+        return at + ("  Bench PSU  -  on its own 22 AWG wire into row %d column %s."
                      % (row, SUPPLY_COL))
     if key == "PDN":
         return at + "  NOTHING goes in row %d.  Leave the whole row empty." % jrow
@@ -503,18 +545,40 @@ def board_dest(key, drv, dest, which=0):
                  % (jrow, jcol, pin))
 
 
+def rails_are_split(table):
+    """True when the rail users do not all sit on one side of the channel.
+
+    A full-size breadboard has FOUR rail strips, not two: the pair along the top
+    edge and the pair along the bottom edge are separate nodes with nothing
+    joining them.  Feed one pair and the other is dead.  MS1/MS2 and VIO both go
+    to 3V3, and after the pot-down flip they land on opposite halves - so the
+    top pair and the bottom pair are both in use and both have to be live.
+    That was true before the flip as well; the pages simply never drew the link
+    wires, which is a page that cannot be built as drawn.
+    """
+    halves = set()
+    for _n, (drv, esp) in table.items():
+        if esp not in ("3V3", "GND"):
+            continue
+        which = 1 if (drv == "GND" and esp == "GND") else 0
+        halves.add(jumper_hole(drv, which)[1] in BB_COLS_TOP)
+    return len(halves) > 1
+
+
 def jumper_counts(table):
     """Derived from the PARSED logic table, so it cannot drift from the pages.
 
-    Three kinds of wire land on the breadboard and they are not interchangeable:
-    a row whose destination is a GPIO needs a female end for the loose ESP, a
-    row whose destination is a rail is board-internal and needs two male ends,
-    and the two rail feeds are the wires that make the rails live at all.
+    Four kinds of wire land on the breadboard and they are not interchangeable:
+    a row whose destination is a GPIO needs a female end for the loose ESP; a
+    row whose destination is a rail is board-internal and needs two male ends;
+    two feeds make the rails live at all; and two LINKS join the top rail pair
+    to the bottom pair when both are in use (see rails_are_split).
     """
     to_esp = sum(1 for _n, (_d, e) in table.items() if e.startswith("GPIO"))
     to_rail = sum(1 for _n, (_d, e) in table.items() if e in ("3V3", "GND"))
-    return {"mf": to_esp + 2, "mm": to_rail, "feeds": 2,
-            "total": to_esp + to_rail + 2}
+    links = 2 if rails_are_split(table) else 0
+    return {"mf": to_esp + 2, "mm": to_rail + links, "feeds": 2, "links": links,
+            "total": to_esp + to_rail + 2 + links}
 
 
 BB_X, BB_Y = 70, 250            # top-left of the drawn board

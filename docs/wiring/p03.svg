@@ -4,8 +4,8 @@
 <line x1="0" y1="88" x2="1600" y2="88" stroke="#c7ced6" stroke-width="2"/>
 <text x="52" y="47" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="29" fill="#14181d" text-anchor="start" font-weight="bold">Bench wiring — module V1</text>
 <text x="52" y="74" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">First power-on, connection by connection</text>
-<text x="1548" y="52" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="26" fill="#6b7683" text-anchor="end" font-weight="bold">3 / 28</text>
-<text x="52" y="148" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#14181d" text-anchor="start" font-weight="normal">The whole job in 28 pages, in the order you should do it. One</text>
+<text x="1548" y="52" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="26" fill="#6b7683" text-anchor="end" font-weight="bold">3 / 29</text>
+<text x="52" y="148" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#14181d" text-anchor="start" font-weight="normal">The whole job in 29 pages, in the order you should do it. One</text>
 <text x="52" y="176" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#14181d" text-anchor="start" font-weight="normal">connection per page. Every pin number here is read out of</text>
 <text x="52" y="204" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#14181d" text-anchor="start" font-weight="normal">hal/pins.h and docs/BENCH_WIRING.md when these pages are</text>
 <text x="52" y="232" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#14181d" text-anchor="start" font-weight="normal">rendered, so a drawing cannot quietly disagree with the</text>
@@ -25,21 +25,21 @@
 <text x="148" y="614" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">collect the parts, and prepare three of them</text>
 <text x="60" y="642" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">3-5</text>
 <text x="148" y="642" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">the rules, and the one solder job (skipped)</text>
-<text x="60" y="670" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">6-8</text>
+<text x="60" y="670" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">6-9</text>
 <text x="148" y="670" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">identify the parts, the board, the coil pairs</text>
-<text x="60" y="698" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">9-13</text>
+<text x="60" y="698" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">10-14</text>
 <text x="148" y="698" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">wire the logic  (driver to ESP32)</text>
-<text x="60" y="726" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">14-18</text>
+<text x="60" y="726" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">15-19</text>
 <text x="148" y="726" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">wire the microsteps, then the power</text>
-<text x="60" y="754" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">19-21</text>
+<text x="60" y="754" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">20-22</text>
 <text x="148" y="754" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">the bulk capacitor, then the board as BUILT</text>
-<text x="60" y="782" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#14181d" text-anchor="start" font-weight="bold">22</text>
+<text x="60" y="782" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#14181d" text-anchor="start" font-weight="bold">23</text>
 <text x="148" y="782" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#14181d" text-anchor="start" font-weight="bold">continuity check  &lt;-  find mistakes with a meter</text>
-<text x="60" y="810" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#14181d" text-anchor="start" font-weight="bold">23</text>
+<text x="60" y="810" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#14181d" text-anchor="start" font-weight="bold">24</text>
 <text x="148" y="810" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#14181d" text-anchor="start" font-weight="bold">set Vref  &lt;-  motor still NOT connected</text>
-<text x="60" y="838" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#14181d" text-anchor="start" font-weight="bold">24-25</text>
+<text x="60" y="838" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#14181d" text-anchor="start" font-weight="bold">25-26</text>
 <text x="148" y="838" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#14181d" text-anchor="start" font-weight="bold">connect the motor  &lt;-  power off while you do it</text>
-<text x="60" y="866" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">26-28</text>
+<text x="60" y="866" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">27-29</text>
 <text x="148" y="866" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">finished layout, the built board, power on / off</text>
 <text x="850" y="148" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="20" fill="#14181d" text-anchor="start" font-weight="bold">WIRE COLOURS — the same on every page</text>
 <rect x="836" y="168" width="700" height="452" rx="6" fill="#fafbfc" stroke="#c7ced6" stroke-width="2"/>

@@ -363,19 +363,33 @@ peak-current measurement below** as the thing that confirms it. (§6 has no
 current-magnitude check — its supply-current bullet is the standstill step-down,
 which confirms PDN_UART's polarity and not the run current.)
 
-### Step 2 — set it
+### Step 2 — set it, on a driver that is NOT in the breadboard
 
-**Motor disconnected. VM off. USB on.** The VREF divider is fed from the logic
-rail, so VIO must be up — but the output stage must not be.
+**Motor disconnected. VM off. USB on. Driver NOT inserted.** The VREF divider is
+fed from the logic rail, so VIO must be up — but the output stage must not be,
+and the module must not be in the board.
 
-1. DMM to **DC volts, 2 V range**. Black probe on driver `GND`.
-2. Red probe on the **VREF test point** if your module has one (a labelled pad —
+> **WHY IT IS NOT IN THE BOARD** (measured 2026-09-12): FYSETC's header pins exit
+> the **component face**, the one carrying the trimpot. The module therefore
+> seats **pot-down**, flat against the breadboard, and once it is in there is no
+> reaching the pot at all. Setting Vref afterwards would mean pulling the module
+> out of a powered board, which is rule 2. So it is set first, lying on the
+> bench, and goes in already correct.
+
+1. Two flying leads only: driver **VIO** to the ESP32's **3V3**, driver **GND**
+   to the ESP32's **GND**. Female-to-female jumpers straight onto the module's
+   pins. **Nothing else** — no VM, no motor, no STEP, no EN.
+2. USB in. The board boots; VIO comes up; the output stage has no supply at all.
+3. DMM to **DC volts, 2 V range**. Black probe on the driver's other `GND` pin.
+4. Red probe on the **VREF test point** if your module has one (a labelled pad —
    FYSETC usually provides one). **If it does not**, the trimpot's metal screw
    *is* the wiper. Use a clip lead, not a hand-held probe: a slipped probe here
    shorts the wiper to a neighbouring pad and kills the driver.
-3. Turn the pot in small increments and read directly. Clockwise is usually up;
+5. Turn the pot in small increments and read directly. Clockwise is usually up;
    confirm on your board rather than assuming.
-4. Set to the target from step 1.
+6. Set to the target from step 1. **Write it down — you cannot read it again**
+   once the module is seated.
+7. USB out, leads off, and only now does the module go into the board.
 
 ```
 Vref set               : ______ V

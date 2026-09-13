@@ -42,7 +42,7 @@ LAYOUT_CAVEAT = ("ROW AND COLUMN NUMBERS ARE LAYOUT, NOT CHECKED FACTS. The pins
 PAGE_ORDER = [
     "bom", "bomprep",                       # level 0: what you need
     "cover", "killers", "headers",          # rules, and the one solder job
-    "parts", "board", "coilpairs",          # identify, the board, the coils
+    "parts", "potdown", "board", "coilpairs",   # identify, which way up, the board
     "c_step", "c_dir", "c_en", "c_vio", "c_gndl",
     "c_ms1", "c_ms2", "c_pdn", "c_vm", "c_gndp",
     "cap", "physlogic", "physpower",        # the bulk cap, then the real board
@@ -388,7 +388,7 @@ def make_conn_pages(pins, table):
 
     add("c_vm", "9", "VM", "psu", "VM",
         "VM  ->  supply  +",
-        "The motor supply. Start at 9 V from the PD trigger, not 20 V: the TMC2209 runs "
+        "The motor supply, from a CURRENT-LIMITED bench PSU. Start at 9 V, not 20 V: the TMC2209 runs "
         "from 4.75 V up, at one drum revolution per second there is no headroom needed, "
         "and a wiring mistake at 9 V dissipates about a fifth of the energy. Move to 20 V "
         "once the wiring is proven.")
@@ -489,8 +489,13 @@ def page17(pins, table):
     # The subtitle is the guide's own precondition sentence, verbatim.  It used
     # to read "VM ON", which BENCH_WIRING.md section 4 step 2 flatly contradicts.
     p = Page(P("vref"), "Set Vref  —  0.7 A", FACTS["vref_pre"])
+    p.banner(52, 104, 1496,
+             "THE DRIVER IS NOT IN THE BREADBOARD FOR THIS PAGE. It seats pot-down "
+             "(page %d), so once it is in, the pot is against the board and unreachable. "
+             "Set it lying on the bench on two flying leads, write the number down, and "
+             "insert it already correct." % P("potdown"), "danger", size=17)
     # zoomed module corner with the pot and probes
-    bx, by = 90, 150
+    bx, by = 90, 200
     p.rect(bx, by, 520, 388, fill="#f6f8fa", stroke=INK, sw=3, rx=8)
     p.text(bx + 260, by - 16, "driver, close up", 18, MUTE, "middle")
     p.circle(bx + 150, by + 150, 58, "#dfe4ea", INK, 3)
@@ -515,27 +520,30 @@ def page17(pins, table):
              "Use a CLIP, not a hand-held probe: one slip from the wiper to a "
              "neighbouring pad kills the driver.", "danger", size=16)
 
-    p.text(700, 176, "1.  Read your sense resistor (page 3)", 20, INK, weight="bold")
-    p.rect(700, 196, 840, 158, fill="#fafbfc", stroke=FAINT, sw=2, rx=6)
+    p.text(700, 246, "1.  Read your sense resistor (page %d)" % P("parts"), 20, INK,
+           weight="bold")
+    p.rect(700, 266, 840, 128, fill="#fafbfc", stroke=FAINT, sw=2, rx=6)
     hdr = ["marking", "R_sense", "full scale", "Vref for 0.7 A"]
     for j, hcell in enumerate(hdr):
-        p.text(724 + j * 210, 228, hcell, 16, MUTE, weight="bold")
+        p.text(724 + j * 210, 296, hcell, 16, MUTE, weight="bold")
     data = [("R110", "0.11 ohm", "%.2f A" % f011, "%.2f V" % v011),
             ("R150", "0.15 ohm", "%.2f A" % f015, "%.2f V" % v015)]
     for i, rowd in enumerate(data):
         for j, cell in enumerate(rowd):
-            p.mono(724 + j * 210, 268 + i * 38, cell, 19, INK,
+            p.mono(724 + j * 210, 334 + i * 38, cell, 19, INK,
                    weight="bold" if j == 3 else "normal")
-    p.text(700, 388, "2.  Meter to DC volts, 2 V range. Black on GND.", 19, INK)
-    p.text(700, 422, "3.  Turn the pot in small steps and read directly.", 19, INK)
-    p.text(700, 456, "4.  Set it to the figure from the table.", 19, INK)
-    p.text(700, 508, "Vref set  =", 20, INK, weight="bold")
-    p.line(880, 514, 1240, 514, INK, 2)
-    p.text(1252, 508, "V", 20, INK)
-    p.wrap(700, 566,
+    p.text(700, 428, "2.  VIO and GND on flying leads ONLY.  USB in.", 19, INK)
+    p.text(700, 462, "3.  Meter to DC volts, 2 V range. Black on GND.", 19, INK)
+    p.text(700, 496, "4.  Turn the pot in small steps; set the figure above.", 19, INK)
+    p.text(700, 544, "Vref set  =", 20, INK, weight="bold")
+    p.line(880, 550, 1240, 550, INK, 2)
+    p.text(1252, 544, "V", 20, INK)
+    p.text(700, 574, "write it down NOW - it is unreadable once the module is seated",
+           15, DANGER, weight="bold")
+    p.wrap(700, 608,
            "The pot is sensitive — a few degrees is 0.1 V. Creep up on the number; do "
            "not sweep past it and come back.", 17, MUTE, cols=54, lh=24)
-    p.wrap(700, 632,
+    p.wrap(700, 672,
            "0.99 V is 0.7 A RMS on an R110 module. The A4988 formula would say 0.19 V "
            "and give you about 0.14 A — a motor that skips under load and looks too "
            "small for the job.", 17, WARN, cols=54, lh=24)
@@ -653,7 +661,7 @@ def page21(pins, table):
           "Confirm EN reads high (disabled) — page %d.  USB in, VM still off." % P("c_en"),
           "Watch the console boot.  Board healthy BEFORE any motor voltage.",
           "maint on     — stops it hunting for a Hall that is not there.",
-          "Apply VM (9 V).  Output stage now live.",
+          "PSU to 9 V with a 0.5 A LIMIT set FIRST.  Output stage now live.",
           "en 1         — and only now are the coils energised."]
     off = ["en 0        — de-energise the coils first.",
            "Remove VM.",
@@ -733,8 +741,9 @@ def page_bom(pins, table):
          "Three signals (STEP, DIR, EN) and the two rail feeds. Female onto the ESP32's "
          "pins, male into the board."),
         ("Jumper wires, male-to-male", str(jc["mm"]),
-         "Board-internal only: VIO, GND (logic), MS1 and MS2 to the rails. Both counts "
-         "are derived from the parsed connection table, not typed on this page."),
+         "Board-internal: VIO, GND (logic), MS1 and MS2 to the rails, plus %d RAIL LINKS "
+         "- the top and bottom rail pairs are separate nodes and both are in use. Counts "
+         "are derived from the parsed table, not typed here." % jc["links"]),
         ("JST-XH 4-way mating pigtail", "1",
          "THE MOTOR PLUG CANNOT ENTER A BREADBOARD. The pigtail's four flying leads can. "
          "Page %d shows exactly where they terminate." % P("bomprep")),
@@ -742,11 +751,11 @@ def page_bom(pins, table):
          "The bulk capacitor. Its legs need trimming and bending before it will reach the "
          "right two holes - lead prep on page %d." % P("bomprep")),
         ("Hookup wire, 22 AWG SOLID core", "30 cm red + black",
-         "RotoPD screw terminal to the board. Solid, not stranded: stranded frays in a "
-         "breadboard hole, will not hold, and leaves a strand behind."),
+         "PSU terminal to the board. Solid, not stranded: stranded frays in a breadboard "
+         "hole, will not hold, and leaves a strand behind."),
         ("Flat screwdriver, 2 mm blade", "1",
-         "Two jobs: the RotoPD's screw terminals, and the Vref trimpot on page %d. A blade "
-         "that does not fit the pot slips off it onto a pad." % P("vref")),
+         "The Vref trimpot on page %d, and the PSU's terminals. A blade that does not fit "
+         "the pot slips off it onto a pad." % P("vref")),
         ("Multimeter with a continuity beep", "1",
          "Coil pairs (page %d), continuity (page %d), Vref (page %d). Continuity and DC "
          "volts on a 2 V range are the only functions used."
@@ -754,9 +763,14 @@ def page_bom(pins, table):
         ("USB-C cable, PC to ESP32", "1",
          "Console and logic power. A DATA cable - a charge-only lead gives a board that "
          "powers up, looks alive, and never appears as a serial port."),
-        ("USB-C PD cable + RotoPD trigger", "1",
-         "VM. 9 V while the wiring is being proven, then 20 V before the soak, from the "
-         "same trigger board."),
+        ("Bench PSU, current-limited", "1",
+         "VM, and the single most useful safety device on the bench. 9 V at a 0.5 A LIMIT "
+         "for first power; 20 V for the soak. A wiring fault trips the limit, not the "
+         "driver."),
+        ("RotoPD USB-C trigger  --  NOT USED", "0  -  struck 2026-09-12",
+         "It is I2C-configured and DEFAULTS TO 5 V, so it cannot be trusted to come up at "
+         "the voltage you set, and it current-limits nothing. Listed struck rather than "
+         "deleted so it is not bought again."),
         ("Hex key for the drum set screw", "1",
          "Fit the stand-in drum, and MARK it - a tape flag will do - so that `step 0 3200` "
          "is a readable result rather than a guess."),
@@ -803,10 +817,11 @@ def page_bomprep(pins, table):
           "them into rows %d to %d of column %s. WHICH lead goes where is decided by the "
           "meter on page %d, never by colour - these wires were cut and re-terminated."
           % (coils[0][1], coils[-1][1], COIL_COL, P("coilpairs")))
-    t2a = ("Strip 8 mm of the 22 AWG solid core, clamp it under the screw, and run the "
+    t2a = ("Strip 8 mm of the 22 AWG solid core, clamp it in the terminal, and run the "
            "other end straight into the driver's own row. VM never goes through a rail.")
-    t2b = ("BELIEVED to be screw terminals; the unit is unopened. If yours is not, STOP "
-           "AND REPORT - do not improvise a connector on a 20 V rail.")
+    t2b = ("SET THE CURRENT LIMIT BEFORE THE VOLTAGE. 9 V at 0.5 A for first power: the "
+           "whole column draws under 0.1 A at 0.7 A RMS coil current, so anything near "
+           "the limit is a fault and the supply folds back instead of the driver dying.")
     t3 = ("It bridges the driver's OWN VM and GND, which are adjacent rows - 2.54 mm "
           "apart, against the 3.5 or 5 mm the leads came at. Trim both to about 12 mm, "
           "bend them toward each other at the body, and check the bends cannot touch. The "
@@ -833,8 +848,8 @@ def page_bomprep(pins, table):
 
     # 2 - the RotoPD
     y2 = 104 + h1 + 14
-    by = box(52, y2, 760, h2, "2", "The RotoPD reaches the board on two wires")
-    p.text(248, by + 24, "screw terminals", 14, MUTE)
+    by = box(52, y2, 760, h2, "2", "The bench supply reaches the board on two wires")
+    p.text(248, by + 24, "PSU output terminals", 14, MUTE)
     p.rect(84, by + 30, 152, 66, fill="#f0f2f5", stroke=INK, sw=2, rx=4)
     for i in range(2):
         p.rect(102 + i * 66, by + 40, 46, 36, fill="#c7ced6", stroke=INK, sw=2, rx=3)
@@ -924,7 +939,8 @@ def page_headers(pins, table):
     checks = ["Two black strips of 8 pins each are IN the module, not loose in the bag.",
               "Every pin has a shiny cone of solder where it meets the board.",
               "Sighted from the end, all sixteen pins are parallel and the same length.",
-              "The pins point AWAY from the components, i.e. out of the underside."]
+              "The pins exit the COMPONENT face - the same face as the Vref pot. That is "
+              "how these arrived, and page %d says what follows from it." % P("potdown")]
     for i, c in enumerate(checks):
         yy = y + 92 + i * 40
         p.rect(56, yy - 20, 26, 26, fill="none", stroke=INK, sw=2, rx=4)
@@ -955,7 +971,8 @@ def page_headers(pins, table):
     p.poly([(fx + 322, py + 88), (fx + 330, py + 96), (fx + 338, py + 88)], stroke=INK, sw=3)
     p.text(fx + 352, py + 84, "solder from THIS side", 16, GOOD, weight="bold")
     p.rect(fx + 140, py + 104, 360, 22, fill="#3c6e47", stroke=INK, sw=2, rx=3)
-    p.text(fx + 320, py + 120, "module, component side UP", 14, "#ffffff", "middle", "bold")
+    p.text(fx + 320, py + 120, "module, component side UP to solder", 14, "#ffffff",
+           "middle", "bold")
     p.rect(fx + 70, py + 168, 470, 76, fill="#fbfbf9", stroke=INK, sw=2, rx=5)
     p.rect(fx + 78, py + 198, 454, 14, fill="#eceff2", stroke="none", rx=2)
     p.rect(fx + 190, py + 126, 16, 78, fill="#2b3138", stroke=INK, sw=1, rx=2)
@@ -963,7 +980,8 @@ def page_headers(pins, table):
     p.mono(fx + 320, py + 236, "0.6 in", 14, MUTE, "middle")
     p.wrap(fx + 24, py + 276,
            "Strips into the board pins-down, module dropped on top, solder the sixteen "
-           "joints you can see.", 15, INK, cols=74, lh=20)
+           "joints you can see. MATCH THE FACE THE EXISTING ONES USE - page %d."
+           % P("potdown"), 15, INK, cols=74, lh=20)
 
     gx = 836
     p.rect(gx + 90, py + 94, 430, 46, fill="#3c6e47", stroke=INK, sw=2, rx=4)
@@ -990,9 +1008,92 @@ def _board(p, y0, hot=DRV_ROWS, label_every=5):
 
 
 def _row_labels(p, y0, y):
-    p.mono(bb_xy(DRV_ROWS[0], "A", y0)[0] - 46, y, "row", 14, MUTE, "end")
+    # Painted on an opaque strip: on the physical pages a wire leaves the board
+    # across this line, and a row number a wire runs through is worse than none.
+    x0 = bb_xy(DRV_ROWS[0], "A", y0)[0]
+    x1 = bb_xy(DRV_ROWS[-1], "A", y0)[0]
+    p.rect(x0 - 62, y - 15, (x1 - x0) + 78, 22, fill="#fbfbf9", stroke="none")
+    p.mono(x0 - 46, y, "row", 14, MUTE, "end")
     for r in DRV_ROWS:
         p.mono(bb_xy(r, "A", y0)[0], y, str(r), 15, INK, "middle", "bold")
+
+
+def page_potdown(pins, table):
+    p = Page(P("potdown"), "Which way up the driver goes",
+             "Measured on the real part - and it is not the way a StepStick diagram draws it")
+    y = p.banner(52, 108, 1496,
+                 "THE HEADER PINS EXIT THE COMPONENT FACE - the face with the Vref trimpot "
+                 "on it. So the module seats POT-DOWN, against the breadboard. Two things "
+                 "follow, and the second one is the trap.", "danger")
+
+    # --- 1: the pot is unreachable once it is in
+    p.text(52, y + 54, "1.  The pot is unreachable once the module is in", 21, INK,
+           weight="bold")
+    p.wrap(52, y + 88,
+           "It is pressed flat against the board. There is no setting it, checking it or "
+           "correcting it without pulling the module back out - and pulling a module out "
+           "of a live board is how they die. So VREF IS SET BEFORE INSERTION, with the "
+           "driver lying on the bench on two flying leads. Page %d is that procedure, and "
+           "it is why that page comes before the module ever goes in."
+           % P("vref"), 17, INK, cols=64, lh=25)
+
+    mx, my = 130, y + 304
+    p.text(mx + 150, my - 14, "seen from the end", 14, MUTE, "middle")
+    p.rect(mx, my, 300, 18, fill="#3c6e47", stroke=INK, sw=2, rx=3)
+    p.text(mx + 150, my + 13, "PCB", 12, "#ffffff", "middle", "bold")
+    p.circle(mx + 86, my - 16, 15, "#dfe4ea", INK, 2)
+    p.line(mx + 76, my - 16, mx + 96, my - 16, INK, 4)
+    p.text(mx + 86, my - 40, "pot", 13, INK, "middle", "bold")
+    for i in range(6):
+        p.line(mx + 30 + i * 48, my - 2, mx + 30 + i * 48, my - 40, "#2b3138", 6)
+    p.text(mx + 330, my + 6, "pins and pot on the SAME face", 16, DANGER, weight="bold")
+    p.text(mx + 330, my + 30, "so the pot faces the board", 15, MUTE)
+
+    # --- 2: the mirror
+    p.text(840, y + 54, "2.  Left and right swap.  This is the trap.", 21, DANGER,
+           weight="bold")
+    p.wrap(840, y + 88,
+           "The silkscreen names its two headers as you read them component-side UP. "
+           "Turning the module over exchanges them. The order ALONG each header does not "
+           "change - EN is still at the same end - so every pin is exactly where you "
+           "expect along the module and on the wrong side of it. A mirrored VM and GND is "
+           "a reversed supply, and nothing on the board will tell you.",
+           17, INK, cols=64, lh=25)
+    p.banner(840, y + 230, 708,
+             "CHECK IT WITH THE METER, NOT WITH YOUR MEMORY: continuity from the driver's "
+             "VM pin to row %d column %s. That single beep settles which way round it went "
+             "in." % (driver_row("VM")[0], DRIVER_COL_R), "good", size=16)
+
+    # --- the two column maps, side by side
+    ty = y + 380
+    p.text(52, ty, "Where each header actually lands", 20, INK, weight="bold")
+    heads = [("the silkscreen's LEFT header", TMC_LEFT, DRIVER_COL_L),
+             ("the silkscreen's RIGHT header", TMC_RIGHT, DRIVER_COL_R)]
+    for j, (title, names, col) in enumerate(heads):
+        bx = 52 + j * 500
+        p.rect(bx, ty + 20, 460, 56 + len(names) * 30, fill="#fafbfc", stroke=FAINT, sw=2,
+               rx=6)
+        p.text(bx + 18, ty + 52, title, 16, MUTE, weight="bold")
+        p.text(bx + 330, ty + 52, "column %s" % col, 17, INK, weight="bold")
+        for i, nm in enumerate(names):
+            yy = ty + 86 + i * 30
+            p.mono(bx + 18, yy, "%-10s" % nm, 16, INK)
+            p.mono(bx + 200, yy, "row %d" % (DRIVER_ROW0 + i), 16, MUTE)
+            p.mono(bx + 330, yy, "col %s" % col, 16, INK, weight="bold")
+
+    # --- 3: the aux pins
+    p.text(1064, ty, "3.  The aux pins: BEND, do not cut", 20, INK, weight="bold")
+    p.wrap(1064, ty + 34,
+           "The pins this build does not use - PDN/UART, CLK, and the second GND - still "
+           "have to go somewhere. Bend them flat against the module body before you seat "
+           "it. Do NOT cut them: the module is one of six, the other five may want UART "
+           "later (spec 5.7a plan B), and a cut pin cannot be put back. A bent pin "
+           "straightens with pliers in ten seconds.", 16, INK, cols=52, lh=23)
+    p.banner(1064, ty + 200, 484,
+             "A bent pin must not touch its neighbour or the board. Check it before it "
+             "goes in - once it is in, you cannot see it.", "warn", size=15)
+    p.wrap(1064, ty + 320, LAYOUT_CAVEAT, 13, MUTE, cols=62, lh=18)
+    return p
 
 
 def page_board(pins, table):
@@ -1074,157 +1175,175 @@ def page_physlogic(pins, table):
     p = Page(P("physlogic"), "The board as built - logic side",
              "The same connections as pages %d to %d, by row and column"
              % (P("c_step"), P("c_gndl")))
-    y0 = 190
+    y0 = 290
     rows = _phys_rows(table)
-    _board(p, y0)
-    _row_labels(p, y0, y0 + BH + 28)
+    jc = jumper_counts(table)
+    _board(p, y0, label_every=20)
+    _row_labels(p, y0, y0 + 62)
     top_plus, top_minus = y0 + 28, y0 + 48
     bot_plus, bot_minus = y0 + BH - 48, y0 + BH - 28
+
+    # The ESP sits ABOVE the board now: the signal pins are on the top-half
+    # header, because the module is pot-down (see the which-way-up page), so
+    # their wires leave over the top edge.
+    p.rect(150, 118, 320, 92, fill="#f0f2f5", stroke=INK, sw=3, rx=8)
+    p.text(310, 154, "ESP32-C5-DevKitC-1", 17, INK, "middle", "bold")
+    p.text(310, 180, "loose on the bench", 15, MUTE, "middle")
 
     esc = 0
     for name, _dr, _dc, jrow, jcol, to, _kind, key in rows:
         hx, hy = bb_xy(jrow, jcol, y0)
+        up = jcol in BB_COLS_TOP
         if to in ("+ rail", "- rail"):
-            up = jcol in BB_COLS_TOP
             ry = (top_plus if to == "+ rail" else top_minus) if up else \
                  (bot_plus if to == "+ rail" else bot_minus)
             run(p, [(hx, hy), (hx, ry)], key)
         else:
-            # A left-half jumper leaves across the bottom rails, because that is
-            # exactly what it does on the bench: it lies over them and off the edge.
-            ly = hy + 16 + esc * 7
-            lx = 200 + esc * 22
-            run(p, [(hx, hy), (hx, ly), (lx, ly), (lx, 700)], key)
+            ly = y0 - 26 - esc * 16
+            lx = 218 + esc * 24
+            run(p, [(hx, hy), (hx, ly), (lx, ly), (lx, 210)], key)
             esc += 1
     for nm in ("PDN", "CLK"):
         ex, ey = bb_xy(*jumper_hole(nm), y0=y0)
         p.circle(ex, ey, 9, "none", DANGER, 3)
         p.line(ex - 6, ey - 6, ex + 6, ey + 6, DANGER, 3)
 
-    p.rect(150, 700, 320, 96, fill="#f0f2f5", stroke=INK, sw=3, rx=8)
-    p.text(310, 738, "ESP32-C5-DevKitC-1", 17, INK, "middle", "bold")
-    p.text(310, 764, "loose on the bench", 15, MUTE, "middle")
-    run(p, [(220, 796), (220, 836), (124, 836), (124, bot_plus)], "VIO")
-    run(p, [(300, 796), (300, 864), (100, 864), (100, bot_minus)], "GNDL")
-    p.mono(490, 842, "3V3  ->  + rail", 15, INK)
-    p.mono(490, 870, "GND  ->  - rail", 15, INK)
-    p.wrap(150, 916,
-           "Every wire that leaves the board for the ESP32 crosses the bottom rails on its "
-           "way out. That is what a jumper does; it lies on top of them and touches "
-           "nothing.", 15, MUTE, cols=54, lh=21)
+    # The two rail feeds run out along the top, clear of the signal lanes, and
+    # down into the TOP rail pair at the far end.
+    run(p, [(400, 210), (400, 100), (1436, 100), (1436, top_plus)], "VIO")
+    run(p, [(440, 210), (440, 78), (1466, 78), (1466, top_minus)], "GNDL")
+    p.mono(500, 134, "3V3  ->  + rail top", 15, INK)
+    p.mono(500, 156, "GND  ->  - rail top", 15, INK)
 
-    tx, ty = 860, 640
+    # THE RAIL LINKS.  Four strips, not two.
+    if jc["links"]:
+        run(p, [(1436, top_plus), (1436, bot_plus)], "VIO")
+        run(p, [(1466, top_minus), (1466, bot_minus)], "GNDL")
+        p.text(1410, (top_plus + bot_plus) / 2 - 8, "rail", 15, DANGER, "end", "bold")
+        p.text(1410, (top_plus + bot_plus) / 2 + 12, "links", 15, DANGER, "end", "bold")
+
+    p.banner(52, y0 + BH + 40, 790,
+             "THE TOP AND BOTTOM RAIL PAIRS ARE SEPARATE NODES. MS1 and MS2 reach the top "
+             "pair, VIO and GND (logic) the bottom pair, so BOTH have to be live: two link "
+             "wires at the far end join them. Feed one pair only and half the board is "
+             "dead while looking wired.", "danger", size=16)
+    p.wrap(52, y0 + BH + 186, LAYOUT_CAVEAT, 13, MUTE, cols=104, lh=18)
+
+    tx, ty = 880, y0 + BH + 40
     p.text(tx, ty, "Every wire, by hole", 20, INK, weight="bold")
-    colx = [0, 150, 300, 450, 610]
-    for j, hc in enumerate(("pin", "pin is at", "wire goes in", "and reaches", "")):
-        p.text(tx + colx[j], ty + 32, hc, 15, MUTE, weight="bold")
+    colx = [0, 148, 292, 436, 590]
+    for j2, hc in enumerate(("pin", "pin is at", "wire goes in", "and reaches", "")):
+        p.text(tx + colx[j2], ty + 32, hc, 15, MUTE, weight="bold")
     yy = ty + 62
     for name, dr, dc, jrow, jcol, to, kind, _key in rows:
+        half = "top" if jcol in BB_COLS_TOP else "bot"
         p.mono(tx, yy, name, 16, INK, weight="bold")
         p.mono(tx + colx[1], yy, "%d %s" % (dr, dc), 16, INK)
         p.mono(tx + colx[2], yy, "%d %s" % (jrow, jcol), 16, INK)
-        p.mono(tx + colx[3], yy, to, 16, INK)
+        p.mono(tx + colx[3], yy,
+               ("%s %s" % (to, half)) if to.endswith("rail") else to, 16, INK)
         p.mono(tx + colx[4], yy, kind, 14, MUTE)
-        yy += 30
-    for nm, to in (("3V3 feed", "+ rail"), ("GND feed", "- rail")):
+        yy += 24
+    for nm, to in (("3V3 feed", "+ rail top"), ("GND feed", "- rail top")):
         p.mono(tx, yy, nm, 16, INK, weight="bold")
         p.mono(tx + colx[2], yy, "a rail", 16, INK)
         p.mono(tx + colx[3], yy, to, 16, INK)
         p.mono(tx + colx[4], yy, "M-F", 14, MUTE)
-        yy += 30
+        yy += 24
+    if jc["links"]:
+        for nm in ("+ rail link", "- rail link"):
+            p.mono(tx, yy, nm, 16, DANGER, weight="bold")
+            p.mono(tx + colx[2], yy, "far end", 16, DANGER)
+            p.mono(tx + colx[3], yy, "top <-> bot", 16, DANGER)
+            p.mono(tx + colx[4], yy, "M-M", 14, MUTE)
+            yy += 24
     pr, pc = jumper_hole("PDN")
-    p.mono(tx, yy + 8, "PDN, CLK", 16, DANGER, weight="bold")
-    p.mono(tx + colx[1], yy + 8, "%d, %d %s" % (pr, jumper_hole("CLK")[0], pc), 16, DANGER)
-    p.mono(tx + colx[2], yy + 8, "NOTHING", 16, DANGER, weight="bold")
-    p.mono(tx + colx[3], yy + 8, "stay empty", 16, DANGER)
-    p.wrap(tx, yy + 54, LAYOUT_CAVEAT, 13, MUTE, cols=90, lh=18)
+    p.mono(tx, yy + 6, "PDN, CLK", 16, DANGER, weight="bold")
+    p.mono(tx + colx[1], yy + 6, "%d, %d %s" % (pr, jumper_hole("CLK")[0], pc), 16, DANGER)
+    p.mono(tx + colx[2], yy + 6, "NOTHING", 16, DANGER, weight="bold")
+    p.mono(tx + colx[3], yy + 6, "stay empty", 16, DANGER)
     return p
 
 
 def page_physpower(pins, table):
     p = Page(P("physpower"), "The board as built - power side",
              "The supply, the capacitor and the motor, by row and column")
-    y0 = 260
+    y0 = 130
     vm_row = driver_row("VM")[0]
     gnd_row = driver_row("GND", 0)[0]
     coils = [(n, driver_row(n)[0]) for n in ("2B", "2A", "1A", "1B")]
-    _board(p, y0)
-    _row_labels(p, y0, y0 + BH + 28)
+    _board(p, y0, label_every=20)
+    _row_labels(p, y0, y0 + 62)
 
-    # NOTHING CROSSES ANYTHING HERE, and that is worth the trouble: a crossing
-    # on a page somebody reads at a live 20 V bench is a wire they put in the
-    # wrong row.  Rows 26 and 27 each carry two occupants in the top half - a
-    # supply wire in %s and a capacitor leg in %s - so the two bundles are given
-    # separate lanes out of the board rather than a tidy-looking junction.
-    p.wrap(1252, 122,
-           "All six wires leave over the top edge and lie flat on the board. "
+    # EVERYTHING ON THIS PAGE LEAVES OVER THE BOTTOM EDGE, because the module is
+    # pot-down and the power header is the one that landed in the bottom half.
+    # Nothing crosses anything: the capacitor gets a column of its own so that no
+    # wire shares a row with it, and the supply pair takes two separate lanes out
+    # rather than a tidy-looking junction.
+    p.wrap(1168, 566,
+           "All six wires leave over the bottom edge and lie flat on the board. "
            "Nothing here is soldered: every one is a push fit and comes out "
-           "again with your fingers.", 15, MUTE, cols=35, lh=21)
+           "again with your fingers.", 15, MUTE, cols=30, lh=21)
 
-    # the bulk capacitor: legs into the two CAP_COL holes, body above the rails
     ax, ay = bb_xy(vm_row, CAP_COL, y0)
     bx, by = bb_xy(gnd_row, CAP_COL, y0)
-    p.line(ax, ay, ax, ay - 44, "#d0342c", 5)
-    p.line(bx, by, bx, by - 44, "#22262b", 5)
-    p.rect(ax - 20, ay - 86, (bx - ax) + 40, 42, fill="#f0f2f5", stroke=INK, sw=3, rx=8)
-    p.rect(bx + 2, ay - 83, 14, 36, fill="#c7ced6", stroke="none", rx=4)
-    p.text((ax + bx) / 2, ay - 58, "100 uF", 13, INK, "middle", "bold")
-    p.text(ax - 32, ay - 14, "+", 18, "#d0342c", "middle", "bold")
-    p.text(bx + 34, ay - 12, "-", 22, "#22262b", "middle", "bold")
-    p.text(130, 236, "the stripe marks the - leg", 14, MUTE)
+    p.line(ax, ay, ax, ay + 36, "#d0342c", 5)
+    p.line(bx, by, bx, by + 36, "#22262b", 5)
+    p.rect(ax - 20, ay + 36, (bx - ax) + 40, 42, fill="#f0f2f5", stroke=INK, sw=3, rx=8)
+    p.rect(bx + 2, ay + 39, 14, 36, fill="#c7ced6", stroke="none", rx=4)
+    p.text((ax + bx) / 2, ay + 62, "100 uF", 13, INK, "middle", "bold")
+    p.text(ax - 34, ay + 12, "+", 18, "#d0342c", "middle", "bold")
+    p.text(bx + 36, ay + 14, "-", 22, "#22262b", "middle", "bold")
+    p.text(180, 566, "the stripe marks the - leg", 14, MUTE)
 
-    # the supply pair: GND takes the inner lane, VM the outer, so the two
-    # diagonals never meet and neither one passes under the capacitor.
     sx, sy = bb_xy(vm_row, SUPPLY_COL, y0)
     gx, gy = bb_xy(gnd_row, SUPPLY_COL, y0)
-    run(p, [(gx, gy), (630, 320), (630, 200)], "GNDP")
-    run(p, [(sx, sy), (560, 300), (560, 150)], "VM")
-    p.text(642, 190, "RotoPD  -", 16, INK, weight="bold")
-    p.text(548, 144, "RotoPD  +      9 V first, 20 V before the soak", 16, INK, "end",
-           weight="bold")
+    run(p, [(gx, gy), (636, 436), (636, 658)], "GNDP")
+    run(p, [(sx, sy), (560, 470), (560, 714)], "VM")
+    p.text(648, 664, "bench PSU  -", 16, INK, weight="bold")
+    p.text(548, 720, "bench PSU  +    9 V / 0.5 A first, 20 V for the soak", 16, INK,
+           "end", weight="bold")
 
-    # the four coil leads: the leftmost takes the highest lane, so no lead's
-    # horizontal ever crosses another lead's vertical.
-    for i, (nm, row) in enumerate(coils):
+    for i2, (nm, row) in enumerate(coils):
         cx2, cy2 = bb_xy(row, COIL_COL, y0)
-        key = ("MGREEN", "MBLACK", "MRED", "MBLUE")[i]
-        ly = 168 + i * 26
+        key = ("MGREEN", "MBLACK", "MRED", "MBLUE")[i2]
+        ly = 636 - i2 * 26
         run(p, [(cx2, cy2), (cx2, ly), (880, ly)], key)
         p.mono(892, ly + 6, "%s   ->   one motor lead" % nm, 15, INK)
-    p.text(892, 118, "which lead is which is decided by", 14, MUTE)
-    p.text(892, 138, "the meter on page %d, never by colour" % P("coilpairs"), 14, MUTE)
+    p.text(892, 700, "which lead is which is decided by", 14, MUTE)
+    p.text(892, 720, "the meter on page %d, never by colour" % P("coilpairs"), 14, MUTE)
 
-    y = y0 + BH + 66
+    y = 756
     p.text(52, y + 26, "Every power wire, by hole", 20, INK, weight="bold")
     lines = [("VM  (driver)", "%d %s" % (vm_row, DRIVER_COL_R),
-              "RotoPD  +", "%d %s" % (vm_row, SUPPLY_COL), "22 AWG"),
+              "PSU  +", "%d %s" % (vm_row, SUPPLY_COL), "22 AWG"),
              ("GND  (power)", "%d %s" % (gnd_row, DRIVER_COL_R),
-              "RotoPD  -", "%d %s" % (gnd_row, SUPPLY_COL), "22 AWG"),
+              "PSU  -", "%d %s" % (gnd_row, SUPPLY_COL), "22 AWG"),
              ("100 uF  +", "-", "bridges VM", "%d %s" % (vm_row, CAP_COL), "legs 12 mm"),
              ("100 uF  -", "-", "bridges GND", "%d %s" % (gnd_row, CAP_COL), "stripe side")]
     for nm, row in coils:
         lines.append(("%s  (coil)" % nm, "%d %s" % (row, DRIVER_COL_R),
                       "pigtail lead", "%d %s" % (row, COIL_COL), "meter decides"))
     colx = [0, 200, 330, 500, 660]
-    for j, hc in enumerate(("what", "pin is at", "other end", "wire goes in", "")):
-        p.text(52 + colx[j], y + 58, hc, 15, MUTE, weight="bold")
-    for i, cells in enumerate(lines):
-        yy = y + 88 + i * 30
-        for j, cell in enumerate(cells):
-            p.mono(52 + colx[j], yy, cell, 16 if j < 4 else 14,
-                   INK if j < 4 else MUTE, weight="bold" if j == 0 else "normal")
+    for j2, hc in enumerate(("what", "pin is at", "other end", "wire goes in", "")):
+        p.text(52 + colx[j2], y + 58, hc, 15, MUTE, weight="bold")
+    for i2, cells in enumerate(lines):
+        yy = y + 86 + i2 * 28
+        for j2, cell in enumerate(cells):
+            p.mono(52 + colx[j2], yy, cell, 16 if j2 < 4 else 14,
+                   INK if j2 < 4 else MUTE, weight="bold" if j2 == 0 else "normal")
 
     p.banner(920, y + 26, 628,
              "THE CAPACITOR IS NOT OPTIONAL AND ITS POSITION IS THE POINT. Rows %d and %d "
              "ARE the driver's VM and GND pins, which is why it belongs there and not on a "
              "rail twenty centimetres away." % (vm_row, gnd_row), "danger", size=16)
-    p.wrap(920, y + 172,
+    p.wrap(920, y + 170,
            "0.7 A RMS needs none of this upgraded - page %d says why. The coil current "
            "never travels along a rail: it runs in the four leads above and inside the "
            "driver. The supply wires are separate from the logic ground to keep the "
            "switching return out of it, not for current rating."
            % P("bomprep"), 15, INK, cols=72, lh=21)
-    p.wrap(920, y + 302, LAYOUT_CAVEAT, 13, MUTE, cols=82, lh=18)
+    p.wrap(920, y + 286, LAYOUT_CAVEAT, 13, MUTE, cols=82, lh=18)
     return p
 
 
@@ -1256,7 +1375,7 @@ def page_physdone(pins, table):
         p.circle(hx, hy, 9, GOOD)
     lx = bb_xy(DRV_ROWS[-1] + 2, "J", y0)[0]
     for col, what in ((CAP_COL, "capacitor, coils, VIO, GND (logic)"),
-                      (SUPPLY_COL, "the two RotoPD supply wires"),
+                      (SUPPLY_COL, "the two bench-PSU supply wires"),
                       (JUMPER_COL_L, "STEP, DIR, EN, MS1, MS2")):
         _hx, hy = bb_xy(1, col, y0)
         p.line(lx, hy, lx + 26, hy, GOOD, 2)
@@ -1283,7 +1402,7 @@ def page_physdone(pins, table):
 
     p.text(1090, y + 26, "Count before you power anything", 20, INK, weight="bold")
     jc = jumper_counts(table)
-    tally = [("jumper wires", jc["total"]), ("supply wires from the RotoPD", 2),
+    tally = [("jumper wires", jc["total"]), ("supply wires from the PSU", 2),
              ("capacitor legs", 2), ("motor leads from the pigtail", len(coils))]
     for i, (what, n) in enumerate(tally):
         p.mono(1090, y + 66 + i * 32, "%2d" % n, 19, INK, weight="bold")
@@ -1303,7 +1422,7 @@ def page_physdone(pins, table):
 
 
 PAGES = [page_bom, page_bomprep, page01, page02, page_headers, page03,
-         page_board, page04]
+         page_potdown, page_board, page04]
 
 
 def all_pages(pins, table):

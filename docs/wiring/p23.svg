@@ -2,66 +2,55 @@
 <rect width="1600" height="1131" fill="#ffffff"/>
 <rect x="0" y="0" width="1600" height="88" fill="#eef1f4"/>
 <line x1="0" y1="88" x2="1600" y2="88" stroke="#c7ced6" stroke-width="2"/>
-<text x="52" y="47" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="29" fill="#14181d" text-anchor="start" font-weight="bold">Set Vref  —  0.7 A</text>
-<text x="52" y="74" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">Motor disconnected. VM off. USB on.</text>
-<text x="1548" y="52" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="26" fill="#6b7683" text-anchor="end" font-weight="bold">23 / 28</text>
-<rect x="90" y="150" width="520" height="388" rx="8" fill="#f6f8fa" stroke="#14181d" stroke-width="3"/>
-<text x="350" y="134" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="18" fill="#6b7683" text-anchor="middle" font-weight="normal">driver, close up</text>
-<circle cx="240" cy="300" r="58" fill="#dfe4ea" stroke="#14181d" stroke-width="3"/>
-<line x1="202" y1="300" x2="278" y2="300" stroke="#14181d" stroke-width="7" stroke-linecap="round"/>
-<text x="240" y="386" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="middle" font-weight="bold">Vref trimpot</text>
-<text x="240" y="408" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="14" fill="#6b7683" text-anchor="middle" font-weight="normal">(the screw head IS the wiper)</text>
-<line x1="240" y1="300" x2="420" y2="210" stroke="#d0342c" stroke-width="9" stroke-linecap="round"/>
-<circle cx="240" cy="300" r="9" fill="#d0342c" stroke="none" stroke-width="1"/>
-<text x="430" y="204" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#d0342c" text-anchor="start" font-weight="bold">RED probe</text>
-<text x="430" y="226" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="14" fill="#6b7683" text-anchor="start" font-weight="normal">on the wiper</text>
-<rect x="114" y="450" width="120" height="28" rx="3" fill="#9aa4ae" stroke="#14181d" stroke-width="2"/>
-<text x="174" y="470" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#14181d" text-anchor="middle" font-weight="bold">GND</text>
-<polyline points="234,464 300,464 420,346" fill="none" stroke="#22262b" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
-<circle cx="234" cy="464" r="9" fill="#22262b" stroke="none" stroke-width="1"/>
-<text x="430" y="340" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#22262b" text-anchor="start" font-weight="bold">BLACK probe</text>
-<text x="430" y="362" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="14" fill="#6b7683" text-anchor="start" font-weight="normal">on any GND pin</text>
-<rect x="90" y="550" width="520" height="120" rx="6" fill="#fdf0ef" stroke="#c0261b" stroke-width="3"/>
-<rect x="90" y="550" width="9" height="120" rx="0" fill="#c0261b" stroke="none" stroke-width="2"/>
-<text x="118" y="582" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#c0261b" text-anchor="start" font-weight="bold">If your module has a labelled VREF pad, use</text>
-<text x="118" y="606" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#c0261b" text-anchor="start" font-weight="bold">that instead of the screw. Use a CLIP, not a</text>
-<text x="118" y="630" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#c0261b" text-anchor="start" font-weight="bold">hand-held probe: one slip from the wiper to a</text>
-<text x="118" y="654" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#c0261b" text-anchor="start" font-weight="bold">neighbouring pad kills the driver.</text>
-<text x="700" y="176" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="20" fill="#14181d" text-anchor="start" font-weight="bold">1.  Read your sense resistor (page 3)</text>
-<rect x="700" y="196" width="840" height="158" rx="6" fill="#fafbfc" stroke="#c7ced6" stroke-width="2"/>
-<text x="724" y="228" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#6b7683" text-anchor="start" font-weight="bold">marking</text>
-<text x="934" y="228" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#6b7683" text-anchor="start" font-weight="bold">R_sense</text>
-<text x="1144" y="228" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#6b7683" text-anchor="start" font-weight="bold">full scale</text>
-<text x="1354" y="228" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#6b7683" text-anchor="start" font-weight="bold">Vref for 0.7 A</text>
-<text x="724" y="268" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="19" fill="#14181d" text-anchor="start" font-weight="normal">R110</text>
-<text x="934" y="268" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="19" fill="#14181d" text-anchor="start" font-weight="normal">0.11 ohm</text>
-<text x="1144" y="268" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="19" fill="#14181d" text-anchor="start" font-weight="normal">1.77 A</text>
-<text x="1354" y="268" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="19" fill="#14181d" text-anchor="start" font-weight="bold">0.99 V</text>
-<text x="724" y="306" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="19" fill="#14181d" text-anchor="start" font-weight="normal">R150</text>
-<text x="934" y="306" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="19" fill="#14181d" text-anchor="start" font-weight="normal">0.15 ohm</text>
-<text x="1144" y="306" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="19" fill="#14181d" text-anchor="start" font-weight="normal">1.35 A</text>
-<text x="1354" y="306" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="19" fill="#14181d" text-anchor="start" font-weight="bold">1.29 V</text>
-<text x="700" y="388" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#14181d" text-anchor="start" font-weight="normal">2.  Meter to DC volts, 2 V range. Black on GND.</text>
-<text x="700" y="422" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#14181d" text-anchor="start" font-weight="normal">3.  Turn the pot in small steps and read directly.</text>
-<text x="700" y="456" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#14181d" text-anchor="start" font-weight="normal">4.  Set it to the figure from the table.</text>
-<text x="700" y="508" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="20" fill="#14181d" text-anchor="start" font-weight="bold">Vref set  =</text>
-<line x1="880" y1="514" x2="1240" y2="514" stroke="#14181d" stroke-width="2" stroke-linecap="round"/>
-<text x="1252" y="508" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="20" fill="#14181d" text-anchor="start" font-weight="normal">V</text>
-<text x="700" y="566" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">The pot is sensitive — a few degrees is 0.1 V. Creep</text>
-<text x="700" y="590" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">up on the number; do not sweep past it and come back.</text>
-<text x="700" y="632" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#b8791a" text-anchor="start" font-weight="normal">0.99 V is 0.7 A RMS on an R110 module. The A4988</text>
-<text x="700" y="656" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#b8791a" text-anchor="start" font-weight="normal">formula would say 0.19 V and give you about 0.14 A — a</text>
-<text x="700" y="680" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#b8791a" text-anchor="start" font-weight="normal">motor that skips under load and looks too small for</text>
-<text x="700" y="704" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#b8791a" text-anchor="start" font-weight="normal">the job.</text>
-<rect x="52" y="730" width="1496" height="2" rx="0" fill="#c7ced6" stroke="none" stroke-width="2"/>
-<text x="52" y="776" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="18" fill="#14181d" text-anchor="start" font-weight="normal">The TMC2209 uses VREF as a SCALING input against a full-scale current fixed by the sense resistor — it</text>
-<text x="52" y="802" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="18" fill="#14181d" text-anchor="start" font-weight="normal">is not the A4988 formula, and using that one gives about 0.14 A, at which the motor skips under load and</text>
-<text x="52" y="828" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="18" fill="#14181d" text-anchor="start" font-weight="normal">looks inadequate. The equation these numbers come from:</text>
-<text x="52" y="890" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="21" fill="#14181d" text-anchor="start" font-weight="bold">I_RMS  =  [ 0.325 / (R_sense + 0.02) ] / sqrt(2)  x  ( Vref / 2.5 )</text>
-<rect x="52" y="916" width="1000" height="74" rx="6" fill="#fdf0ef" stroke="#c0261b" stroke-width="3"/>
-<rect x="52" y="916" width="9" height="74" rx="0" fill="#c0261b" stroke="none" stroke-width="2"/>
-<text x="80" y="948" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#c0261b" text-anchor="start" font-weight="bold">MOTOR DISCONNECTED for this whole page. That is rule 3 on page 4: set the current before</text>
-<text x="80" y="973" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#c0261b" text-anchor="start" font-weight="bold">the motor can be subjected to it.</text>
+<text x="52" y="47" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="29" fill="#14181d" text-anchor="start" font-weight="bold">Continuity check</text>
+<text x="52" y="74" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">Beep these five pairs BEFORE the first power-on</text>
+<text x="1548" y="52" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="26" fill="#6b7683" text-anchor="end" font-weight="bold">23 / 29</text>
+<text x="52" y="140" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#14181d" text-anchor="start" font-weight="normal">Meter on continuity (the beep symbol). Everything unpowered, USB out, motor still disconnected.</text>
+<text x="52" y="168" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#14181d" text-anchor="start" font-weight="normal">Five checks: three that must NOT beep, two that MUST. A mistake found here costs a minute; the</text>
+<text x="52" y="196" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#14181d" text-anchor="start" font-weight="normal">same mistake found by powering up costs a driver.</text>
+<rect x="52" y="248" width="1496" height="118" rx="8" fill="#fdf0ef" stroke="#c0261b" stroke-width="3"/>
+<rect x="52" y="248" width="9" height="118" rx="0" fill="#c0261b" stroke="none" stroke-width="2"/>
+<circle cx="112" cy="292" r="26" fill="#c0261b" stroke="none" stroke-width="1"/>
+<text x="112" y="302" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="26" fill="#ffffff" text-anchor="middle" font-weight="bold">1</text>
+<text x="166" y="288" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="22" fill="#14181d" text-anchor="start" font-weight="bold">VM            &lt;--&gt;  GND</text>
+<text x="166" y="324" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="20" fill="#c0261b" text-anchor="start" font-weight="bold">MUST NOT BEEP</text>
+<text x="620" y="288" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">A short across the supply. This is the one that makes smoke.</text>
+<rect x="1476" y="278" width="30" height="30" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
+<rect x="52" y="378" width="1496" height="118" rx="8" fill="#fdf0ef" stroke="#c0261b" stroke-width="3"/>
+<rect x="52" y="378" width="9" height="118" rx="0" fill="#c0261b" stroke="none" stroke-width="2"/>
+<circle cx="112" cy="422" r="26" fill="#c0261b" stroke="none" stroke-width="1"/>
+<text x="112" y="432" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="26" fill="#ffffff" text-anchor="middle" font-weight="bold">2</text>
+<text x="166" y="418" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="22" fill="#14181d" text-anchor="start" font-weight="bold">VM            &lt;--&gt;  3V3</text>
+<text x="166" y="454" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="20" fill="#c0261b" text-anchor="start" font-weight="bold">MUST NOT BEEP</text>
+<text x="620" y="418" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">Motor voltage on the ESP32's 3.3 V rail — destroys the board.</text>
+<rect x="1476" y="408" width="30" height="30" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
+<rect x="52" y="508" width="1496" height="118" rx="8" fill="#fdf0ef" stroke="#c0261b" stroke-width="3"/>
+<rect x="52" y="508" width="9" height="118" rx="0" fill="#c0261b" stroke="none" stroke-width="2"/>
+<circle cx="112" cy="552" r="26" fill="#c0261b" stroke="none" stroke-width="1"/>
+<text x="112" y="562" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="26" fill="#ffffff" text-anchor="middle" font-weight="bold">3</text>
+<text x="166" y="548" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="22" fill="#14181d" text-anchor="start" font-weight="bold">3V3           &lt;--&gt;  GND</text>
+<text x="166" y="584" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="20" fill="#c0261b" text-anchor="start" font-weight="bold">MUST NOT BEEP</text>
+<text x="620" y="548" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">Shorts the ESP32's regulator; the board will not boot.</text>
+<rect x="1476" y="538" width="30" height="30" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
+<rect x="52" y="638" width="1496" height="118" rx="8" fill="#eff8f2" stroke="#1a7f45" stroke-width="3"/>
+<rect x="52" y="638" width="9" height="118" rx="0" fill="#1a7f45" stroke="none" stroke-width="2"/>
+<circle cx="112" cy="682" r="26" fill="#1a7f45" stroke="none" stroke-width="1"/>
+<text x="112" y="692" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="26" fill="#ffffff" text-anchor="middle" font-weight="bold">4</text>
+<text x="166" y="678" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="22" fill="#14181d" text-anchor="start" font-weight="bold">ESP GND       &lt;--&gt;  driver GND</text>
+<text x="166" y="714" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="20" fill="#1a7f45" text-anchor="start" font-weight="bold">MUST BEEP</text>
+<text x="620" y="678" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">No common ground means every logic level is undefined. Nothing</text>
+<text x="620" y="702" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">works, confusingly.</text>
+<rect x="1476" y="668" width="30" height="30" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
+<rect x="52" y="768" width="1496" height="118" rx="8" fill="#eff8f2" stroke="#1a7f45" stroke-width="3"/>
+<rect x="52" y="768" width="9" height="118" rx="0" fill="#1a7f45" stroke="none" stroke-width="2"/>
+<circle cx="112" cy="812" r="26" fill="#1a7f45" stroke="none" stroke-width="1"/>
+<text x="112" y="822" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="26" fill="#ffffff" text-anchor="middle" font-weight="bold">5</text>
+<text x="166" y="808" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="22" fill="#14181d" text-anchor="start" font-weight="bold">ESP 3V3       &lt;--&gt;  driver VIO</text>
+<text x="166" y="844" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="20" fill="#1a7f45" text-anchor="start" font-weight="bold">MUST BEEP</text>
+<text x="620" y="808" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">MS1 and MS2 must beep to 3V3 as well — they are on the same</text>
+<text x="620" y="832" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">net.</text>
+<rect x="1476" y="798" width="30" height="30" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
+<text x="52" y="924" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="18" fill="#1a7f45" text-anchor="start" font-weight="normal">All five correct? Then the first power-on cannot destroy anything through a wiring error. Go to page 24.</text>
 <line x1="52" y1="1087" x2="1548" y2="1087" stroke="#c7ced6" stroke-width="1" stroke-linecap="round"/>
 <text x="52" y="1111" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">LOST Swan  module V1  ·  generated by tools/wiringgen.py from hal/pins.h + docs/BENCH_WIRING.md</text>
 </svg>
