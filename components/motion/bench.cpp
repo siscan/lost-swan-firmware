@@ -48,6 +48,12 @@ BenchSampleMeta g_samples_meta;
 // Caller holds g_mu.  Oldest falls off the front once the buffer is full - the
 // end of a run is the interesting part, and `dropped` keeps the record honest
 // about what is missing rather than silently presenting a partial hour.
+int16_t clamp_i16(int32_t v) {
+    if (v > 32767) return 32767;
+    if (v < -32768) return -32768;
+    return static_cast<int16_t>(v);
+}
+
 template <typename T>
 T clamp_to(uint32_t v) {
     return static_cast<T>(v > static_cast<uint32_t>(-1) >> ((4 - sizeof(T)) * 8)
@@ -61,8 +67,12 @@ void record_sample_locked() {
     s.flaps = g_stats.flaps;
     s.heap_now = g_stats.heap_now;
     s.edges = clamp_to<uint16_t>(g_stats.edges);
-    s.h2h_min = static_cast<int16_t>(g_stats.h2h_min);
-    s.h2h_max = static_cast<int16_t>(g_stats.h2h_max);
+    // Clamped like every other narrowing here.  hall_to_hall is ~3200 on this
+    // drive and 8242 on the dead one, so int16 is ample - but a garbage value
+    // from a fault would WRAP on a plain cast and land in the record as a
+    // plausible small number instead of an obvious pegged one.
+    s.h2h_min = clamp_i16(g_stats.h2h_min);
+    s.h2h_max = clamp_i16(g_stats.h2h_max);
     s.resync_minor = clamp_to<uint16_t>(g_stats.resync_minor);
     s.resync_major = clamp_to<uint16_t>(g_stats.resync_major);
     if (g_samples_meta.count < BENCH_MAX_SAMPLES) {
@@ -272,6 +282,10 @@ void bench_task(void* arg) {
     {
         const std::lock_guard<std::mutex> lk(g_mu);
         sample_locked(col, started_us);
+        // AND RECORD IT.  The loop above only samples on a 60 s boundary, so
+        // without this the buffer stopped up to a minute short of the end -
+        // and the end is the part the hand-on-the-case verdict is about.
+        record_sample_locked();
         g_stats.running = false;
         final_stats = g_stats;
     }

@@ -143,10 +143,13 @@ constexpr uint32_t bench_expected_flaps(const BenchSchedule& s) {
 // most recent 96 and says how many it dropped.
 inline constexpr int BENCH_MAX_SAMPLES = 96;
 
-// Narrow on purpose: 20 bytes, so the whole record is under 2 KB of BSS and a
-// single sample is trivial to copy.  elapsed_s as uint16 covers 18 hours; edges
-// and the resync counters cannot plausibly exceed 65535 in a bench run; h2h is
-// 3200 plus a spread.  flaps and heap need the full 32 bits.
+// Narrow on purpose: 24 bytes with padding (22 of payload), so the whole record
+// is 2304 bytes of BSS and a single sample is trivial to copy.  elapsed_s as
+// uint16 covers 18 hours; edges and the resync counters cannot plausibly exceed
+// 65535 in a bench run; h2h is 3200 plus a spread.  flaps and heap need the full
+// 32 bits.  EVERY narrowing is CLAMPED rather than cast - a truncated counter
+// that wraps to a small number reads as a good result, which is the one thing a
+// diagnostic record must never do.
 struct BenchSample {
     uint16_t elapsed_s;
     uint32_t flaps;

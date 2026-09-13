@@ -143,24 +143,32 @@ bool topic_is(const esp_mqtt_event_handle_t e, const char* leaf) {
 //      client in this firmware - there is no HTTPS client, and OTA is a local
 //      plain-HTTP upload - so nothing else loses diagnostics.  The tags come
 //      back the moment a connection succeeds.
-constexpr int64_t MQTT_LOG_QUIET_US = 60 * 1000 * 1000;  // one line a minute
+constexpr uint32_t MQTT_LOG_QUIET_S = 60;  // one line a minute
 
-// Touched by the esp-mqtt EVENT task only, so no atomics and no lock: a
-// counter read from two tasks would need them, and these are not.
-int64_t g_fail_since_us = 0;    // 0 = not currently failing
-int64_t g_last_fail_log_us = 0;
-uint32_t g_fail_count = 0;
+// ALL OF THESE ARE TOUCHED BY TWO TASKS: the esp-mqtt event task while an outage
+// runs, and the transport task when a client is started or torn down.  Seconds
+// rather than microseconds so every one is a lock-free 32-bit atomic on RV32 - an
+// int64 would not be, and this is logging bookkeeping that must not take a lock
+// on the event task.  g_fail_reason only ever points at a string literal.
+std::atomic<uint32_t> g_fail_since_s{0};   // 0 = not currently failing
+std::atomic<uint32_t> g_last_fail_log_s{0};
+std::atomic<uint32_t> g_fail_count{0};
 // Why the last attempt failed, captured from MQTT_EVENT_ERROR so the one line a
 // minute can say it.  A refusal and an unreachable host are completely
 // different problems and must not read the same.
-const char* g_fail_reason = "";
-// This one IS touched by two tasks - the event task while failing, and the
-// transport task when a client is started or torn down - so it is atomic.
+std::atomic<const char*> g_fail_reason{""};
 std::atomic<bool> g_idf_muted{false};
+
+uint32_t now_s() {
+    return static_cast<uint32_t>(esp_timer_get_time() / 1000000);
+}
 
 void mute_idf_mqtt_logs(bool mute) {
     if (g_idf_muted.exchange(mute, std::memory_order_relaxed) == mute) return;
-    const esp_log_level_t lvl = mute ? ESP_LOG_NONE : ESP_LOG_WARN;
+    // Restoring WARN would silently leave these three BELOW the build default
+    // (CONFIG_LOG_DEFAULT_LEVEL is INFO here) for the rest of the session.
+    const esp_log_level_t lvl =
+        mute ? ESP_LOG_NONE : static_cast<esp_log_level_t>(CONFIG_LOG_DEFAULT_LEVEL);
     for (const char* tag : {"esp-tls", "transport_base", "mqtt_client"}) {
         esp_log_level_set(tag, lvl);
     }
@@ -168,24 +176,28 @@ void mute_idf_mqtt_logs(bool mute) {
 
 // Call on every failed attempt.  Returns true if THIS one should be logged.
 bool fail_should_log() {
-    const int64_t now = esp_timer_get_time();
-    ++g_fail_count;
-    if (g_fail_since_us == 0) {          // first failure of an outage
-        g_fail_since_us = now;
-        g_last_fail_log_us = now;
-        return true;
+    const uint32_t now = now_s();
+    g_fail_count.fetch_add(1, std::memory_order_relaxed);
+    uint32_t since = 0;
+    if (g_fail_since_s.compare_exchange_strong(since, now, std::memory_order_relaxed)) {
+        g_last_fail_log_s.store(now, std::memory_order_relaxed);
+        return true;                     // first failure of this outage
     }
-    if (now - g_last_fail_log_us >= MQTT_LOG_QUIET_US) {
-        g_last_fail_log_us = now;
+    if (now - g_last_fail_log_s.load(std::memory_order_relaxed) >= MQTT_LOG_QUIET_S) {
+        g_last_fail_log_s.store(now, std::memory_order_relaxed);
         return true;
     }
     return false;
 }
 
+// Called on a successful connect AND on client start and teardown.  Without the
+// last two, `mqtt off` during an outage left the clock and the count set, and the
+// FIRST failure of the next outage was suppressed as a continuation of the old
+// one - which is the line that matters most.
 void fail_reset() {
-    g_fail_since_us = 0;
-    g_fail_count = 0;
-    g_fail_reason = "";
+    g_fail_since_s.store(0, std::memory_order_relaxed);
+    g_fail_count.store(0, std::memory_order_relaxed);
+    g_fail_reason.store("", std::memory_order_relaxed);
     mute_idf_mqtt_logs(false);
 }
 
@@ -204,8 +216,8 @@ const char* refusal_text(int rc) {
 }
 
 uint32_t fail_seconds() {
-    if (g_fail_since_us == 0) return 0;
-    return static_cast<uint32_t>((esp_timer_get_time() - g_fail_since_us) / 1000000);
+    const uint32_t since = g_fail_since_s.load(std::memory_order_relaxed);
+    return since == 0 ? 0 : now_s() - since;
 }
 
 void on_mqtt_event(void*, esp_event_base_t, int32_t id, void* data) {
@@ -240,12 +252,13 @@ void on_mqtt_event(void*, esp_event_base_t, int32_t id, void* data) {
             // count and the elapsed outage go in the line, so one line a minute
             // still says how bad it is.
             if (fail_should_log()) {
+                const char* reason = g_fail_reason.load(std::memory_order_relaxed);
                 ESP_LOGW(TAG,
                          "broker unreachable: %s (down %us, %u attempts) - "
                          "further attempts logged once a minute",
-                         g_fail_reason[0] != 0 ? g_fail_reason : "no reason reported",
+                         reason[0] != 0 ? reason : "no reason reported",
                          static_cast<unsigned>(fail_seconds()),
-                         static_cast<unsigned>(g_fail_count));
+                         static_cast<unsigned>(g_fail_count.load(std::memory_order_relaxed)));
             }
             mute_idf_mqtt_logs(true);
             break;
@@ -309,10 +322,11 @@ void on_mqtt_event(void*, esp_event_base_t, int32_t id, void* data) {
             // count for one failure.  What is NOT redundant is the reason, so
             // it is captured here and printed on the DISCONNECTED line.
             if (e->error_handle != nullptr) {
-                g_fail_reason =
+                g_fail_reason.store(
                     e->error_handle->error_type == MQTT_ERROR_TYPE_CONNECTION_REFUSED
                         ? refusal_text(e->error_handle->connect_return_code)
-                        : "transport error - host unreachable, or refusing the port";
+                        : "transport error - host unreachable, or refusing the port",
+                    std::memory_order_relaxed);
             }
             break;
         default:
@@ -325,7 +339,7 @@ void on_mqtt_event(void*, esp_event_base_t, int32_t id, void* data) {
 
 void client_stop_locked_free() {
     if (g_client == nullptr) return;
-    mute_idf_mqtt_logs(false);
+    fail_reset();
     esp_mqtt_client_stop(g_client);
     esp_mqtt_client_destroy(g_client);
     g_client = nullptr;
@@ -371,10 +385,11 @@ void client_start() {
     c.task.priority = MQTT_TASK_PRIO;
     c.task.stack_size = ESP_MQTT_TASK_STACK;
 
-    // A fresh client starts with IDF's logging on.  Without this, `mqtt off`
-    // during an outage would destroy the client while the tags were still
-    // muted - no CONNECTED event ever arrives to restore them.
-    mute_idf_mqtt_logs(false);
+    // A fresh client starts with IDF's logging on AND a clean outage clock.
+    // Without this, `mqtt off` during an outage would destroy the client while
+    // the tags were still muted - no CONNECTED event ever arrives to restore
+    // them - and the next outage's first line would be suppressed.
+    fail_reset();
     g_client = esp_mqtt_client_init(&c);
     if (g_client == nullptr) {
         ESP_LOGE(TAG, "client init failed");
