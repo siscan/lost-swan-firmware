@@ -28,7 +28,7 @@ Columns are physically grouped 3 + 2 with a band between (no colon column).
 | Item | Spec | Notes |
 |---|---|---|
 | MCU | **ESP32-C5-DevKitC-1-N8R8**, board V1.2 — **on the bench since 2026-08-23**. Pin map in §2.2. | 8 MB flash, 8 MB PSRAM, USB-Serial-JTAG + USB-UART bridge. **Chip revision v1.2, verified** (§2.0) — production silicon; the revision risk is closed. XIAO ESP32-C5 is the spare / project-#2 board; Pico 2 W remains plan B. |
-| Motors | 5 × NEMA 17, 17HS4401-class, 1.8° (200 full steps/rev) | `VERIFY` step angle on the motors actually bought. Run current **0.7 A RMS**, hold ~0.35 A via standstill reduction (§5.7a). Sealed inside a PLA drum, so heat is a hard requirement rather than a preference. |
+| Motors | 5 × **LDO 42STH48-2504AH(S37)**, 1.8° (200 full steps/rev) — **55 N·cm, 2.5 A/phase, 1.5 mH, 1.2 Ω, 48 mm body**, in hand since 2026-08-22 | **This row said "17HS4401-class" until 2026-09-12 and was stale by three weeks.** The 17HS4401 was a BOM *recommendation* that was never bought; `HARDWARE_PLAN_2` §rev 4 locked the LDO, chosen for **low inductance** rather than torque, and `PROCUREMENT_STATUS` records all five collected. The difference is not cosmetic: 55 N·cm at 2.5 A rather than 40 N·cm at 1.7 A, so **0.7 A RMS is ~28 % of rated and yields ~15.4 N·cm** — which is the number §5.2's `motion.accel` derivation rests on. Run current **0.7 A RMS**, hold ~0.35 A via standstill reduction (§5.7a). Sealed inside a PLA drum, so heat is a hard requirement rather than a preference — **and the one-hour soak on 2026-09-12 passed** (BRINGUP §28b gate 3). `VERIFY` still open: the **detent torque of 2.2 N·cm** quoted throughout is unsourced and is precisely the 17HS4401's datasheet figure, i.e. it may describe the motor that was never bought. |
 | Drivers | 5 × TMC2209 modules, **standalone (no UART)** | MS1 = MS2 = high → 1/16 microstep, internal 256 interpolation. `VERIFY` against the vendor's silkscreen/doc; a different default pull changes every motion constant. **Run current is 0.7 A RMS — see §5.7a**, which is the plan of record since 2026-09-06 and the number the bench is held to; this row said ~1.1–1.2 A until 2026-09-11 and was three weeks stale against its own spec. Standstill current reduction left enabled. |
 | Drive | **DIRECT, 1:1** — the NEMA 17 sits stationary INSIDE the drum and turns it directly (2026-09-06, `docs/ref/DRIVE_CHANGE.md`) | The 85T rim gear is dead: with 50 flaps loaded the pinion collided with the card edges at every angular position and a mesh sweep found no collision-free angle. 64 µsteps/flap, 3200/revolution, both exact. |
 | Rotation | **One direction only** (the rings are *descending* since v3, §4: one forward flip decrements). Reverse is mechanically forbidden (flaps jam on the bezel lip). | **DIR is a ganged GPIO again** on boards with a spare non-strapping pin — GPIO24 on the DevKitC-1, absent on the XIAO (§2.1). The motor now faces the other way inside the drum, so which level gives the descending sense is a bench measurement (step 3), and `motion.dir_invert` settles it without a soldering iron. EN is a single ganged GPIO. |
@@ -507,8 +507,50 @@ UNHOMED → HOMING → IDLE ⇄ MOVING
   (`CONFIG_GPTIMER_ISR_IRAM_SAFE`, `IRAM_ATTR`, `DRAM_ATTR`). NVS and OTA flash
   writes disable the cache; a non-IRAM ISR would stall and drop steps.
 - Velocity per axis is updated by a 1 kHz control tick (not in the step ISR):
-  linear ramp, `ACCEL` default such that 0 → 4121 µsteps/s takes ~50 ms
-  (≈ 82 000 µsteps/s²). Short moves are triangular.
+  linear ramp, **`ACCEL` default 12 000 µsteps/s²**, which is 0 → alarm speed
+  (1600 µsteps/s) in ~133 ms and 0 → normal speed in ~80 ms. Short moves are
+  triangular.
+
+  **This was 82 000 until 2026-09-12, and 82 000 stalled the drum on the bench.**
+  It was never a free constant — this very sentence used to define it as
+  "0 → 4121 µsteps/s in ~50 ms", and 4121 is 25 flaps/s × the **rim gear's**
+  5440/33 µsteps per flap. Every term in it belonged to a drive that no longer
+  exists. Two things changed at once and they multiply: a µstep became 2.58×
+  more drum angle, **and** the gear's 2.576× torque multiplication went away, so
+  the unchanged constant commanded ~6.6× the motor torque it used to.
+
+  Worth stating because it is the tempting wrong answer: **rescaling by the dead
+  gear ratio is not the fix.** 82 000 × 33/85 = 31 835 restores the old *drum*
+  acceleration but not the old *margin*, because at 1:1 the motor pays for that
+  acceleration directly — it still asks ~16.6 N·cm against ~15.4 available on
+  the pessimistic inertia estimate, so it stalls too.
+
+  The derivation is in `motion_types.h` beside the constant. In outline, from the
+  motor actually in hand (§2, LDO 42STH48-2504AH, 55 N·cm at 2.5 A):
+  15.40 N·cm available at 0.7 A, less 3.92 N·cm of static imbalance and 2.20 N·cm
+  of detent, halved for margin. **The inertia is not known to better than 2.6×**, so the
+  number is chosen to survive the whole range rather than computed from one
+  estimate: the repo's two energy figures back-solve to 6.33e-4 and 1.662e-3
+  kg·m², and a third from the recorded geometry plus the bench's 501 g gives
+  8.8e-4. At 12 000 the margin is 2.02× / 1.88× / 1.53× across the three.
+
+  **What picks 12 000 over ~14 000 is §17's 2 s ramp floor at show speed**, which
+  is a floor on *duration* — a faster ramp violates it. 0 → 25 600 µsteps/s takes
+  2.13 s at 12 000 and 1.83 s at 14 000, so the binding form is
+  accel ≤ 25 600 / 2 = 12 800. The same torque model predicts the observed stall
+  at 82 000 on **all three** inertia estimates, which is what earns it.
+
+  `motion.accel` **stays open** (§17, 2026-09-06): this is a derivation, not a
+  measurement. Bench step 5 re-derives it once the flap stop and the card stock
+  are settled — BRINGUP §28b step 6a records that the step loss at card release
+  is mechanical and frozen, so a bench figure measured against the old flap stop
+  is not the one to commit.
+
+  **Range: `ACCEL_MIN` 1000 … `ACCEL_MAX` 60 000**, in `motion_types.h` and used
+  by the NVS load path, the §10.2a dispatcher and the web slider alike. The
+  ceiling sits deliberately **below the 82 000 that stalled**, so a control
+  somebody drags cannot re-command a known stall; the floor exists because the
+  ramp divides by `accel` and `dv = accel / 1000` is an integer divide.
 - Hall inputs are **sampled in the step ISR** (no separate GPIO interrupt), with
   a 2-of-3 sample filter; the operate edge latches `pos_abs` atomically with the
   step count. This keeps edge position and step position consistent.
@@ -1658,7 +1700,10 @@ motion.cal[5]            int32 µsteps
 motion.flaps_s_normal    default 15
 motion.flaps_s_alarm     default 25
 motion.flaps_s_home      default 8
-motion.accel             default 82000
+motion.accel             default 14000, range 1000..60000 (ACCEL_MIN/MAX in
+                         motion_types.h, shared by the load path, the API and the
+                         web slider).  Derived from the drum at 1:1, not inherited
+                         from the rim gear - 82000 stalled it (5.2, 17)
 motion.hall_tol          default 16 (a quarter flap; DERIVED from the flap, not
                          a literal - see 5.4)
 motion.dir_invert        default false.  Which level on the ganged DIR pin turns
@@ -3686,6 +3731,147 @@ numbered section — if you find one that disagrees, fix the section.
   section that disagrees with this log is a bug in the spec, not a subtlety.
 
 ---
+
+- 2026-09-12 — **THE FIRST BENCH SESSION WITH A REAL MOTOR.  GATE 3 PASSED, AND
+  THE MECHANISM IS NO LONGER UNVERIFIED.**  BRINGUP §28b gate 3, branch B (no
+  Hall fitted).  This is the entry that retires "no motor, driver or Hall sensor
+  has ever been connected to this board" from the STATE OF THE WORLD above.
+
+  **What the hour proved.**  A one-hour soak at 20 V, 3600/3600 s, **zero
+  faults**, driver warm and the **drum wall cool**.  That is the thermal question
+  this whole build phase existed to answer — a NEMA 17 sealed in a PLA drum that
+  softens at 55–60 °C, holding current all day — and it is answered.  **§5.7a's
+  Plan A stands and Plan B (UART + IHOLD at ~15 % hold) is not needed**, which
+  also retires the pin-budget risk Plan B carried: it would have wanted one or
+  two GPIOs this map does not have (§2.2 — GPIO24 is DIR).
+
+  **And the geometry is measured rather than assumed.**  `step 0 3200` returned a
+  pen mark on the drum to exactly where it started.  One command settles three
+  things `revs` could not: the drive is **1:1**, the microstep setting really is
+  **1/16**, and the coil pairing is right.  **64 µsteps/flap and 3200/revolution
+  are now bench facts.**
+
+  **Vref was NOT measured, and that is the session's loose end.**  The pot was
+  never read with a meter.  What was measured was supply current at 20 V — about
+  **0.06–0.07 A moving, 0.01–0.02 A holding** — which is *consistent* with 0.7 A
+  RMS (2 × 0.7² × 1.2 Ω = 1.18 W, i.e. 0.059 A at 20 V before driver losses) and
+  is *not the same quantity*: a TMC2209 is a switching regulator, so supply
+  current is roughly coil power over rail volts, not coil current.  The hold
+  figure falling to about a quarter of the moving one does confirm PDN_UART's
+  polarity, which §6 wanted.  Recorded as **INFERRED** in BRINGUP, with the
+  meter reading still owed.
+
+  **Step loss at card release, and the decision not to answer it in firmware.**
+  The motor lost steps as the cards released.  Two mechanical contributions: the
+  flap stop as set was the dominant load, and the residual tracks the 2.2 mm card
+  stock.  **Frozen pending thinner cards.**  Nothing in firmware compensates for
+  it and nothing should — raising current, softening the ramp or widening a
+  tolerance would all be the firmware absorbing a mechanism that is still being
+  built, and the compensation would then be wrong for the mechanism that ships.
+  The consequence for this document is that **`flaps_s_alarm` cannot be set from
+  this session** (bench step 5 measures a property of the loaded drum, and this
+  drum's load is about to change).
+
+  **The motor row in §2 was three weeks stale and is corrected.**  It said
+  "17HS4401-class"; the motor in hand is an **LDO 42STH48-2504AH(S37)** —
+  55 N·cm at 2.5 A, 1.5 mH, 48 mm body — locked in `HARDWARE_PLAN_2` rev 4 and
+  collected per `PROCUREMENT_STATUS`.  The 17HS4401 was a BOM *recommendation*
+  that was never bought.  This is not cosmetic: 0.7 A RMS against 2.5 A rated is
+  ~28 %, giving **~15.4 N·cm**, and that is the number the `motion.accel`
+  derivation below rests on.  Flagged while correcting it: the **2.2 N·cm detent
+  torque** quoted in six places is unsourced and is exactly the 17HS4401's
+  datasheet figure, so it may describe the wrong motor.  The conclusion it
+  supports (coils stay energised) is over-determined by §5.7's other arguments,
+  but the number now carries a `VERIFY`.
+
+  **The heap dip, and the defect that stopped it being explained.**  Free heap
+  fell 71.7 KB → 45.2 KB → 66.7 KB over the hour.  The device's log ring should
+  have said what allocated ~26 KB.  It could not: the ring was **100 % full of an
+  MQTT reconnect storm** — the broker was unreachable, esp-mqtt retried every
+  ~10.5 s all hour, five log lines an attempt, **6835 lines evicted since boot**.
+  The soak's own per-minute record was evicted by a peripheral that was not part
+  of the test.  The dip's cause is therefore **not established**; the candidates
+  that can be sized from source are a WiFi reconnect's buffer churn and an HTTP
+  response (`/api/ring` is a ~9.4 KB document and the largest single allocation a
+  browser request makes).  Recorded as an open question with `mqtt off` as the
+  first command of the next session.
+
+- 2026-09-12 — **A PERSISTED VALUE THAT PREDATES THE DRIVE CHANGE MUST NOT
+  SURVIVE A BOOT.**  Found on the bench board: **`hall_tol` = 41 in NVS**.  That
+  is a quarter of the dead 85T/33T rim gear's 164.85-µstep flap, and **64 % of
+  this machine's 64-µstep flap**.  It had survived the drive change, a reflash
+  and six reboots.
+
+  CLAUDE.md's standing rule is that a constant meaning "a fraction of a flap"
+  must DERIVE from a flap, and `hall_tol` does — `ring_target_usteps(1) / 4`.
+  **The derivation only ever set the DEFAULT.**  `config::load` then overwrote it
+  with whatever NVS held, and nothing looked.  Nothing about the failure is
+  visible either: §5.4's silent-accept band simply grows until it swallows real
+  slips, and the first symptom is a drum that is wrong and a log that says
+  everything is fine.  The magnet goes on next session, so it would have
+  corrupted the first closed-loop homing this project has ever done.
+
+  **The fix is a rule about the current geometry, not a blocklist.**
+  `hall_tol_migrated()` in `motion_types.h` discards anything that cannot be a
+  fraction of *this* flap and falls back to the derived quarter.  The ceiling is
+  **half a flap**: §5.4 grades an edge error as silent (≤ hall_tol), major resync
+  (≤ one flap) or fault (> one flap), so a tolerance at or above one flap erases
+  the middle band outright, and one past half a flap accepts more than half of
+  every real slip without a word.  Host-tested in `test_motion_math.cpp` against
+  the rule rather than against 41.
+
+  **`motion.accel` had the same hole and gets the same treatment.**  It is not a
+  fraction of a flap, so that rule does not catch it, but it was also loaded from
+  NVS unvalidated — and **`accel == 0` divides by zero** in `ramp_next_velocity`'s
+  brake term.  The API refused < 1000; the load path did not, so a record written
+  by another build or a corrupted page reached the 1 kHz tick.  `ACCEL_MIN` and
+  `ACCEL_MAX` now live in `motion_types.h` and are used by the load path, the
+  dispatcher and the web slider, so the three cannot drift apart.
+
+- 2026-09-12 — **Console `maint off` did not re-home, and said it did.**
+  `motion::set_columns` called `enable(!next.maintenance)` **before** assigning
+  `g_cols = next`, so on the way *out* of maintenance `enable(true)` read the
+  still-true old flag, took the maintenance exemption meant for the way *in*,
+  logged "NOT homing (spec 5.9); the drums are yours", and posted no Home to any
+  column.  The console printed `maintenance off; re-homing` and re-homed nothing.
+
+  The dispatcher path was unaffected — `api.cpp` calls `motion.home(-1)`
+  explicitly after `cmd_maintenance(false)` — so `motion.maintenance false` over
+  web or MQTT worked while the console did not, and both reported success.
+  §5.9's "leaving re-arms everything and re-homes all five" is a **safety claim**
+  about drums that have been moved by hand, and the console is the path BRINGUP
+  tells a bench operator to use.  Fixed by assigning `g_cols` before the
+  `enable()` call; found by reading the source to write the bench command sheet,
+  not by running it.
+
+- 2026-09-12 — **Level 0 rev 2: the driver seats POT-DOWN, and that mirrors the
+  whole physical layout.**  Measured on the real part: **FYSETC solders the
+  header strips so the pins exit the COMPONENT face** — the face carrying the
+  Vref trimpot.  Two consequences, and the second is the one that bites:
+
+  1. **The pot is unreachable once the module is inserted.**  So Vref is now set
+     with the driver **floating on two flying VIO/GND leads, before insertion**,
+     and `docs/BENCH_WIRING.md` §4 step 2 is rewritten around that.  It is also
+     the only way to satisfy rule 3 without pulling a module out of a powered
+     board.
+  2. **Left and right swap.**  The silkscreen names its headers as read
+     component-side up; turning the module over exchanges them, while the order
+     *along* each header is unchanged.  So every pin is exactly where you expect
+     along the module and on the wrong side of it — and a mirrored VM and GND is
+     a reversed supply.  The generator derives every column from one
+     `SEATS_POT_DOWN` flag rather than re-typing coordinates, so the mirror
+     propagates or it does not happen at all.
+
+  **The mirror surfaced a defect that predated it:** MS1/MS2 and VIO both go to
+  3V3 but land on **opposite halves of the board**, and a full-size breadboard's
+  top and bottom rail pairs are **separate nodes**.  The pages fed one pair and
+  never drew the links, i.e. they could not be built as drawn.  Two rail links
+  are now part of the derived jumper count.
+
+  Also this pass: the supply is a **current-limited bench PSU** (9 V at 0.5 A for
+  first power, 20 V for the soak), and the **RotoPD is struck through with its
+  reason** — I2C-configured, defaults to 5 V, current-limits nothing — rather
+  than deleted, because a part that vanishes from a list gets bought again.
 
 - 2026-09-06 — **DRIVE ARCHITECTURE CHANGED: the rim gear is dead, the motor
   sits inside the drum, 1:1 direct.**  `docs/ref/DRIVE_CHANGE.md` is the

@@ -1293,6 +1293,36 @@ touch, not from memory.
 - **a timer, an hour you do not need the bench for, and a pen** — the blanks
   below are the deliverable
 
+### THE CONSOLE CAN COME UP IN DOWNLOAD MODE — RST GETS YOU OUT
+
+**Observed at the bench, 2026-09-12.** Attaching `idf.py monitor` (or any serial
+terminal) sometimes leaves the board sitting in the ROM serial bootloader instead
+of running the firmware: the console is silent, or prints a `waiting for
+download` banner, and nothing you type does anything.
+
+It is not a fault and nothing is damaged. **The cause is the same DTR/RTS trap
+that is already documented for scripted console work** (`README.md`, and spec
+§17's 2026-08-23 tooling note): on USB-Serial-JTAG those two lines drive EN and
+the **BOOT strapping pin**, and a terminal that asserts them in the wrong order
+at open reproduces exactly the "hold BOOT, then reset" gesture that selects the
+bootloader. The ROM has decided before a single instruction of ours runs — spec
+§2.5 says why no firmware can override it.
+
+- [ ] **press RST on the DevKitC-1.** The board reboots normally and the console
+      comes back. That is the whole recovery.
+- [ ] **`Ctrl+]` exits `idf.py monitor`** — this is the one people hunt for.
+      `Ctrl+C` is caught by the monitor's own handler and does not detach.
+
+Two things that make it less likely, neither of them required: open the terminal
+**before** powering the board rather than after, and prefer the native
+USB-Serial-JTAG port over the UART bridge. A scripted session should clear both
+lines before `open()`, which is what `README.md` already says and why.
+
+**If RST does not recover it**, the button really is held — check that nothing is
+resting on the BOOT button, including a bench lead or the enclosure. A stuck BOOT
+button is indistinguishable from this at the console and is logged once at WARN
+by the firmware when it does manage to boot (§2.5).
+
 ### THE FLASH PROCEDURE — the only one in this repository
 
 Everywhere else that used to carry flash commands for this session now points
@@ -1534,14 +1564,43 @@ a calculation.
 6. Record it here, because the next session cannot re-derive it:
 
    ```
-   driver #1 serial / marking : ______________________
-   sense resistor (if legible): ______________ ohm
-   Vref set                   : ______________ V
-   measured phase current     : ______________ A RMS   (Step 5 below)
-   date / who                 : ______________________
+   driver #1 serial / marking : ______________________   <- still blank
+   sense resistor (if legible): ______________ ohm       <- still blank
+   Vref set                   : ____ V  **NOT MEASURED** - see below
+   measured phase current     : **INFERRED, not measured** - see below
+   date / who                 : 2026-09-12 / Nico
    ```
 
-- [ ] Vref set and **written down above**
+- [x] Vref set. **THE POT WAS NEVER READ WITH A METER, AND THAT IS THE ONE
+      LOOSE END OF THIS SESSION.** What was measured instead was the SUPPLY
+      current at 20 V, which is evidence about the coil current but is not the
+      same quantity:
+
+  ```
+  supply current, column moving : 0.06 - 0.07 A   at 20 V
+  supply current, holding still : 0.01 - 0.02 A   at 20 V
+  ```
+
+  **Why that is consistent with 0.7 A RMS and does not prove it.** A TMC2209 is
+  a switching regulator, not a resistor: it chops 20 V down to whatever the coil
+  needs, so the supply current is roughly the coil power divided by 20 V, not
+  the coil current. At 0.7 A RMS through a 1.2 Ohm winding the copper loss is
+  2 x 0.7^2 x 1.2 = 1.18 W, which at 20 V is **0.059 A** — the bottom of the
+  measured moving range, before driver losses. The hold figure falling to about
+  a quarter of the moving one is standstill reduction doing what it should
+  (§5.7a: hold is ~50 % of run current, and power goes as the square).
+
+  So the figure is *consistent*, and the ratio confirms PDN_UART's polarity.
+  It is not a measurement of Vref, and it is not a measurement of phase current.
+
+- [ ] **STILL OWED: put a meter on the pot.** One DC-volts reading against
+      page 24's table. Do it at the start of the hall session, before the module
+      goes back in — it seats pot-down and the pot is unreachable once it is
+      (`docs/wiring/` "Which way up the driver goes").
+
+      ```
+      Vref, actually measured : ______________ V
+      ```
 
 ### Step 3 — direction: the drum must turn the DESCENDING way
 
@@ -1589,9 +1648,16 @@ a slipped coupling and wrong coil pairing, where `revs` reports one number.
 - [ ] the mark returns to **exactly** where it started
 
    ```
-   mark returned to start? yes / no
-   if no, what you saw    : ______________________________________
+   mark returned to start? YES - exactly, 2026-09-12
+   if no, what you saw    : n/a
    ```
+
+   **THE GEOMETRY IS PROVEN.** `step 0 3200` returned the mark to where it
+   started, which settles three things at once that `revs` could not have: the
+   drive is **1:1** (not 2.576:1, not anything else), the microstep setting
+   really is **1/16** (1/8 would have given two revolutions, 1/4 four), and the
+   coil pairing is right (wrong pairing judders without net rotation). 64
+   usteps/flap and 3200/revolution are now **measured, not assumed**.
 
    Read the six-row diagnosis table in BENCH_WIRING §5 before concluding
    anything: two revolutions means MS1/MS2 are giving 1/8, four means 1/4,
@@ -1700,13 +1766,47 @@ you snatch your hand away     -> FAIL, go to UART/IHOLD (spec 5.7a Plan B)
 Record the verdict — an unrecorded verdict is an hour that has to happen twice:
 
 ```
-rail during the soak  : ______ V        <- must be 20, or the run is void
-hand-on-case verdict  : ______________________________________
-drum exterior (also)  : ______________________________________
-flaps (usteps ISSUED) : ______________
-faults                : ________
-heap start / min      : ______________  /  ______________
-date / who            : ______________________
+rail during the soak  : 20 V          <- confirmed, the run stands
+hand-on-case verdict  : driver WARM, comfortable to keep a finger on
+drum exterior (also)  : drum wall COOL
+flaps (usteps ISSUED) : ______________   <- still blank
+faults                : 0
+heap start / min      : 71.7 KB  /  45.2 KB   (ended 66.7 KB - see below)
+date / who            : 2026-09-12 / Nico
+
+**GATE 3 IS PASSED.** 3600/3600 s, zero faults. The thermal question this whole
+build phase existed to answer — a NEMA 17 sealed in a PLA drum, holding current
+all day — is answered, and the answer is that **Plan A stands**: 0.7 A RMS
+standalone with standstill reduction is enough, and **§5.7a's Plan B (UART +
+IHOLD) is not needed.** That matters beyond the heat: Plan B would have cost one
+or two GPIOs the DevKitC-1 map does not have (§2.2 — GPIO24 is DIR), so the pin
+budget is no longer at risk.
+
+Note which body was warm and which was cool: the **driver** warmed and the
+**drum wall stayed cool**. That is the right way round. The soak was watching
+the motor, and the motor is the part sealed in PLA at 55-60 °C softening point.
+
+**THE HEAP DIP — 45.2 KB — IS EXPLAINED, AND THE EXPLANATION IS A DEFECT.**
+Free heap fell from 71.7 KB to a minimum of 45.2 KB and settled at 66.7 KB, a
+~26 KB transient. The device's own log ring should have shown what allocated it.
+It could not, because **the log ring was 100 % full of an MQTT reconnect storm**:
+the broker at the configured URI was unreachable, esp-mqtt retried every ~10.5 s
+for the whole hour, and each attempt logged five lines. Read back afterwards the
+ring held 160 lines, every one of them MQTT, with **6835 lines evicted since
+boot** — arithmetic that matches the storm almost exactly (5 lines / 10.5 s over
+13,400 s of uptime is ~6,400).
+
+So the soak's own per-minute progress lines, which are the diagnostic record
+this gate produces, were evicted by a peripheral that was not even part of the
+test. The dip's cause is therefore **not established**; the candidates that can
+be sized from source are a WiFi reconnect's buffer churn and an HTTP response
+(`/api/ring` is a ~9.4 KB document and the largest single allocation the board
+makes on a browser request). Both are plausible at ~26 KB; neither is confirmed.
+
+- [ ] **Next session, before anything else: `mqtt off`.** It is one command, it
+      is not part of the test, and it is what makes the log ring mean something.
+- [ ] Then the dip is worth one deliberate look: watch `sys.heap` while opening
+      the web UI, and while forcing a WiFi reconnect.
 
 drum revolutions      : ____ (branch A)   hall_to_hall min..max: ____ (branch A)
 worst edge err        : ____ (branch A)   resyncs minor/major  : ____ (branch A)
@@ -1717,6 +1817,39 @@ worst edge err        : ____ (branch A)   resyncs minor/major  : ____ (branch A)
 run nothing ever compares it to the mechanism. It is a duty figure for the
 thermal question and it is not evidence the drum turned; that is what the
 mark-and-`step 0 3200` check in step 4 is for.
+
+### Step 6a — STEP LOSS AT CARD RELEASE (found 2026-09-12, mechanical)
+
+Not a checklist item — this one was discovered, not looked for, and it is
+recorded here because it is the session's other real finding.
+
+**The motor lost steps at the moment the cards released.** Two contributions,
+both mechanical, both outside the firmware:
+
+1. **The flap stop as set was the dominant load.** This was the larger term by
+   a clear margin; with it adjusted the loss drops sharply.
+2. **The residual is the cards themselves** — 2.2 mm stock. The remaining loss
+   tracks card thickness, not anything electrical.
+
+**FROZEN pending thinner cards.** Nothing in firmware is changed for it and
+nothing should be: raising the current, softening the ramp or widening a
+tolerance would all be firmware compensating for a mechanism that is still being
+built, and the compensation would then be wrong for the mechanism that ships.
+
+What it does mean for the numbers this file is collecting:
+
+- **`flaps_s_alarm` cannot be set from this session** (step 5's usable flap rate
+  is a property of the loaded drum, and this drum's load is about to change).
+- **`motion.accel` was re-derived from physics rather than from this bench**, for
+  the same reason — see the decision log entry for 2026-09-12. The bench figure
+  that "ran less badly" is worth recording when it is known, but it was measured
+  against a flap stop that has since been adjusted.
+
+```
+flap stop adjusted?              : ______________________
+accel that ran less badly        : ______________ usteps/s^2   <- still blank
+card stock on order (thickness)  : ______________ mm
+```
 
 ### Step 6b — kill the rail, once
 
