@@ -669,13 +669,29 @@ void set_columns(const ColumnConfig& c) {
     // so a parked or faulted column still holds standstill current.  BRINGUP
     // tells you to enter maintenance before putting your hands in the
     // mechanism, so this must actually happen and not merely be documented.
-    if (next.maintenance != g_cols.maintenance) {
+    //
+    // THE ASSIGNMENT HAS TO HAPPEN BEFORE enable(), AND THAT IS THE WHOLE FIX.
+    // enable(true) consults g_cols.maintenance to decide whether to re-home -
+    // spec 5.9 exempts maintenance, because energizing during a repair should
+    // give powered, stationary drums.  Calling it while g_cols still held the
+    // OLD value made LEAVING maintenance take the exemption meant for ENTERING
+    // it: enable(true) read maintenance == true, logged "NOT homing (spec 5.9);
+    // the drums are yours", returned, and posted no Home to any column.  So
+    // `maint off` at the console printed "maintenance off; re-homing" and did
+    // not re-home, while the dispatcher path was fine because api.cpp calls
+    // motion.home(-1) explicitly after cmd_maintenance(false).  Spec 5.9's
+    // "leaving re-arms everything and re-homes all five" is a safety claim -
+    // the drums have been moved by hand and nothing knows where they are - and
+    // the console is the path BRINGUP tells a bench operator to use.
+    // Found 2026-09-12 while verifying the bench console sheet against source.
+    const bool was_maint = g_cols.maintenance;
+    g_cols = next;
+    if (next.maintenance != was_maint) {
         enable(!next.maintenance);
         ESP_LOGW(TAG, "maintenance %s; EN %s",
                  next.maintenance ? "ON" : "off",
                  next.maintenance ? "RELEASED (all five - it is ganged)" : "asserted");
     }
-    g_cols = next;
     republish_masks();
 }
 
@@ -795,6 +811,9 @@ void enable(bool on) {
         return;
     }
 
+    // set_columns assigns g_cols BEFORE calling this, so on the way OUT of
+    // maintenance the flag is already clear here and the re-home below runs.
+    // It did not always: see the block at the end of set_columns.
     if (g_cols.maintenance) {
         ESP_LOGI(TAG, "EN asserted, maintenance on - NOT homing (spec 5.9); "
                       "the drums are yours");
