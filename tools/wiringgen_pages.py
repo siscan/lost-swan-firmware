@@ -46,6 +46,7 @@ PAGE_ORDER = [
     "c_step", "c_dir", "c_en", "c_vio", "c_gndl",
     "c_ms1", "c_ms2", "c_pdn", "c_vm", "c_gndp",
     "cap", "physlogic", "physpower",        # the bulk cap, then the real board
+    "hall_part", "hall_wire", "hall_test",  # the sensor: which way round, wired, proved
     "continuity", "vref", "coila", "coilb",
     "finished", "physdone", "power",
 ]
@@ -130,8 +131,10 @@ def page01(pins, table):
                "kind of statement - page %d says which." % (len(PAGE_ORDER), P("bomprep")),
                19, INK, cols=64, lh=28)
     y = p.banner(52, y + 14, 720,
-                 "The Hall sensor and magnet are NOT fitted. No homing, no position, no "
-                 "closed loop this round. That is expected, not a fault.", "warn")
+                 "THE HALL SENSOR AND MAGNET ARE FITTED (2026-09-20). This module homes, "
+                 "so pages %d-%d are new and everything after them can be closed loop. "
+                 "Gate 3 ran without them and every page said so."
+                 % (P("hall_part"), P("hall_test")), "good")
     y = p.banner(52, y + 8, 720,
                  "READ PAGE %d FIRST. The three rules on it are how TMC2209 drivers die."
                  % P("killers"), "danger")
@@ -147,6 +150,7 @@ def page01(pins, table):
              (rng("c_step", "c_gndl"), "wire the logic  (driver to ESP32)", 0),
              (rng("c_ms1", "c_gndp"), "wire the microsteps, then the power", 0),
              (rng("cap", "physpower"), "the bulk capacitor, then the board as BUILT", 0),
+             (rng("hall_part", "hall_test"), "the Hall sensor  <-  and PROVE its polarity", 1),
              (rng("continuity", "continuity"), "continuity check  <-  find mistakes with a meter", 1),
              (rng("vref", "vref"), "set Vref  <-  motor still NOT connected", 1),
              (rng("coila", "coilb"), "connect the motor  <-  power off while you do it", 1),
@@ -160,20 +164,20 @@ def page01(pins, table):
 
     kx, ky = 850, 148
     p.text(kx, ky, "WIRE COLOURS — the same on every page", 20, INK, weight="bold")
-    p.rect(kx - 14, ky + 20, 700, 452, fill="#fafbfc", stroke=FAINT, sw=2, rx=6)
+    p.rect(kx - 14, ky + 20, 700, 494, fill="#fafbfc", stroke=FAINT, sw=2, rx=6)
     label = {"GNDL": "GND  (logic)", "GNDP": "GND  (power)", "VIO": "VIO  ->  3V3",
-             "VM": "VM  (motor +)"}
+             "VM": "VM  (motor +)", "HOUT": "HALL OUT"}
     for i, k in enumerate(["VM", "GNDP", "VIO", "GNDL", "STEP", "DIR", "EN",
-                           "MS1", "MS2", "PDN"]):
+                           "MS1", "MS2", "PDN", "HOUT"]):
         nm, col, sw = COLOURS[k]
         yy = ky + 58 + i * 41
         p.line(kx + 8, yy, kx + 100, yy, col, sw)
         p.mono(kx + 120, yy + 6, label.get(k, k), 17, INK)
         p.text(kx + 350, yy + 6, nm, 17, MUTE)
-    p.text(kx - 6, ky + 500, "The motor keeps its own colours: red, blue, green, black.",
+    p.text(kx - 6, ky + 542, "The motor keeps its own colours: red, blue, green, black.",
            16, MUTE)
-    p.text(kx - 6, ky + 528, "Use any wire you like — but be consistent, and", 16, MUTE)
-    p.text(kx - 6, ky + 552, "never use red or black for a signal.", 16, INK, weight="bold")
+    p.text(kx - 6, ky + 570, "Use any wire you like — but be consistent, and", 16, MUTE)
+    p.text(kx - 6, ky + 594, "never use red or black for a signal.", 16, INK, weight="bold")
     return p
 
 
@@ -660,7 +664,7 @@ def page21(pins, table):
           "USB-C from the PC to the ESP32.  VIO comes up; logic defined.",
           "Confirm EN reads high (disabled) — page %d.  USB in, VM still off." % P("c_en"),
           "Watch the console boot.  Board healthy BEFORE any motor voltage.",
-          "maint on     — stops it hunting for a Hall that is not there.",
+          "maint on     — nothing homes or moves while your hands are on it.",
           "PSU to 9 V with a 0.5 A LIMIT set FIRST.  Output stage now live.",
           "en 1         — and only now are the coils energised."]
     off = ["en 0        — de-energise the coils first.",
@@ -706,10 +710,12 @@ def page21(pins, table):
            19, DANGER, cols=70, lh=26, weight="bold")
     p.wrap(830, 960,
            "EXPECTED, not a problem: faults on columns 1-4 (nothing is wired to them), a "
-           "no_hall fault on column 0 before `maint on`, a steady hiss at standstill (the "
-           "chopper), and the drum settling to a slightly different rest position after "
-           "`en 0` — that is the 3.92 N·cm imbalance against a 2.2 N·cm detent, and seeing "
-           "it confirms the premise.", 16, MUTE, cols=64, lh=23)
+           "steady hiss at standstill (the chopper), and the drum settling to a slightly "
+           "different rest position after `en 0` — that is the 3.92 N·cm imbalance against "
+           "a 2.2 N·cm detent, and seeing it confirms the premise. A no_hall fault on "
+           "COLUMN 0 is NOT expected any more: this module has a sensor, so that is a "
+           "finding and page %d says which of three things it is." % P("hall_test"),
+           16, MUTE, cols=64, lh=23)
     return p
 
 
@@ -718,6 +724,8 @@ def page_bom(pins, table):
     p = Page(P("bom"), "Bench bill of materials",
              "Every physical object the session needs. Tick it, then start.")
     jc = jumper_counts(table)
+    hall = FACTS.get("hall", {})
+    pullup = ("%g kohm" % FACTS["pullup_k"]) if FACTS.get("pullup_k") else "10 kohm"
     p.banner(52, 108, 1496,
              "NOTHING HERE NEEDS ACQUIRING. Every item was confirmed on hand on "
              "2026-09-11, the 830-point breadboard included. This box exists so that "
@@ -732,63 +740,91 @@ def page_bom(pins, table):
          "Already on the bench. It stays OFF the breadboard - page %d says why - so every "
          "wire that reaches it is male-to-female." % P("board")),
         ("NEMA 17 + printed stand-in axle", "1",
-         "The load. The axle is PLA, which is why the firmware clamps every commanded "
-         "speed to one drum revolution per second and why that cap is not configurable."),
+         "The load. The axle is PLA, which is why every commanded speed is REFUSED above "
+         "this image's cap. The cap is compiled in and can only be lowered at build time, "
+         "never raised and never from a console."),
         ("Breadboard, full-size 830-point", "1",
          "63 rows, two rail pairs, an 0.3 in centre channel. The channel is the only "
          "reason a StepStick works on a breadboard at all - page %d." % P("board")),
-        ("Jumper wires, male-to-FEMALE", str(jc["mf"]),
-         "Three signals (STEP, DIR, EN) and the two rail feeds. Female onto the ESP32's "
-         "pins, male into the board."),
+        ("Jumper wires, male-to-FEMALE", str(jc["mf"] + len(hall)),
+         "Three signals (STEP, DIR, EN), the two rail feeds, and the Hall's %d flying "
+         "leads. Female onto the ESP32's pins, male into the board." % len(hall)),
         ("Jumper wires, male-to-male", str(jc["mm"]),
-         "Board-internal: VIO, GND (logic), MS1 and MS2 to the rails, plus %d RAIL LINKS "
-         "- the top and bottom rail pairs are separate nodes and both are in use. Counts "
-         "are derived from the parsed table, not typed here." % jc["links"]),
+         "Board-internal: VIO, GND (logic), MS1 and MS2 to the rails, plus %d RAIL LINKS: "
+         "the two rail pairs are separate nodes and both are in use. Counts derive from "
+         "the parsed table." % jc["links"]),
         ("JST-XH 4-way mating pigtail", "1",
          "THE MOTOR PLUG CANNOT ENTER A BREADBOARD. The pigtail's four flying leads can. "
          "Page %d shows exactly where they terminate." % P("bomprep")),
         ("100 uF electrolytic, 35 V or more", "1",
          "The bulk capacitor. Its legs need trimming and bending before it will reach the "
          "right two holes - lead prep on page %d." % P("bomprep")),
-        ("Hookup wire, 22 AWG SOLID core", "30 cm red + black",
-         "PSU terminal to the board. Solid, not stranded: stranded frays in a breadboard "
-         "hole, will not hold, and leaves a strand behind."),
+        ("Hookup wire, 22 AWG SOLID core", "30 cm",
+         "Red and black, PSU terminal to the board. Solid, not stranded: stranded frays "
+         "in a breadboard hole, will not hold, and leave a strand behind."),
         ("Flat screwdriver, 2 mm blade", "1",
          "The Vref trimpot on page %d, and the PSU's terminals. A blade that does not fit "
          "the pot slips off it onto a pad." % P("vref")),
         ("Multimeter with a continuity beep", "1",
          "Coil pairs (page %d), continuity (page %d), Vref (page %d). Continuity and DC "
-         "volts on a 2 V range are the only functions used."
+         "volts on a 2 V range are all it needs."
          % (P("coilpairs"), P("continuity"), P("vref"))),
         ("USB-C cable, PC to ESP32", "1",
          "Console and logic power. A DATA cable - a charge-only lead gives a board that "
-         "powers up, looks alive, and never appears as a serial port."),
+         "looks alive and never appears as a serial port."),
         ("Bench PSU, current-limited", "1",
-         "VM, and the single most useful safety device on the bench. 9 V at a 0.5 A LIMIT "
-         "for first power; 20 V for the soak. A wiring fault trips the limit, not the "
+         "VM, and the most useful safety device on the bench. 9 V at a 0.5 A LIMIT for "
+         "first power, 20 V for the soak. A wiring fault trips the limit, not the "
          "driver."),
-        ("RotoPD USB-C trigger  --  NOT USED", "0  -  struck 2026-09-12",
-         "It is I2C-configured and DEFAULTS TO 5 V, so it cannot be trusted to come up at "
-         "the voltage you set, and it current-limits nothing. Listed struck rather than "
-         "deleted so it is not bought again."),
+        ("RotoPD USB-C trigger  --  NOT USED", "struck",
+         "I2C-configured and DEFAULTS TO 5 V, so it cannot be trusted to come up at the "
+         "voltage you set, and it current-limits nothing. Struck, not deleted, so it is "
+         "not bought again."),
         ("Hex key for the drum set screw", "1",
          "Fit the stand-in drum, and MARK it - a tape flag will do - so that `step 0 3200` "
          "is a readable result rather than a guess."),
-        ("Heatsink (supplied, loose)", "0  -  NOT this session",
+        ("Heatsink (supplied, loose)", "not used",
          "Deliberately not installed. Page %d has the reasoning and the one condition that "
          "would change it." % P("bomprep")),
-        ("Hall sensor + magnet", "0  -  NOT this session",
-         "Branch B: no Hall fitted, so no homing, no edge figures, no revs. That is the "
-         "expected configuration for this session and not a fault."),
+        ("A1121LUA-T Hall sensor", "1",
+         "NEW THIS SESSION - gate 3 had none. 3-pin SIP, not TO-92. Page %d says which "
+         "way round it goes; the centre lead is GND whichever way you read it."
+         % P("hall_part")),
+        ("Magnet, O6x3 N42, in the disc", "fitted",
+         "You are not prising it out to look at it. Page %d reads its outward face with "
+         "a SPARE magnet instead: repel = south = correct." % P("hall_test")),
+        ("Spare magnet, same batch", "1",
+         "The polarity meter. It identifies its own south face against the sensor, and "
+         "then reads the glued one without touching it. Page %d." % P("hall_test")),
+        ("Resistor, %s, any type" % pullup, "1",
+         "The Hall's pull-up, OUT to 3V3. The output is OPEN DRAIN: it can pull the pin "
+         "down and cannot pull it up, so without this `hall` reads noise."),
+        ("Ceramic capacitor, 0.1 uF", "1",
+         "Across the sensor's VCC and GND, at the sensor end. The datasheet states it in "
+         "words and the flying leads are long."),
     ]
+    # THREE COLUMNS, and both the column count and the row pitch DERIVE from how
+    # many items there are.  It was a hard-coded 2 x 8 until the Hall arrived
+    # and made it 21; a fixed grid silently overflows the tail, and the tail is
+    # where a late addition lands - which is the exact failure this page's own
+    # banner promises not to have.
+    top, bottom = 216, H - 56
+    ncols = 3
+    per_col = (len(items) + ncols - 1) // ncols
+    bw = (W - 104 - (ncols - 1) * 24) // ncols
+    # The cap is generous because the box has to hold the longest description
+    # at this width, and a four-line card is normal here.  It only binds when a
+    # future revision adds enough items to need a ninth row.
+    pitch = min(122, (bottom - top) // per_col)
+    box_h = pitch - 8
     for i, (name, qty, why) in enumerate(items):
-        cx = 52 if i < 8 else 812
-        yy = 236 + (i % 8) * 100
-        p.rect(cx, yy, 736, 92, fill="#fafbfc", stroke=FAINT, sw=2, rx=6)
-        p.rect(cx + 16, yy + 16, 26, 26, fill="none", stroke=INK, sw=2, rx=4)
-        p.text(cx + 58, yy + 36, name, 17, INK, weight="bold")
-        p.mono(cx + 720, yy + 36, qty, 15, MUTE, "end")
-        p.wrap(cx + 58, yy + 62, why, 13, MUTE, cols=84, lh=18)
+        cx = 52 + (i // per_col) * (bw + 24)
+        yy = top + (i % per_col) * pitch
+        p.rect(cx, yy, bw, box_h, fill="#fafbfc", stroke=FAINT, sw=2, rx=6)
+        p.rect(cx + 14, yy + 13, 22, 22, fill="none", stroke=INK, sw=2, rx=4)
+        p.text(cx + 48, yy + 30, name, 16, INK, weight="bold")
+        p.mono(cx + bw - 14, yy + 30, qty, 14, MUTE, "end")
+        p.wrap(cx + 48, yy + 54, why, 13, MUTE, cols=56, lh=17)
     return p
 
 
@@ -1425,11 +1461,254 @@ PAGES = [page_bom, page_bomprep, page01, page02, page_headers, page03,
          page_potdown, page_board, page04]
 
 
+
+# ===================== the Hall sensor (2026-09-20) ========================
+#
+# THE FIRST SESSION WITH A SENSOR ON IT.  Gate 3 ran hall-less and every page
+# in this guide said so; the pitch-80 module has the sensor and the magnet, so
+# the column can home and the ladder can be closed-loop.
+#
+# The three GPIO facts on these pages come from the same parsed sources as
+# every other page (hal/pins.h and section 2a of BENCH_WIRING.md, cross-checked
+# by verify()).  The datasheet facts - pin order, south-pole-on, the switch
+# points, the bypass cap - are quoted from Allegro A1120-DS rev. 22 and are
+# stated in the guide's prose as well, so they are reviewable text rather than
+# a picture nobody can diff.
+HALL_LEADS = [("1", "VCC", "supply, 3.0-24 V"),
+              ("2", "GND", "the CENTRE lead"),
+              ("3", "OUT", "open drain, sinks 25 mA")]
+
+
+def draw_hall(p, x, y, scale=1.0, hot=(), face="branded"):
+    """The A1121LUA-T, drawn as the slab it is, leads down."""
+    w, h = 210 * scale, 150 * scale
+    p.rect(x, y, w, h, fill="#f2ede4", stroke=INK, sw=3, rx=6)
+    if face == "branded":
+        p.text(x + w / 2, y + 46 * scale, "allegro", 17 * scale, MUTE, "middle")
+        p.text(x + w / 2, y + 86 * scale, "21 L", 22 * scale, INK, "middle", "bold")
+        p.text(x + w / 2, y + 118 * scale, "BRANDED FACE", 12 * scale, DANGER, "middle",
+               "bold")
+    else:
+        p.text(x + w / 2, y + 80 * scale, "(plain back)", 16 * scale, MUTE, "middle")
+    # the three leads
+    ends = {}
+    for i, (num, name, _d) in enumerate(HALL_LEADS):
+        lx = x + w * (0.22 + 0.28 * i)
+        on = name in hot
+        p.line(lx, y + h, lx, y + h + 66 * scale, INK if on else "#9aa4ae",
+               7 * scale if on else 5 * scale)
+        # Beside the lead, not under it: a wire leaving this lead runs straight
+        # down the same x and would be drawn through a centred label.
+        p.text(lx - 11 * scale, y + h + 90 * scale, num, 15 * scale, MUTE, "end")
+        p.mono(lx - 11 * scale, y + h + 112 * scale, name, 15 * scale,
+               INK if on else MUTE, "end", "bold" if on else "normal")
+        ends[name] = (lx, y + h + 66 * scale)
+    return ends
+
+
+def page_hall_part(pins, table):
+    p = Page(P("hall_part"), "The Hall sensor - which way round",
+             "A1121LUA-T, 3-pin SIP. Every fact here is from Allegro A1120-DS rev. 22")
+    y = p.banner(52, 108, 1496,
+                 "THE CENTRE LEAD IS GND. That one is true whichever way you read the "
+                 "part, and it is the only thing on this page you cannot get backwards.",
+                 "good")
+
+    ends = draw_hall(p, 120, y + 106, 1.0, hot=("VCC", "GND", "OUT"))
+    p.text(225, y + 60, "leads DOWN", 16, INK, "middle", "bold")
+    p.text(225, y + 84, "branded face TOWARDS you", 16, INK, "middle", "bold")
+
+    tx = 440
+    p.text(tx, y + 70, "The terminal list, package UA", 21, INK, weight="bold")
+    p.line(tx, y + 84, tx + 520, y + 84, FAINT, 2)
+    for i, (num, name, desc) in enumerate(HALL_LEADS):
+        yy = y + 124 + i * 46
+        p.circle(tx + 18, yy - 6, 17, INK)
+        p.text(tx + 18, yy, num, 17, "#ffffff", "middle", "bold")
+        p.mono(tx + 52, yy, name, 19, INK, weight="bold")
+        p.text(tx + 160, yy, desc, 17, MUTE)
+    left_bottom = p.wrap(tx, y + 292,
+                         "The datasheet numbers these in a view of the BRANDED face - the "
+                         "side carrying the supplier emblem, two digits of the part number "
+                         "and a temperature letter. Turn the part over and 1 and 3 change "
+                         "ends, which is the only way to get this wrong.",
+                         16, INK, cols=60, lh=23)
+
+    bx = 1060
+    p.text(bx, y + 70, "What it does, in its own words", 21, INK, weight="bold")
+    p.line(bx, y + 84, bx + 460, y + 84, FAINT, 2)
+    facts = [("south pole", "turns the output ON"),
+             ("output on", "= LOW  (open drain, pulled down)"),
+             ("north pole", "NOTHING AT ALL - not weaker, nothing"),
+             ("B(OP)", "95 G typical  (50 min, 135 max)"),
+             ("B(RP)", "70 G typical - 25 G of hysteresis"),
+             ("output", "open drain, 25 mA, leaks under 10 uA")]
+    for i, (k, v) in enumerate(facts):
+        yy = y + 122 + i * 38
+        p.mono(bx, yy, k, 16, INK, weight="bold")
+        p.text(bx + 150, yy, v, 16, MUTE)
+    right_bottom = p.banner(bx, y + 366, 460,
+                            "A NORTH POLE PRODUCES NO TRANSITION, so motion.hall_active_low "
+                            "cannot rescue a magnet glued in backwards - it inverts how the "
+                            "firmware reads an output that never moved.", "danger", size=15)
+
+    # MEASURED, not guessed.  Both columns above are wrapped text whose height
+    # depends on the words in them, and the first cut of this page put the rule
+    # through the middle of the red banner.  banner() and wrap() both return the
+    # y they finished at, which is the whole reason they do.
+    rule = max(left_bottom, right_bottom) + 34
+    p.line(52, rule, 1548, rule, FAINT, 2)
+    p.text(52, rule + 42, "Active LOW with the magnet present is now a DATASHEET fact",
+           20, INK, weight="bold")
+    p.wrap(52, rule + 76,
+           "Spec 2 has carried VERIFY on this since the part changed from the A3144. The "
+           "selection guide settles it: the column is headed \"Output In South (Positive) "
+           "Magnetic Field\" and the A1121's entry reads \"On (logic low)\". So "
+           "motion.hall_active_low = true, which is already the firmware default. What is "
+           "still a bench question is the WIRING - a pull-up to the wrong rail, or a lead "
+           "in the wrong hole, changes what the GPIO sees and not what the sensor does.",
+           17, INK, cols=112, lh=25)
+    return p
+
+
+def page_hall_wire(pins, table):
+    hall = FACTS.get("hall", {})
+    pullup = FACTS.get("pullup_k")
+    gp = "GPIO%d" % pins["HALL"]
+    p = Page(P("hall_wire"), "Wire the Hall sensor",
+             "Three leads and one resistor. VM may stay off for all of this.")
+
+    draw_esp(p, hot=("3V3", "GND", gp))
+    # The sensor sits clear of the board outline, leads down, and the three
+    # runs come back to the ESP's pin stubs in their own corridors.  Drawn on
+    # the right because esp_xy() is the RIGHT edge of the module.
+    ends = draw_hall(p, 640, 190, 0.9, hot=("VCC", "GND", "OUT"))
+    p.text(734, 168, "sensor, on flying leads", 15, MUTE, "middle")
+
+    vcc, gnd, out = ends["VCC"], ends["GND"], ends["OUT"]
+    a3, ag, ao = esp_xy("3V3"), esp_xy("GND"), esp_xy(gp)
+    # Three corridors, all BELOW the lead ends and the lead labels, chosen so
+    # no two runs cross: VCC turns first and highest, GND outside and lower,
+    # OUT straight along its own pin row under both.
+    run(p, [vcc, (vcc[0], 470), (490, 470), (490, a3[1]), a3], "VIO")
+    run(p, [gnd, (gnd[0], 520), (452, 520), (452, ag[1]), ag], "GNDL")
+    run(p, [out, (out[0], ao[1]), ao], "HOUT")
+    p.text(484, 338, "3V3", 15, COLOURS["VIO"][1], "end", "bold")
+    p.text(446, 400, "GND", 15, COLOURS["GNDL"][1], "end", "bold")
+    p.text(600, ao[1] - 14, gp, 15, COLOURS["HOUT"][1], "middle", "bold")
+
+    # The pull-up, drawn where it belongs: across OUT and 3V3.
+    rx, ry = 1010, 180
+    p.rect(rx, ry, 300, 210, fill="#fafbfc", stroke=INK, sw=3, rx=8)
+    p.text(rx + 150, ry + 38, "THE PULL-UP", 19, INK, "middle", "bold")
+    p.rect(rx + 118, ry + 82, 64, 86, fill="#e8dcc6", stroke=INK, sw=3, rx=4)
+    p.text(rx + 150, ry + 134, ("%g k" % pullup) if pullup else "?", 24, INK,
+           "middle", "bold")
+    p.line(rx + 150, ry + 64, rx + 150, ry + 82, COLOURS["VIO"][1], 6)
+    p.line(rx + 150, ry + 168, rx + 150, ry + 188, COLOURS["HOUT"][1], 6)
+    p.text(rx + 196, ry + 74, "3V3", 15, COLOURS["VIO"][1], "start", "bold")
+    p.text(rx + 196, ry + 188, "OUT", 15, COLOURS["HOUT"][1], "start", "bold")
+
+    y = p.wrap(1010, ry + 246,
+               "THE OUTPUT IS OPEN DRAIN. It can pull the line down and it cannot pull it "
+               "up, so with no resistor the GPIO floats and `hall` reads noise. This is "
+               "the one wire in the guide that is a component rather than a jumper.",
+               16, INK, cols=48, lh=23)
+    p.text(1010, y + 34, "And 0.1 uF at the sensor", 19, INK, weight="bold")
+    p.wrap(1010, y + 68,
+           "Across VCC and GND, at the sensor end of the flying leads. The datasheet: "
+           "\"strongly recommended ... in close proximity to the Hall element\". The leads "
+           "are long and the drivers are switching a metre away.",
+           16, MUTE, cols=48, lh=23)
+
+    p.rect(52, 790, 1496, 2, fill=FAINT, stroke="none")
+    p.text(52, 832, "The four connections", 20, INK, weight="bold")
+    rows = [("VCC", hall.get("VCC", "3V3"), "M-F", "3.0-24 V part; there is no 5 V rail"),
+            ("GND", hall.get("GND", "GND"), "M-F", "the same ground as everything else"),
+            ("OUT", hall.get("OUT", gp), "M-F", "column 0's hall pin, from hal/pins.h"),
+            (("%g k resistor" % pullup) if pullup else "resistor",
+             "OUT to 3V3", "-", "the open drain cannot pull up by itself")]
+    for i, (a, b, kind, why) in enumerate(rows):
+        yy = 876 + i * 34
+        p.mono(60, yy, a, 17, INK, weight="bold")
+        p.mono(268, yy, "->", 17, MUTE)
+        p.mono(318, yy, b, 17, INK, weight="bold")
+        p.mono(508, yy, kind, 15, MUTE)
+        p.text(578, yy, why, 16, MUTE)
+    p.banner(1060, 818, 488,
+             "THE SENSOR IS NOT ON THE BREADBOARD. It is on the module, on flying leads, "
+             "so it has no row and column - which is also why this page carries no layout "
+             "caveat: there is no layout to be wrong about.", "warn", size=15)
+    return p
+
+
+def page_hall_test(pins, table):
+    p = Page(P("hall_test"), "Prove the Hall before you trust a home",
+             "Three checks, no motion, about two minutes")
+    y = p.banner(52, 108, 1496,
+                 "ONE EVENING OF \"THE SENSOR IS DEAD\" IS ALWAYS A FLIPPED MAGNET. That is "
+                 "gotcha 2 in docs/ref/BOM.md and it has been there since the beginning. "
+                 "Check 2 below reads the glued magnet without touching it.", "danger")
+
+    box = [(1, "The sensor is alive, and which face is its SOUTH",
+            "Power the board. VM may be off. Type `hall`: with nothing near the sensor, "
+            "column 0 reads raw=1 magnet=no. Now bring ONE FACE of a SPARE magnet up to "
+            "the branded face. If it flips to magnet=YES, that face is the spare's SOUTH "
+            "- mark it S with a pen, now. If not, turn the spare over; one of the two "
+            "faces trips it."),
+           (2, "The GLUED magnet's outward face, without prising it out",
+            "A magnet is its own polarity meter. Bring the spare's marked S face towards "
+            "the glued magnet's exposed face. REPEL means the glued face is SOUTH and it "
+            "will trip the sensor. ATTRACT means it is NORTH and it never will - the "
+            "magnet is in backwards and has to be re-glued."),
+           (3, "Turn the drum by hand and watch",
+            "`maint on` first, so nothing commands a move while your hands are on it. "
+            "Turn the drum slowly through a full revolution with `hall` on screen. Once "
+            "per revolution, and once only, column 0 must read magnet=YES.")]
+    yy = y + 46
+    for n, head, body in box:
+        h = 44 + wrap_h(body, 16, 104, 23) + 24
+        p.rect(52, yy, 1000, h, fill="#fafbfc", stroke=FAINT, sw=2, rx=8)
+        p.circle(92, yy + 40, 24, INK)
+        p.text(92, yy + 48, str(n), 22, "#ffffff", "middle", "bold")
+        p.text(132, yy + 48, head, 20, INK, weight="bold")
+        p.wrap(132, yy + 82, body, 16, MUTE, cols=94, lh=23)
+        yy += h + 16
+
+    # The repel / attract table, which is the part worth having big.
+    tx, ty = 1088, y + 60
+    p.rect(tx, ty, 460, 268, fill="#fafbfc", stroke=INK, sw=3, rx=8)
+    p.text(tx + 230, ty + 40, "CHECK 2, IN ONE TABLE", 19, INK, "middle", "bold")
+    p.line(tx + 24, ty + 56, tx + 436, ty + 56, FAINT, 2)
+    p.text(tx + 24, ty + 92, "spare's S face and", 16, MUTE)
+    p.text(tx + 24, ty + 116, "the glued magnet...", 16, MUTE)
+    for i, (what, pole, col) in enumerate((("REPEL", "SOUTH  -  correct", GOOD),
+                                           ("ATTRACT", "NORTH  -  re-glue it", DANGER))):
+        yy2 = ty + 168 + i * 56
+        p.text(tx + 24, yy2, what, 22, col, weight="bold")
+        p.text(tx + 176, yy2, pole, 17, col, weight="bold")
+    p.wrap(tx, ty + 296,
+           "Like poles repel. A spare whose south face pushes back is facing another "
+           "south, and south is what turns this part on.", 15, MUTE, cols=48, lh=21)
+
+    p.wrap(tx, ty + 396,
+           "A wide arc of magnet=YES means the gap is too small or the magnet too strong "
+           "for the bracket; the firmware does not care, but the edge is where a step "
+           "count gets latched, so a narrow one is worth having. Record the gap.",
+           15, MUTE, cols=48, lh=21)
+    p.rect(tx, ty + 490, 300, 40, fill="none", stroke=INK, sw=2, rx=4)
+    p.mono(tx + 16, ty + 516, "air gap  =  ______ mm", 17, MUTE)
+    return p
+
+
 def all_pages(pins, table):
     out = [f(pins, table) for f in PAGES]
     out += make_conn_pages(pins, table)
     out += [page15(pins, table), page_physlogic(pins, table),
-            page_physpower(pins, table), page16(pins, table), page17(pins, table),
+            page_physpower(pins, table),
+            page_hall_part(pins, table), page_hall_wire(pins, table),
+            page_hall_test(pins, table),
+            page16(pins, table), page17(pins, table),
             page18(pins, table), page19(pins, table), page20(pins, table),
             page_physdone(pins, table), page21(pins, table)]
     out.sort(key=lambda p: p.num)

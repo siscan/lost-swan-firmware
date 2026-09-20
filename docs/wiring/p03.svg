@@ -4,45 +4,48 @@
 <line x1="0" y1="88" x2="1600" y2="88" stroke="#c7ced6" stroke-width="2"/>
 <text x="52" y="47" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="29" fill="#14181d" text-anchor="start" font-weight="bold">Bench wiring — module V1</text>
 <text x="52" y="74" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">First power-on, connection by connection</text>
-<text x="1548" y="52" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="26" fill="#6b7683" text-anchor="end" font-weight="bold">3 / 29</text>
-<text x="52" y="148" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#14181d" text-anchor="start" font-weight="normal">The whole job in 29 pages, in the order you should do it. One</text>
+<text x="1548" y="52" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="26" fill="#6b7683" text-anchor="end" font-weight="bold">3 / 32</text>
+<text x="52" y="148" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#14181d" text-anchor="start" font-weight="normal">The whole job in 32 pages, in the order you should do it. One</text>
 <text x="52" y="176" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#14181d" text-anchor="start" font-weight="normal">connection per page. Every pin number here is read out of</text>
 <text x="52" y="204" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#14181d" text-anchor="start" font-weight="normal">hal/pins.h and docs/BENCH_WIRING.md when these pages are</text>
 <text x="52" y="232" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#14181d" text-anchor="start" font-weight="normal">rendered, so a drawing cannot quietly disagree with the</text>
 <text x="52" y="260" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#14181d" text-anchor="start" font-weight="normal">firmware. Row and column numbers are a different kind of</text>
 <text x="52" y="288" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#14181d" text-anchor="start" font-weight="normal">statement - page 2 says which.</text>
-<rect x="52" y="330" width="720" height="102" rx="6" fill="#fdf7ec" stroke="#b8791a" stroke-width="3"/>
-<rect x="52" y="330" width="9" height="102" rx="0" fill="#b8791a" stroke="none" stroke-width="2"/>
-<text x="80" y="362" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="18" fill="#b8791a" text-anchor="start" font-weight="bold">The Hall sensor and magnet are NOT fitted. No homing, no</text>
-<text x="80" y="388" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="18" fill="#b8791a" text-anchor="start" font-weight="bold">position, no closed loop this round. That is expected, not</text>
-<text x="80" y="414" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="18" fill="#b8791a" text-anchor="start" font-weight="bold">a fault.</text>
-<rect x="52" y="448" width="720" height="76" rx="6" fill="#fdf0ef" stroke="#c0261b" stroke-width="3"/>
-<rect x="52" y="448" width="9" height="76" rx="0" fill="#c0261b" stroke="none" stroke-width="2"/>
-<text x="80" y="480" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="18" fill="#c0261b" text-anchor="start" font-weight="bold">READ PAGE 4 FIRST. The three rules on it are how TMC2209</text>
-<text x="80" y="506" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="18" fill="#c0261b" text-anchor="start" font-weight="bold">drivers die.</text>
-<text x="52" y="584" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="20" fill="#14181d" text-anchor="start" font-weight="bold">THE ORDER, and why it is this order</text>
-<text x="60" y="614" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">1-2</text>
-<text x="148" y="614" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">collect the parts, and prepare three of them</text>
-<text x="60" y="642" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">3-5</text>
-<text x="148" y="642" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">the rules, and the one solder job (skipped)</text>
-<text x="60" y="670" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">6-9</text>
-<text x="148" y="670" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">identify the parts, the board, the coil pairs</text>
-<text x="60" y="698" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">10-14</text>
-<text x="148" y="698" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">wire the logic  (driver to ESP32)</text>
-<text x="60" y="726" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">15-19</text>
-<text x="148" y="726" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">wire the microsteps, then the power</text>
-<text x="60" y="754" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">20-22</text>
-<text x="148" y="754" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">the bulk capacitor, then the board as BUILT</text>
-<text x="60" y="782" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#14181d" text-anchor="start" font-weight="bold">23</text>
-<text x="148" y="782" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#14181d" text-anchor="start" font-weight="bold">continuity check  &lt;-  find mistakes with a meter</text>
-<text x="60" y="810" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#14181d" text-anchor="start" font-weight="bold">24</text>
-<text x="148" y="810" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#14181d" text-anchor="start" font-weight="bold">set Vref  &lt;-  motor still NOT connected</text>
-<text x="60" y="838" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#14181d" text-anchor="start" font-weight="bold">25-26</text>
-<text x="148" y="838" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#14181d" text-anchor="start" font-weight="bold">connect the motor  &lt;-  power off while you do it</text>
-<text x="60" y="866" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">27-29</text>
-<text x="148" y="866" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">finished layout, the built board, power on / off</text>
+<rect x="52" y="330" width="720" height="128" rx="6" fill="#eff8f2" stroke="#1a7f45" stroke-width="3"/>
+<rect x="52" y="330" width="9" height="128" rx="0" fill="#1a7f45" stroke="none" stroke-width="2"/>
+<text x="80" y="362" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="18" fill="#1a7f45" text-anchor="start" font-weight="bold">THE HALL SENSOR AND MAGNET ARE FITTED (2026-09-20). This</text>
+<text x="80" y="388" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="18" fill="#1a7f45" text-anchor="start" font-weight="bold">module homes, so pages 23-25 are new and everything after</text>
+<text x="80" y="414" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="18" fill="#1a7f45" text-anchor="start" font-weight="bold">them can be closed loop. Gate 3 ran without them and every</text>
+<text x="80" y="440" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="18" fill="#1a7f45" text-anchor="start" font-weight="bold">page said so.</text>
+<rect x="52" y="474" width="720" height="76" rx="6" fill="#fdf0ef" stroke="#c0261b" stroke-width="3"/>
+<rect x="52" y="474" width="9" height="76" rx="0" fill="#c0261b" stroke="none" stroke-width="2"/>
+<text x="80" y="506" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="18" fill="#c0261b" text-anchor="start" font-weight="bold">READ PAGE 4 FIRST. The three rules on it are how TMC2209</text>
+<text x="80" y="532" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="18" fill="#c0261b" text-anchor="start" font-weight="bold">drivers die.</text>
+<text x="52" y="610" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="20" fill="#14181d" text-anchor="start" font-weight="bold">THE ORDER, and why it is this order</text>
+<text x="60" y="640" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">1-2</text>
+<text x="148" y="640" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">collect the parts, and prepare three of them</text>
+<text x="60" y="668" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">3-5</text>
+<text x="148" y="668" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">the rules, and the one solder job (skipped)</text>
+<text x="60" y="696" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">6-9</text>
+<text x="148" y="696" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">identify the parts, the board, the coil pairs</text>
+<text x="60" y="724" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">10-14</text>
+<text x="148" y="724" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">wire the logic  (driver to ESP32)</text>
+<text x="60" y="752" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">15-19</text>
+<text x="148" y="752" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">wire the microsteps, then the power</text>
+<text x="60" y="780" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">20-22</text>
+<text x="148" y="780" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">the bulk capacitor, then the board as BUILT</text>
+<text x="60" y="808" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#14181d" text-anchor="start" font-weight="bold">23-25</text>
+<text x="148" y="808" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#14181d" text-anchor="start" font-weight="bold">the Hall sensor  &lt;-  and PROVE its polarity</text>
+<text x="60" y="836" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#14181d" text-anchor="start" font-weight="bold">26</text>
+<text x="148" y="836" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#14181d" text-anchor="start" font-weight="bold">continuity check  &lt;-  find mistakes with a meter</text>
+<text x="60" y="864" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#14181d" text-anchor="start" font-weight="bold">27</text>
+<text x="148" y="864" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#14181d" text-anchor="start" font-weight="bold">set Vref  &lt;-  motor still NOT connected</text>
+<text x="60" y="892" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#14181d" text-anchor="start" font-weight="bold">28-29</text>
+<text x="148" y="892" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#14181d" text-anchor="start" font-weight="bold">connect the motor  &lt;-  power off while you do it</text>
+<text x="60" y="920" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">30-32</text>
+<text x="148" y="920" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">finished layout, the built board, power on / off</text>
 <text x="850" y="148" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="20" fill="#14181d" text-anchor="start" font-weight="bold">WIRE COLOURS — the same on every page</text>
-<rect x="836" y="168" width="700" height="452" rx="6" fill="#fafbfc" stroke="#c7ced6" stroke-width="2"/>
+<rect x="836" y="168" width="700" height="494" rx="6" fill="#fafbfc" stroke="#c7ced6" stroke-width="2"/>
 <line x1="858" y1="206" x2="950" y2="206" stroke="#d0342c" stroke-width="11" stroke-linecap="round"/>
 <text x="970" y="212" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">VM  (motor +)</text>
 <text x="1200" y="212" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">RED, thick</text>
@@ -73,9 +76,12 @@
 <line x1="858" y1="575" x2="950" y2="575" stroke="#8a5a2b" stroke-width="7" stroke-linecap="round"/>
 <text x="970" y="581" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">PDN</text>
 <text x="1200" y="581" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">brown</text>
-<text x="844" y="648" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#6b7683" text-anchor="start" font-weight="normal">The motor keeps its own colours: red, blue, green, black.</text>
-<text x="844" y="676" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#6b7683" text-anchor="start" font-weight="normal">Use any wire you like — but be consistent, and</text>
-<text x="844" y="700" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#14181d" text-anchor="start" font-weight="bold">never use red or black for a signal.</text>
+<line x1="858" y1="616" x2="950" y2="616" stroke="#1f8a4c" stroke-width="7" stroke-linecap="round"/>
+<text x="970" y="622" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">HALL OUT</text>
+<text x="1200" y="622" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">green, thin</text>
+<text x="844" y="690" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#6b7683" text-anchor="start" font-weight="normal">The motor keeps its own colours: red, blue, green, black.</text>
+<text x="844" y="718" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#6b7683" text-anchor="start" font-weight="normal">Use any wire you like — but be consistent, and</text>
+<text x="844" y="742" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#14181d" text-anchor="start" font-weight="bold">never use red or black for a signal.</text>
 <line x1="52" y1="1087" x2="1548" y2="1087" stroke="#c7ced6" stroke-width="1" stroke-linecap="round"/>
 <text x="52" y="1111" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">LOST Swan  module V1  ·  generated by tools/wiringgen.py from hal/pins.h + docs/BENCH_WIRING.md</text>
 </svg>

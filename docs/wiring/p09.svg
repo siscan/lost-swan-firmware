@@ -4,7 +4,7 @@
 <line x1="0" y1="88" x2="1600" y2="88" stroke="#c7ced6" stroke-width="2"/>
 <text x="52" y="47" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="29" fill="#14181d" text-anchor="start" font-weight="bold">Find the coil pairs</text>
 <text x="52" y="74" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">Motor connected to NOTHING. Meter only.</text>
-<text x="1548" y="52" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="26" fill="#6b7683" text-anchor="end" font-weight="bold">9 / 29</text>
+<text x="1548" y="52" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="26" fill="#6b7683" text-anchor="end" font-weight="bold">9 / 32</text>
 <rect x="200" y="180" width="150" height="150" rx="8" fill="#e9edf1" stroke="#14181d" stroke-width="3"/>
 <circle cx="275" cy="255" r="28" fill="#c7ced6" stroke="#14181d" stroke-width="2"/>
 <circle cx="275" cy="255" r="9" fill="#14181d" stroke="none" stroke-width="1"/>
@@ -61,7 +61,7 @@
 <text x="52" y="645" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">and turn the shaft. A real pair makes it noticeably harder and notchier</text>
 <text x="52" y="670" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">to turn; a wrong pair turns freely. Ten seconds, and it catches mistakes</text>
 <text x="52" y="695" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">a meter reading does not.</text>
-<text x="52" y="754" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#14181d" text-anchor="start" font-weight="bold">Write it down — pages 25 and 26 refer to it:</text>
+<text x="52" y="754" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#14181d" text-anchor="start" font-weight="bold">Write it down — pages 28 and 29 refer to it:</text>
 <text x="52" y="804" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="20" fill="#14181d" text-anchor="start" font-weight="bold">PAIR 1  =</text>
 <line x1="196" y1="810" x2="620" y2="810" stroke="#14181d" stroke-width="2" stroke-linecap="round"/>
 <text x="52" y="854" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="20" fill="#14181d" text-anchor="start" font-weight="bold">PAIR 2  =</text>

@@ -4,7 +4,7 @@
 <line x1="0" y1="88" x2="1600" y2="88" stroke="#c7ced6" stroke-width="2"/>
 <text x="52" y="47" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="29" fill="#14181d" text-anchor="start" font-weight="bold">Connection 12  —  PDN / UART  —  standstill current</text>
 <text x="52" y="74" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">wire colour: brown</text>
-<text x="1548" y="52" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="26" fill="#6b7683" text-anchor="end" font-weight="bold">17 / 29</text>
+<text x="1548" y="52" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="26" fill="#6b7683" text-anchor="end" font-weight="bold">17 / 32</text>
 <rect x="640" y="250" width="250" height="400" rx="6" fill="#f6f8fa" stroke="#14181d" stroke-width="3"/>
 <text x="765" y="204" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="21" fill="#14181d" text-anchor="middle" font-weight="bold">FYSETC TMC2209</text>
 <text x="765" y="226" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="14" fill="#6b7683" text-anchor="middle" font-weight="normal">standalone  ·  match by LABEL</text>
@@ -48,7 +48,7 @@
 <rect x="1010" y="300" width="500" height="200" rx="8" fill="#fdf7ec" stroke="#b8791a" stroke-width="3" stroke-dasharray="12 8"/>
 <text x="1260" y="372" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="21" fill="#b8791a" text-anchor="middle" font-weight="bold">LEAVE AS THE MODULE SHIPS</text>
 <text x="1260" y="410" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#6b7683" text-anchor="middle" font-weight="normal">for standalone operation</text>
-<text x="1260" y="452" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="middle" font-weight="bold">then VERIFY on page 29</text>
+<text x="1260" y="452" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="middle" font-weight="bold">then VERIFY on page 32</text>
 <polyline points="618,420 528,420" fill="none" stroke="#8a5a2b" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="10 8"/>
 <circle cx="618" cy="420" r="4.34" fill="#8a5a2b" stroke="none" stroke-width="1"/>
 <circle cx="528" cy="420" r="4.34" fill="#8a5a2b" stroke="none" stroke-width="1"/>
@@ -73,7 +73,7 @@
 <rect x="52" y="932" width="990" height="124" rx="6" fill="#fdf7ec" stroke="#b8791a" stroke-width="3"/>
 <rect x="52" y="932" width="9" height="124" rx="0" fill="#b8791a" stroke="none" stroke-width="2"/>
 <text x="80" y="964" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#b8791a" text-anchor="start" font-weight="bold">THE POLARITY IS NOT VERIFIED for your module and this guide will not guess it. Leave PDN</text>
-<text x="80" y="989" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#b8791a" text-anchor="start" font-weight="bold">as the module ships for standalone, then confirm on page 29: with the motor energised</text>
+<text x="80" y="989" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#b8791a" text-anchor="start" font-weight="bold">as the module ships for standalone, then confirm on page 32: with the motor energised</text>
 <text x="80" y="1014" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#b8791a" text-anchor="start" font-weight="bold">and still, the supply current must visibly STEP DOWN about a second after the last step.</text>
 <text x="80" y="1039" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#b8791a" text-anchor="start" font-weight="bold">If it never does, tie the pin the other way and re-check.</text>
 <line x1="52" y1="1087" x2="1548" y2="1087" stroke="#c7ced6" stroke-width="1" stroke-linecap="round"/>

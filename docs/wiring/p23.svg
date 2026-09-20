@@ -2,55 +2,75 @@
 <rect width="1600" height="1131" fill="#ffffff"/>
 <rect x="0" y="0" width="1600" height="88" fill="#eef1f4"/>
 <line x1="0" y1="88" x2="1600" y2="88" stroke="#c7ced6" stroke-width="2"/>
-<text x="52" y="47" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="29" fill="#14181d" text-anchor="start" font-weight="bold">Continuity check</text>
-<text x="52" y="74" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">Beep these five pairs BEFORE the first power-on</text>
-<text x="1548" y="52" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="26" fill="#6b7683" text-anchor="end" font-weight="bold">23 / 29</text>
-<text x="52" y="140" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#14181d" text-anchor="start" font-weight="normal">Meter on continuity (the beep symbol). Everything unpowered, USB out, motor still disconnected.</text>
-<text x="52" y="168" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#14181d" text-anchor="start" font-weight="normal">Five checks: three that must NOT beep, two that MUST. A mistake found here costs a minute; the</text>
-<text x="52" y="196" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#14181d" text-anchor="start" font-weight="normal">same mistake found by powering up costs a driver.</text>
-<rect x="52" y="248" width="1496" height="118" rx="8" fill="#fdf0ef" stroke="#c0261b" stroke-width="3"/>
-<rect x="52" y="248" width="9" height="118" rx="0" fill="#c0261b" stroke="none" stroke-width="2"/>
-<circle cx="112" cy="292" r="26" fill="#c0261b" stroke="none" stroke-width="1"/>
-<text x="112" y="302" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="26" fill="#ffffff" text-anchor="middle" font-weight="bold">1</text>
-<text x="166" y="288" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="22" fill="#14181d" text-anchor="start" font-weight="bold">VM            &lt;--&gt;  GND</text>
-<text x="166" y="324" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="20" fill="#c0261b" text-anchor="start" font-weight="bold">MUST NOT BEEP</text>
-<text x="620" y="288" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">A short across the supply. This is the one that makes smoke.</text>
-<rect x="1476" y="278" width="30" height="30" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
-<rect x="52" y="378" width="1496" height="118" rx="8" fill="#fdf0ef" stroke="#c0261b" stroke-width="3"/>
-<rect x="52" y="378" width="9" height="118" rx="0" fill="#c0261b" stroke="none" stroke-width="2"/>
-<circle cx="112" cy="422" r="26" fill="#c0261b" stroke="none" stroke-width="1"/>
-<text x="112" y="432" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="26" fill="#ffffff" text-anchor="middle" font-weight="bold">2</text>
-<text x="166" y="418" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="22" fill="#14181d" text-anchor="start" font-weight="bold">VM            &lt;--&gt;  3V3</text>
-<text x="166" y="454" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="20" fill="#c0261b" text-anchor="start" font-weight="bold">MUST NOT BEEP</text>
-<text x="620" y="418" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">Motor voltage on the ESP32's 3.3 V rail — destroys the board.</text>
-<rect x="1476" y="408" width="30" height="30" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
-<rect x="52" y="508" width="1496" height="118" rx="8" fill="#fdf0ef" stroke="#c0261b" stroke-width="3"/>
-<rect x="52" y="508" width="9" height="118" rx="0" fill="#c0261b" stroke="none" stroke-width="2"/>
-<circle cx="112" cy="552" r="26" fill="#c0261b" stroke="none" stroke-width="1"/>
-<text x="112" y="562" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="26" fill="#ffffff" text-anchor="middle" font-weight="bold">3</text>
-<text x="166" y="548" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="22" fill="#14181d" text-anchor="start" font-weight="bold">3V3           &lt;--&gt;  GND</text>
-<text x="166" y="584" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="20" fill="#c0261b" text-anchor="start" font-weight="bold">MUST NOT BEEP</text>
-<text x="620" y="548" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">Shorts the ESP32's regulator; the board will not boot.</text>
-<rect x="1476" y="538" width="30" height="30" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
-<rect x="52" y="638" width="1496" height="118" rx="8" fill="#eff8f2" stroke="#1a7f45" stroke-width="3"/>
-<rect x="52" y="638" width="9" height="118" rx="0" fill="#1a7f45" stroke="none" stroke-width="2"/>
-<circle cx="112" cy="682" r="26" fill="#1a7f45" stroke="none" stroke-width="1"/>
-<text x="112" y="692" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="26" fill="#ffffff" text-anchor="middle" font-weight="bold">4</text>
-<text x="166" y="678" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="22" fill="#14181d" text-anchor="start" font-weight="bold">ESP GND       &lt;--&gt;  driver GND</text>
-<text x="166" y="714" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="20" fill="#1a7f45" text-anchor="start" font-weight="bold">MUST BEEP</text>
-<text x="620" y="678" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">No common ground means every logic level is undefined. Nothing</text>
-<text x="620" y="702" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">works, confusingly.</text>
-<rect x="1476" y="668" width="30" height="30" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
-<rect x="52" y="768" width="1496" height="118" rx="8" fill="#eff8f2" stroke="#1a7f45" stroke-width="3"/>
-<rect x="52" y="768" width="9" height="118" rx="0" fill="#1a7f45" stroke="none" stroke-width="2"/>
-<circle cx="112" cy="812" r="26" fill="#1a7f45" stroke="none" stroke-width="1"/>
-<text x="112" y="822" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="26" fill="#ffffff" text-anchor="middle" font-weight="bold">5</text>
-<text x="166" y="808" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="22" fill="#14181d" text-anchor="start" font-weight="bold">ESP 3V3       &lt;--&gt;  driver VIO</text>
-<text x="166" y="844" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="20" fill="#1a7f45" text-anchor="start" font-weight="bold">MUST BEEP</text>
-<text x="620" y="808" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">MS1 and MS2 must beep to 3V3 as well — they are on the same</text>
-<text x="620" y="832" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">net.</text>
-<rect x="1476" y="798" width="30" height="30" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
-<text x="52" y="924" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="18" fill="#1a7f45" text-anchor="start" font-weight="normal">All five correct? Then the first power-on cannot destroy anything through a wiring error. Go to page 24.</text>
+<text x="52" y="47" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="29" fill="#14181d" text-anchor="start" font-weight="bold">The Hall sensor - which way round</text>
+<text x="52" y="74" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">A1121LUA-T, 3-pin SIP. Every fact here is from Allegro A1120-DS rev. 22</text>
+<text x="1548" y="52" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="26" fill="#6b7683" text-anchor="end" font-weight="bold">23 / 32</text>
+<rect x="52" y="108" width="1496" height="76" rx="6" fill="#eff8f2" stroke="#1a7f45" stroke-width="3"/>
+<rect x="52" y="108" width="9" height="76" rx="0" fill="#1a7f45" stroke="none" stroke-width="2"/>
+<text x="80" y="140" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="18" fill="#1a7f45" text-anchor="start" font-weight="bold">THE CENTRE LEAD IS GND. That one is true whichever way you read the part, and it is the only thing on this page you cannot get</text>
+<text x="80" y="166" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="18" fill="#1a7f45" text-anchor="start" font-weight="bold">backwards.</text>
+<rect x="120" y="298" width="210" height="150" rx="6" fill="#f2ede4" stroke="#14181d" stroke-width="3"/>
+<text x="225" y="344" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#6b7683" text-anchor="middle" font-weight="normal">allegro</text>
+<text x="225" y="384" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="22" fill="#14181d" text-anchor="middle" font-weight="bold">21 L</text>
+<text x="225" y="416" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="12" fill="#c0261b" text-anchor="middle" font-weight="bold">BRANDED FACE</text>
+<line x1="166.2" y1="448" x2="166.2" y2="514" stroke="#14181d" stroke-width="7" stroke-linecap="round"/>
+<text x="155.2" y="538" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#6b7683" text-anchor="end" font-weight="normal">1</text>
+<text x="155.2" y="560" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#14181d" text-anchor="end" font-weight="bold">VCC</text>
+<line x1="225" y1="448" x2="225" y2="514" stroke="#14181d" stroke-width="7" stroke-linecap="round"/>
+<text x="214" y="538" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#6b7683" text-anchor="end" font-weight="normal">2</text>
+<text x="214" y="560" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#14181d" text-anchor="end" font-weight="bold">GND</text>
+<line x1="283.8" y1="448" x2="283.8" y2="514" stroke="#14181d" stroke-width="7" stroke-linecap="round"/>
+<text x="272.8" y="538" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#6b7683" text-anchor="end" font-weight="normal">3</text>
+<text x="272.8" y="560" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#14181d" text-anchor="end" font-weight="bold">OUT</text>
+<text x="225" y="252" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#14181d" text-anchor="middle" font-weight="bold">leads DOWN</text>
+<text x="225" y="276" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#14181d" text-anchor="middle" font-weight="bold">branded face TOWARDS you</text>
+<text x="440" y="262" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="21" fill="#14181d" text-anchor="start" font-weight="bold">The terminal list, package UA</text>
+<line x1="440" y1="276" x2="960" y2="276" stroke="#c7ced6" stroke-width="2" stroke-linecap="round"/>
+<circle cx="458" cy="310" r="17" fill="#14181d" stroke="none" stroke-width="1"/>
+<text x="458" y="316" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#ffffff" text-anchor="middle" font-weight="bold">1</text>
+<text x="492" y="316" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="19" fill="#14181d" text-anchor="start" font-weight="bold">VCC</text>
+<text x="600" y="316" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">supply, 3.0-24 V</text>
+<circle cx="458" cy="356" r="17" fill="#14181d" stroke="none" stroke-width="1"/>
+<text x="458" y="362" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#ffffff" text-anchor="middle" font-weight="bold">2</text>
+<text x="492" y="362" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="19" fill="#14181d" text-anchor="start" font-weight="bold">GND</text>
+<text x="600" y="362" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">the CENTRE lead</text>
+<circle cx="458" cy="402" r="17" fill="#14181d" stroke="none" stroke-width="1"/>
+<text x="458" y="408" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#ffffff" text-anchor="middle" font-weight="bold">3</text>
+<text x="492" y="408" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="19" fill="#14181d" text-anchor="start" font-weight="bold">OUT</text>
+<text x="600" y="408" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">open drain, sinks 25 mA</text>
+<text x="440" y="484" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#14181d" text-anchor="start" font-weight="normal">The datasheet numbers these in a view of the BRANDED face -</text>
+<text x="440" y="507" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#14181d" text-anchor="start" font-weight="normal">the side carrying the supplier emblem, two digits of the</text>
+<text x="440" y="530" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#14181d" text-anchor="start" font-weight="normal">part number and a temperature letter. Turn the part over and</text>
+<text x="440" y="553" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#14181d" text-anchor="start" font-weight="normal">1 and 3 change ends, which is the only way to get this</text>
+<text x="440" y="576" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#14181d" text-anchor="start" font-weight="normal">wrong.</text>
+<text x="1060" y="262" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="21" fill="#14181d" text-anchor="start" font-weight="bold">What it does, in its own words</text>
+<line x1="1060" y1="276" x2="1520" y2="276" stroke="#c7ced6" stroke-width="2" stroke-linecap="round"/>
+<text x="1060" y="314" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="16" fill="#14181d" text-anchor="start" font-weight="bold">south pole</text>
+<text x="1210" y="314" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#6b7683" text-anchor="start" font-weight="normal">turns the output ON</text>
+<text x="1060" y="352" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="16" fill="#14181d" text-anchor="start" font-weight="bold">output on</text>
+<text x="1210" y="352" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#6b7683" text-anchor="start" font-weight="normal">= LOW  (open drain, pulled down)</text>
+<text x="1060" y="390" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="16" fill="#14181d" text-anchor="start" font-weight="bold">north pole</text>
+<text x="1210" y="390" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#6b7683" text-anchor="start" font-weight="normal">NOTHING AT ALL - not weaker, nothing</text>
+<text x="1060" y="428" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="16" fill="#14181d" text-anchor="start" font-weight="bold">B(OP)</text>
+<text x="1210" y="428" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#6b7683" text-anchor="start" font-weight="normal">95 G typical  (50 min, 135 max)</text>
+<text x="1060" y="466" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="16" fill="#14181d" text-anchor="start" font-weight="bold">B(RP)</text>
+<text x="1210" y="466" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#6b7683" text-anchor="start" font-weight="normal">70 G typical - 25 G of hysteresis</text>
+<text x="1060" y="504" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="16" fill="#14181d" text-anchor="start" font-weight="bold">output</text>
+<text x="1210" y="504" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#6b7683" text-anchor="start" font-weight="normal">open drain, 25 mA, leaks under 10 uA</text>
+<rect x="1060" y="558" width="460" height="139" rx="6" fill="#fdf0ef" stroke="#c0261b" stroke-width="3"/>
+<rect x="1060" y="558" width="9" height="139" rx="0" fill="#c0261b" stroke="none" stroke-width="2"/>
+<text x="1088" y="590" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#c0261b" text-anchor="start" font-weight="bold">A NORTH POLE PRODUCES NO TRANSITION, so</text>
+<text x="1088" y="613" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#c0261b" text-anchor="start" font-weight="bold">motion.hall_active_low cannot rescue a</text>
+<text x="1088" y="636" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#c0261b" text-anchor="start" font-weight="bold">magnet glued in backwards - it inverts how</text>
+<text x="1088" y="659" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#c0261b" text-anchor="start" font-weight="bold">the firmware reads an output that never</text>
+<text x="1088" y="682" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#c0261b" text-anchor="start" font-weight="bold">moved.</text>
+<line x1="52" y1="739" x2="1548" y2="739" stroke="#c7ced6" stroke-width="2" stroke-linecap="round"/>
+<text x="52" y="781" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="20" fill="#14181d" text-anchor="start" font-weight="bold">Active LOW with the magnet present is now a DATASHEET fact</text>
+<text x="52" y="815" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">Spec 2 has carried VERIFY on this since the part changed from the A3144. The selection guide settles it: the</text>
+<text x="52" y="840" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">column is headed "Output In South (Positive) Magnetic Field" and the A1121's entry reads "On (logic low)". So</text>
+<text x="52" y="865" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">motion.hall_active_low = true, which is already the firmware default. What is still a bench question is the</text>
+<text x="52" y="890" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">WIRING - a pull-up to the wrong rail, or a lead in the wrong hole, changes what the GPIO sees and not what the</text>
+<text x="52" y="915" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">sensor does.</text>
 <line x1="52" y1="1087" x2="1548" y2="1087" stroke="#c7ced6" stroke-width="1" stroke-linecap="round"/>
 <text x="52" y="1111" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">LOST Swan  module V1  ·  generated by tools/wiringgen.py from hal/pins.h + docs/BENCH_WIRING.md</text>
 </svg>

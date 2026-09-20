@@ -4,115 +4,159 @@
 <line x1="0" y1="88" x2="1600" y2="88" stroke="#c7ced6" stroke-width="2"/>
 <text x="52" y="47" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="29" fill="#14181d" text-anchor="start" font-weight="bold">Bench bill of materials</text>
 <text x="52" y="74" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">Every physical object the session needs. Tick it, then start.</text>
-<text x="1548" y="52" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="26" fill="#6b7683" text-anchor="end" font-weight="bold">1 / 29</text>
+<text x="1548" y="52" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="26" fill="#6b7683" text-anchor="end" font-weight="bold">1 / 32</text>
 <rect x="52" y="108" width="1496" height="72" rx="6" fill="#eff8f2" stroke="#1a7f45" stroke-width="3"/>
 <rect x="52" y="108" width="9" height="72" rx="0" fill="#1a7f45" stroke="none" stroke-width="2"/>
 <text x="80" y="140" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#1a7f45" text-anchor="start" font-weight="bold">NOTHING HERE NEEDS ACQUIRING. Every item was confirmed on hand on 2026-09-11, the 830-point breadboard included. This box exists so that anything</text>
 <text x="80" y="164" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#1a7f45" text-anchor="start" font-weight="bold">a later revision adds lands on page 1 rather than being discovered on page 13.</text>
-<rect x="52" y="236" width="736" height="92" rx="6" fill="#fafbfc" stroke="#c7ced6" stroke-width="2"/>
-<rect x="68" y="252" width="26" height="26" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
-<text x="110" y="272" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="bold">TMC2209 StepStick (FYSETC)</text>
-<text x="772" y="272" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="end" font-weight="normal">1 of 6</text>
-<text x="110" y="298" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">The driver. Headers arrived PRE-SOLDERED, confirmed by opening the box, so page 5 is</text>
-<text x="110" y="316" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">a skip. All six are one revision, so one Vref carries to all five later.</text>
-<rect x="52" y="336" width="736" height="92" rx="6" fill="#fafbfc" stroke="#c7ced6" stroke-width="2"/>
-<rect x="68" y="352" width="26" height="26" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
-<text x="110" y="372" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="bold">ESP32-C5-DevKitC-1</text>
-<text x="772" y="372" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="end" font-weight="normal">1</text>
-<text x="110" y="398" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">Already on the bench. It stays OFF the breadboard - page 8 says why - so every wire</text>
-<text x="110" y="416" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">that reaches it is male-to-female.</text>
-<rect x="52" y="436" width="736" height="92" rx="6" fill="#fafbfc" stroke="#c7ced6" stroke-width="2"/>
-<rect x="68" y="452" width="26" height="26" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
-<text x="110" y="472" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="bold">NEMA 17 + printed stand-in axle</text>
-<text x="772" y="472" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="end" font-weight="normal">1</text>
-<text x="110" y="498" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">The load. The axle is PLA, which is why the firmware clamps every commanded speed to</text>
-<text x="110" y="516" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">one drum revolution per second and why that cap is not configurable.</text>
-<rect x="52" y="536" width="736" height="92" rx="6" fill="#fafbfc" stroke="#c7ced6" stroke-width="2"/>
-<rect x="68" y="552" width="26" height="26" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
-<text x="110" y="572" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="bold">Breadboard, full-size 830-point</text>
-<text x="772" y="572" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="end" font-weight="normal">1</text>
-<text x="110" y="598" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">63 rows, two rail pairs, an 0.3 in centre channel. The channel is the only reason a</text>
-<text x="110" y="616" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">StepStick works on a breadboard at all - page 8.</text>
-<rect x="52" y="636" width="736" height="92" rx="6" fill="#fafbfc" stroke="#c7ced6" stroke-width="2"/>
-<rect x="68" y="652" width="26" height="26" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
-<text x="110" y="672" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="bold">Jumper wires, male-to-FEMALE</text>
-<text x="772" y="672" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="end" font-weight="normal">5</text>
-<text x="110" y="698" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">Three signals (STEP, DIR, EN) and the two rail feeds. Female onto the ESP32's pins,</text>
-<text x="110" y="716" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">male into the board.</text>
-<rect x="52" y="736" width="736" height="92" rx="6" fill="#fafbfc" stroke="#c7ced6" stroke-width="2"/>
-<rect x="68" y="752" width="26" height="26" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
-<text x="110" y="772" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="bold">Jumper wires, male-to-male</text>
-<text x="772" y="772" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="end" font-weight="normal">6</text>
-<text x="110" y="798" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">Board-internal: VIO, GND (logic), MS1 and MS2 to the rails, plus 2 RAIL LINKS - the</text>
-<text x="110" y="816" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">top and bottom rail pairs are separate nodes and both are in use. Counts are derived</text>
-<text x="110" y="834" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">from the parsed table, not typed here.</text>
-<rect x="52" y="836" width="736" height="92" rx="6" fill="#fafbfc" stroke="#c7ced6" stroke-width="2"/>
-<rect x="68" y="852" width="26" height="26" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
-<text x="110" y="872" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="bold">JST-XH 4-way mating pigtail</text>
-<text x="772" y="872" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="end" font-weight="normal">1</text>
-<text x="110" y="898" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">THE MOTOR PLUG CANNOT ENTER A BREADBOARD. The pigtail's four flying leads can. Page</text>
-<text x="110" y="916" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">2 shows exactly where they terminate.</text>
-<rect x="52" y="936" width="736" height="92" rx="6" fill="#fafbfc" stroke="#c7ced6" stroke-width="2"/>
-<rect x="68" y="952" width="26" height="26" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
-<text x="110" y="972" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="bold">100 uF electrolytic, 35 V or more</text>
-<text x="772" y="972" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="end" font-weight="normal">1</text>
-<text x="110" y="998" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">The bulk capacitor. Its legs need trimming and bending before it will reach the</text>
-<text x="110" y="1016" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">right two holes - lead prep on page 2.</text>
-<rect x="812" y="236" width="736" height="92" rx="6" fill="#fafbfc" stroke="#c7ced6" stroke-width="2"/>
-<rect x="828" y="252" width="26" height="26" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
-<text x="870" y="272" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="bold">Hookup wire, 22 AWG SOLID core</text>
-<text x="1532" y="272" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="end" font-weight="normal">30 cm red + black</text>
-<text x="870" y="298" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">PSU terminal to the board. Solid, not stranded: stranded frays in a breadboard hole,</text>
-<text x="870" y="316" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">will not hold, and leaves a strand behind.</text>
-<rect x="812" y="336" width="736" height="92" rx="6" fill="#fafbfc" stroke="#c7ced6" stroke-width="2"/>
-<rect x="828" y="352" width="26" height="26" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
-<text x="870" y="372" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="bold">Flat screwdriver, 2 mm blade</text>
-<text x="1532" y="372" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="end" font-weight="normal">1</text>
-<text x="870" y="398" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">The Vref trimpot on page 24, and the PSU's terminals. A blade that does not fit the</text>
-<text x="870" y="416" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">pot slips off it onto a pad.</text>
-<rect x="812" y="436" width="736" height="92" rx="6" fill="#fafbfc" stroke="#c7ced6" stroke-width="2"/>
-<rect x="828" y="452" width="26" height="26" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
-<text x="870" y="472" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="bold">Multimeter with a continuity beep</text>
-<text x="1532" y="472" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="end" font-weight="normal">1</text>
-<text x="870" y="498" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">Coil pairs (page 9), continuity (page 23), Vref (page 24). Continuity and DC volts</text>
-<text x="870" y="516" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">on a 2 V range are the only functions used.</text>
-<rect x="812" y="536" width="736" height="92" rx="6" fill="#fafbfc" stroke="#c7ced6" stroke-width="2"/>
-<rect x="828" y="552" width="26" height="26" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
-<text x="870" y="572" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="bold">USB-C cable, PC to ESP32</text>
-<text x="1532" y="572" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="end" font-weight="normal">1</text>
-<text x="870" y="598" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">Console and logic power. A DATA cable - a charge-only lead gives a board that powers</text>
-<text x="870" y="616" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">up, looks alive, and never appears as a serial port.</text>
-<rect x="812" y="636" width="736" height="92" rx="6" fill="#fafbfc" stroke="#c7ced6" stroke-width="2"/>
-<rect x="828" y="652" width="26" height="26" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
-<text x="870" y="672" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="bold">Bench PSU, current-limited</text>
-<text x="1532" y="672" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="end" font-weight="normal">1</text>
-<text x="870" y="698" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">VM, and the single most useful safety device on the bench. 9 V at a 0.5 A LIMIT for</text>
-<text x="870" y="716" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">first power; 20 V for the soak. A wiring fault trips the limit, not the driver.</text>
-<rect x="812" y="736" width="736" height="92" rx="6" fill="#fafbfc" stroke="#c7ced6" stroke-width="2"/>
-<rect x="828" y="752" width="26" height="26" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
-<text x="870" y="772" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="bold">RotoPD USB-C trigger  --  NOT USED</text>
-<text x="1532" y="772" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="end" font-weight="normal">0  -  struck 2026-09-12</text>
-<text x="870" y="798" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">It is I2C-configured and DEFAULTS TO 5 V, so it cannot be trusted to come up at the</text>
-<text x="870" y="816" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">voltage you set, and it current-limits nothing. Listed struck rather than deleted so</text>
-<text x="870" y="834" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">it is not bought again.</text>
-<rect x="812" y="836" width="736" height="92" rx="6" fill="#fafbfc" stroke="#c7ced6" stroke-width="2"/>
-<rect x="828" y="852" width="26" height="26" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
-<text x="870" y="872" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="bold">Hex key for the drum set screw</text>
-<text x="1532" y="872" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="end" font-weight="normal">1</text>
-<text x="870" y="898" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">Fit the stand-in drum, and MARK it - a tape flag will do - so that `step 0 3200` is</text>
-<text x="870" y="916" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">a readable result rather than a guess.</text>
-<rect x="812" y="936" width="736" height="92" rx="6" fill="#fafbfc" stroke="#c7ced6" stroke-width="2"/>
-<rect x="828" y="952" width="26" height="26" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
-<text x="870" y="972" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="bold">Heatsink (supplied, loose)</text>
-<text x="1532" y="972" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="end" font-weight="normal">0  -  NOT this session</text>
-<text x="870" y="998" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">Deliberately not installed. Page 2 has the reasoning and the one condition that</text>
-<text x="870" y="1016" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">would change it.</text>
-<rect x="812" y="236" width="736" height="92" rx="6" fill="#fafbfc" stroke="#c7ced6" stroke-width="2"/>
-<rect x="828" y="252" width="26" height="26" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
-<text x="870" y="272" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="bold">Hall sensor + magnet</text>
-<text x="1532" y="272" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="15" fill="#6b7683" text-anchor="end" font-weight="normal">0  -  NOT this session</text>
-<text x="870" y="298" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">Branch B: no Hall fitted, so no homing, no edge figures, no revs. That is the</text>
-<text x="870" y="316" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">expected configuration for this session and not a fault.</text>
+<rect x="52" y="216" width="482" height="114" rx="6" fill="#fafbfc" stroke="#c7ced6" stroke-width="2"/>
+<rect x="66" y="229" width="22" height="22" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
+<text x="100" y="246" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#14181d" text-anchor="start" font-weight="bold">TMC2209 StepStick (FYSETC)</text>
+<text x="520" y="246" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="14" fill="#6b7683" text-anchor="end" font-weight="normal">1 of 6</text>
+<text x="100" y="270" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">The driver. Headers arrived PRE-SOLDERED, confirmed by</text>
+<text x="100" y="287" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">opening the box, so page 5 is a skip. All six are one</text>
+<text x="100" y="304" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">revision, so one Vref carries to all five later.</text>
+<rect x="52" y="338" width="482" height="114" rx="6" fill="#fafbfc" stroke="#c7ced6" stroke-width="2"/>
+<rect x="66" y="351" width="22" height="22" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
+<text x="100" y="368" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#14181d" text-anchor="start" font-weight="bold">ESP32-C5-DevKitC-1</text>
+<text x="520" y="368" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="14" fill="#6b7683" text-anchor="end" font-weight="normal">1</text>
+<text x="100" y="392" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">Already on the bench. It stays OFF the breadboard - page</text>
+<text x="100" y="409" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">8 says why - so every wire that reaches it is</text>
+<text x="100" y="426" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">male-to-female.</text>
+<rect x="52" y="460" width="482" height="114" rx="6" fill="#fafbfc" stroke="#c7ced6" stroke-width="2"/>
+<rect x="66" y="473" width="22" height="22" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
+<text x="100" y="490" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#14181d" text-anchor="start" font-weight="bold">NEMA 17 + printed stand-in axle</text>
+<text x="520" y="490" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="14" fill="#6b7683" text-anchor="end" font-weight="normal">1</text>
+<text x="100" y="514" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">The load. The axle is PLA, which is why every commanded</text>
+<text x="100" y="531" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">speed is REFUSED above this image's cap. The cap is</text>
+<text x="100" y="548" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">compiled in and can only be lowered at build time, never</text>
+<text x="100" y="565" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">raised and never from a console.</text>
+<rect x="52" y="582" width="482" height="114" rx="6" fill="#fafbfc" stroke="#c7ced6" stroke-width="2"/>
+<rect x="66" y="595" width="22" height="22" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
+<text x="100" y="612" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#14181d" text-anchor="start" font-weight="bold">Breadboard, full-size 830-point</text>
+<text x="520" y="612" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="14" fill="#6b7683" text-anchor="end" font-weight="normal">1</text>
+<text x="100" y="636" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">63 rows, two rail pairs, an 0.3 in centre channel. The</text>
+<text x="100" y="653" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">channel is the only reason a StepStick works on a</text>
+<text x="100" y="670" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">breadboard at all - page 8.</text>
+<rect x="52" y="704" width="482" height="114" rx="6" fill="#fafbfc" stroke="#c7ced6" stroke-width="2"/>
+<rect x="66" y="717" width="22" height="22" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
+<text x="100" y="734" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#14181d" text-anchor="start" font-weight="bold">Jumper wires, male-to-FEMALE</text>
+<text x="520" y="734" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="14" fill="#6b7683" text-anchor="end" font-weight="normal">8</text>
+<text x="100" y="758" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">Three signals (STEP, DIR, EN), the two rail feeds, and</text>
+<text x="100" y="775" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">the Hall's 3 flying leads. Female onto the ESP32's pins,</text>
+<text x="100" y="792" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">male into the board.</text>
+<rect x="52" y="826" width="482" height="114" rx="6" fill="#fafbfc" stroke="#c7ced6" stroke-width="2"/>
+<rect x="66" y="839" width="22" height="22" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
+<text x="100" y="856" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#14181d" text-anchor="start" font-weight="bold">Jumper wires, male-to-male</text>
+<text x="520" y="856" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="14" fill="#6b7683" text-anchor="end" font-weight="normal">6</text>
+<text x="100" y="880" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">Board-internal: VIO, GND (logic), MS1 and MS2 to the</text>
+<text x="100" y="897" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">rails, plus 2 RAIL LINKS: the two rail pairs are</text>
+<text x="100" y="914" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">separate nodes and both are in use. Counts derive from</text>
+<text x="100" y="931" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">the parsed table.</text>
+<rect x="52" y="948" width="482" height="114" rx="6" fill="#fafbfc" stroke="#c7ced6" stroke-width="2"/>
+<rect x="66" y="961" width="22" height="22" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
+<text x="100" y="978" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#14181d" text-anchor="start" font-weight="bold">JST-XH 4-way mating pigtail</text>
+<text x="520" y="978" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="14" fill="#6b7683" text-anchor="end" font-weight="normal">1</text>
+<text x="100" y="1002" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">THE MOTOR PLUG CANNOT ENTER A BREADBOARD. The pigtail's</text>
+<text x="100" y="1019" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">four flying leads can. Page 2 shows exactly where they</text>
+<text x="100" y="1036" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">terminate.</text>
+<rect x="558" y="216" width="482" height="114" rx="6" fill="#fafbfc" stroke="#c7ced6" stroke-width="2"/>
+<rect x="572" y="229" width="22" height="22" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
+<text x="606" y="246" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#14181d" text-anchor="start" font-weight="bold">100 uF electrolytic, 35 V or more</text>
+<text x="1026" y="246" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="14" fill="#6b7683" text-anchor="end" font-weight="normal">1</text>
+<text x="606" y="270" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">The bulk capacitor. Its legs need trimming and bending</text>
+<text x="606" y="287" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">before it will reach the right two holes - lead prep on</text>
+<text x="606" y="304" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">page 2.</text>
+<rect x="558" y="338" width="482" height="114" rx="6" fill="#fafbfc" stroke="#c7ced6" stroke-width="2"/>
+<rect x="572" y="351" width="22" height="22" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
+<text x="606" y="368" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#14181d" text-anchor="start" font-weight="bold">Hookup wire, 22 AWG SOLID core</text>
+<text x="1026" y="368" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="14" fill="#6b7683" text-anchor="end" font-weight="normal">30 cm</text>
+<text x="606" y="392" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">Red and black, PSU terminal to the board. Solid, not</text>
+<text x="606" y="409" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">stranded: stranded frays in a breadboard hole, will not</text>
+<text x="606" y="426" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">hold, and leave a strand behind.</text>
+<rect x="558" y="460" width="482" height="114" rx="6" fill="#fafbfc" stroke="#c7ced6" stroke-width="2"/>
+<rect x="572" y="473" width="22" height="22" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
+<text x="606" y="490" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#14181d" text-anchor="start" font-weight="bold">Flat screwdriver, 2 mm blade</text>
+<text x="1026" y="490" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="14" fill="#6b7683" text-anchor="end" font-weight="normal">1</text>
+<text x="606" y="514" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">The Vref trimpot on page 27, and the PSU's terminals. A</text>
+<text x="606" y="531" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">blade that does not fit the pot slips off it onto a pad.</text>
+<rect x="558" y="582" width="482" height="114" rx="6" fill="#fafbfc" stroke="#c7ced6" stroke-width="2"/>
+<rect x="572" y="595" width="22" height="22" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
+<text x="606" y="612" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#14181d" text-anchor="start" font-weight="bold">Multimeter with a continuity beep</text>
+<text x="1026" y="612" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="14" fill="#6b7683" text-anchor="end" font-weight="normal">1</text>
+<text x="606" y="636" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">Coil pairs (page 9), continuity (page 26), Vref (page</text>
+<text x="606" y="653" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">27). Continuity and DC volts on a 2 V range are all it</text>
+<text x="606" y="670" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">needs.</text>
+<rect x="558" y="704" width="482" height="114" rx="6" fill="#fafbfc" stroke="#c7ced6" stroke-width="2"/>
+<rect x="572" y="717" width="22" height="22" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
+<text x="606" y="734" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#14181d" text-anchor="start" font-weight="bold">USB-C cable, PC to ESP32</text>
+<text x="1026" y="734" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="14" fill="#6b7683" text-anchor="end" font-weight="normal">1</text>
+<text x="606" y="758" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">Console and logic power. A DATA cable - a charge-only</text>
+<text x="606" y="775" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">lead gives a board that looks alive and never appears as</text>
+<text x="606" y="792" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">a serial port.</text>
+<rect x="558" y="826" width="482" height="114" rx="6" fill="#fafbfc" stroke="#c7ced6" stroke-width="2"/>
+<rect x="572" y="839" width="22" height="22" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
+<text x="606" y="856" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#14181d" text-anchor="start" font-weight="bold">Bench PSU, current-limited</text>
+<text x="1026" y="856" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="14" fill="#6b7683" text-anchor="end" font-weight="normal">1</text>
+<text x="606" y="880" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">VM, and the most useful safety device on the bench. 9 V</text>
+<text x="606" y="897" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">at a 0.5 A LIMIT for first power, 20 V for the soak. A</text>
+<text x="606" y="914" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">wiring fault trips the limit, not the driver.</text>
+<rect x="558" y="948" width="482" height="114" rx="6" fill="#fafbfc" stroke="#c7ced6" stroke-width="2"/>
+<rect x="572" y="961" width="22" height="22" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
+<text x="606" y="978" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#14181d" text-anchor="start" font-weight="bold">RotoPD USB-C trigger  --  NOT USED</text>
+<text x="1026" y="978" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="14" fill="#6b7683" text-anchor="end" font-weight="normal">struck</text>
+<text x="606" y="1002" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">I2C-configured and DEFAULTS TO 5 V, so it cannot be</text>
+<text x="606" y="1019" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">trusted to come up at the voltage you set, and it</text>
+<text x="606" y="1036" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">current-limits nothing. Struck, not deleted, so it is</text>
+<text x="606" y="1053" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">not bought again.</text>
+<rect x="1064" y="216" width="482" height="114" rx="6" fill="#fafbfc" stroke="#c7ced6" stroke-width="2"/>
+<rect x="1078" y="229" width="22" height="22" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
+<text x="1112" y="246" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#14181d" text-anchor="start" font-weight="bold">Hex key for the drum set screw</text>
+<text x="1532" y="246" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="14" fill="#6b7683" text-anchor="end" font-weight="normal">1</text>
+<text x="1112" y="270" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">Fit the stand-in drum, and MARK it - a tape flag will do</text>
+<text x="1112" y="287" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">- so that `step 0 3200` is a readable result rather than</text>
+<text x="1112" y="304" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">a guess.</text>
+<rect x="1064" y="338" width="482" height="114" rx="6" fill="#fafbfc" stroke="#c7ced6" stroke-width="2"/>
+<rect x="1078" y="351" width="22" height="22" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
+<text x="1112" y="368" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#14181d" text-anchor="start" font-weight="bold">Heatsink (supplied, loose)</text>
+<text x="1532" y="368" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="14" fill="#6b7683" text-anchor="end" font-weight="normal">not used</text>
+<text x="1112" y="392" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">Deliberately not installed. Page 2 has the reasoning and</text>
+<text x="1112" y="409" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">the one condition that would change it.</text>
+<rect x="1064" y="460" width="482" height="114" rx="6" fill="#fafbfc" stroke="#c7ced6" stroke-width="2"/>
+<rect x="1078" y="473" width="22" height="22" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
+<text x="1112" y="490" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#14181d" text-anchor="start" font-weight="bold">A1121LUA-T Hall sensor</text>
+<text x="1532" y="490" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="14" fill="#6b7683" text-anchor="end" font-weight="normal">1</text>
+<text x="1112" y="514" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">NEW THIS SESSION - gate 3 had none. 3-pin SIP, not</text>
+<text x="1112" y="531" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">TO-92. Page 23 says which way round it goes; the centre</text>
+<text x="1112" y="548" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">lead is GND whichever way you read it.</text>
+<rect x="1064" y="582" width="482" height="114" rx="6" fill="#fafbfc" stroke="#c7ced6" stroke-width="2"/>
+<rect x="1078" y="595" width="22" height="22" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
+<text x="1112" y="612" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#14181d" text-anchor="start" font-weight="bold">Magnet, O6x3 N42, in the disc</text>
+<text x="1532" y="612" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="14" fill="#6b7683" text-anchor="end" font-weight="normal">fitted</text>
+<text x="1112" y="636" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">You are not prising it out to look at it. Page 25 reads</text>
+<text x="1112" y="653" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">its outward face with a SPARE magnet instead: repel =</text>
+<text x="1112" y="670" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">south = correct.</text>
+<rect x="1064" y="704" width="482" height="114" rx="6" fill="#fafbfc" stroke="#c7ced6" stroke-width="2"/>
+<rect x="1078" y="717" width="22" height="22" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
+<text x="1112" y="734" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#14181d" text-anchor="start" font-weight="bold">Spare magnet, same batch</text>
+<text x="1532" y="734" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="14" fill="#6b7683" text-anchor="end" font-weight="normal">1</text>
+<text x="1112" y="758" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">The polarity meter. It identifies its own south face</text>
+<text x="1112" y="775" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">against the sensor, and then reads the glued one without</text>
+<text x="1112" y="792" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">touching it. Page 25.</text>
+<rect x="1064" y="826" width="482" height="114" rx="6" fill="#fafbfc" stroke="#c7ced6" stroke-width="2"/>
+<rect x="1078" y="839" width="22" height="22" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
+<text x="1112" y="856" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#14181d" text-anchor="start" font-weight="bold">Resistor, 10 kohm, any type</text>
+<text x="1532" y="856" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="14" fill="#6b7683" text-anchor="end" font-weight="normal">1</text>
+<text x="1112" y="880" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">The Hall's pull-up, OUT to 3V3. The output is OPEN</text>
+<text x="1112" y="897" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">DRAIN: it can pull the pin down and cannot pull it up,</text>
+<text x="1112" y="914" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">so without this `hall` reads noise.</text>
+<rect x="1064" y="948" width="482" height="114" rx="6" fill="#fafbfc" stroke="#c7ced6" stroke-width="2"/>
+<rect x="1078" y="961" width="22" height="22" rx="4" fill="none" stroke="#14181d" stroke-width="2"/>
+<text x="1112" y="978" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="16" fill="#14181d" text-anchor="start" font-weight="bold">Ceramic capacitor, 0.1 uF</text>
+<text x="1532" y="978" font-family="DejaVu Sans Mono, Consolas, monospace" font-size="14" fill="#6b7683" text-anchor="end" font-weight="normal">1</text>
+<text x="1112" y="1002" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">Across the sensor's VCC and GND, at the sensor end. The</text>
+<text x="1112" y="1019" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">datasheet states it in words and the flying leads are</text>
+<text x="1112" y="1036" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">long.</text>
 <line x1="52" y1="1087" x2="1548" y2="1087" stroke="#c7ced6" stroke-width="1" stroke-linecap="round"/>
 <text x="52" y="1111" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="13" fill="#6b7683" text-anchor="start" font-weight="normal">LOST Swan  module V1  ·  generated by tools/wiringgen.py from hal/pins.h + docs/BENCH_WIRING.md</text>
 </svg>

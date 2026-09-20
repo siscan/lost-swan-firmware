@@ -69,14 +69,47 @@ def parse_pins_h(text):
             "EN": scalar("PIN_EN"), "DIR": scalar("PIN_DIR")}
 
 
+_ROW = re.compile(r"^\|\s*(\d+)\s*\|\s*`([^`]+)`[^|]*\|[^|]*\|\s*\*\*([^*]+)\*\*\s*\|", re.M)
+
+
+def _section(text, heading):
+    """The text of one `## ` section, heading line excluded.
+
+    SCOPED ON PURPOSE.  These parsers used to scan the whole document, which was
+    fine while there was exactly one connection table in it.  The Hall section
+    (2a, 2026-09-20) adds a second table of the same SHAPE, and an unscoped
+    driver parser swallows its rows - then hands `VCC` to driver_row(), which
+    knows only TMC pin names and exits.  A parser named after a section should
+    read that section.
+    """
+    i = text.index(heading)
+    j = text.find("\n## ", i + len(heading))
+    return text[i:] if j < 0 else text[i:j]
+
+
 def parse_guide_table(text):
     rows = {}
-    pat = re.compile(r"^\|\s*(\d+)\s*\|\s*`([^`]+)`[^|]*\|[^|]*\|\s*\*\*([^*]+)\*\*\s*\|", re.M)
-    for m in pat.finditer(text):
+    for m in _ROW.finditer(_section(text, "## 2. Driver")):
         rows[int(m.group(1))] = (m.group(2).strip(), m.group(3).strip())
     if not rows:
         raise SystemExit("wiringgen: no connection rows parsed from BENCH_WIRING.md")
     return rows
+
+
+def parse_guide_hall(text):
+    """The Hall sensor's three connections and its pull-up.
+
+    Returns ({pin: dest}, pullup_ohms).  Same treatment as the driver table:
+    the pins come from the guide, the GPIO comes from pins.h, and verify()
+    refuses to draw if they disagree.
+    """
+    blk = _section(text, "## 2a. The Hall sensor")
+    rows = {}
+    for m in _ROW.finditer(blk):
+        rows[m.group(2).strip().upper()] = m.group(3).strip()
+    m = re.search(r"\|\s*\d+\s*\|\s*pull-up\s*\|\s*`OUT`\s*\|\s*\*\*3V3\*\*\s*\|"
+                  r"\s*\*\*([\d.]+)\s*kohm\*\*", blk)
+    return rows, (float(m.group(1)) if m else None)
 
 
 def parse_guide_vref(text):
@@ -123,6 +156,8 @@ def verify(loud=False):
     table = parse_guide_table(gtxt)
     bad = []
 
+    hall_rows, pullup_k = parse_guide_hall(gtxt)
+
     want = {"STEP": pins["STEP"], "DIR": pins["DIR"], "EN": pins["EN"]}
     seen = {}
     for num, (drv, esp) in table.items():
@@ -145,6 +180,28 @@ def verify(loud=False):
             bad.append("VIO must go to 3V3; the guide says %r" % esp)
         if u.startswith("MS") and esp != "3V3":
             bad.append("%s must be tied to 3V3 for 1/16; the guide says %r" % (drv, esp))
+
+    # THE HALL, held to exactly the same standard as the driver pins: the
+    # sensor's OUT lands on column 0's GPIO or nothing is drawn.  This is the
+    # first session with a Hall fitted, so the page it feeds is the first page
+    # in this guide that can be wrong about a sensor.
+    if sorted(hall_rows) != ["GND", "OUT", "VCC"]:
+        bad.append("section 2a must have VCC, GND and OUT rows, found %r" % sorted(hall_rows))
+    else:
+        m = re.match(r"GPIO(\d+)$", hall_rows["OUT"])
+        if not m:
+            bad.append("the hall OUT row goes to %r, which is not a GPIO" % hall_rows["OUT"])
+        elif int(m.group(1)) != pins["HALL"]:
+            bad.append("HALL: pins.h says column 0 is GPIO%d, the guide says %s"
+                       % (pins["HALL"], hall_rows["OUT"]))
+        if hall_rows["VCC"] != "3V3":
+            bad.append("the A1121 runs on 3V3 (there is no 5 V rail); the guide "
+                       "says %r" % hall_rows["VCC"])
+        if hall_rows["GND"] != "GND":
+            bad.append("the hall GND row goes to %r" % hall_rows["GND"])
+    if pullup_k is None:
+        bad.append("section 2a states no pull-up value; the output is OPEN DRAIN "
+                   "and a page that omits the resistor cannot be built")
 
     ms = sorted(d.upper() for _n, (d, _e) in table.items() if d.upper().startswith("MS"))
     if ms != ["MS1", "MS2"]:
@@ -181,7 +238,7 @@ def verify(loud=False):
             sys.stderr.write("  - %s\n" % b)
         raise SystemExit(1)
 
-    FACTS.update(ms=ms_rows, vref_pre=pre)
+    FACTS.update(ms=ms_rows, vref_pre=pre, hall=hall_rows, pullup_k=pullup_k)
 
     if loud:
         print("wiringgen: pins.h and BENCH_WIRING.md agree")
@@ -189,6 +246,9 @@ def verify(loud=False):
         print("  %d connection rows, %d Vref rows, all checked" % (len(table), len(vrefs)))
         print("  microstep table %s" % (", ".join("%d%d=%s" % r for r in ms_rows)))
         print("  Vref precondition quoted: %r" % pre)
+        print("  hall: VCC->%s GND->%s OUT->%s, pull-up %g k"
+              % (hall_rows.get("VCC"), hall_rows.get("GND"), hall_rows.get("OUT"),
+                 pullup_k))
     return pins, table
 
 
@@ -290,8 +350,26 @@ class Page:
 TMC_LEFT = ["EN", "MS1", "MS2", "PDN", "CLK", "STEP", "DIR", "(n/c)"]
 TMC_RIGHT = ["VM", "GND", "2B", "2A", "1A", "1B", "VIO", "GND"]
 TMC_X, TMC_Y, TMC_W, TMC_H = 640, 250, 250, 400
-ESP_X, ESP_Y, ESP_W, ESP_H = 110, 250, 260, 430
-ESP_PINS = ["3V3", "GND", "GPIO6", "GPIO8", "GPIO24"]
+# ESP_H holds SIX pin stubs now (the Hall took the sixth) and still clears the
+# rule the connection pages draw at y=730: the last stub is at ESP_Y+96+5*62.
+ESP_X, ESP_Y, ESP_W, ESP_H = 110, 250, 260, 450
+# THE ESP PINS THIS GUIDE DRAWS, DERIVED FROM pins.h RATHER THAN TYPED.
+#
+# This list used to carry the GPIO numbers as literals - "GPIO6", "GPIO8",
+# "GPIO24" - which is precisely the thing this whole generator exists to stop.
+# It failed safely (esp_xy raises on a name that is not in the list, so nothing
+# is drawn) but "fails loudly if the pin map moves" is a weaker promise than
+# "follows the pin map", and the Hall page needed a sixth pin anyway.
+#
+# Populated by set_esp_pins() from the parsed header before any page is built.
+# The order is fixed so a pin keeps its y position when another is added:
+# rails first, then EN, STEP, DIR, HALL.
+ESP_PINS = ["3V3", "GND"]
+
+
+def set_esp_pins(pins):
+    ESP_PINS[:] = ["3V3", "GND"] + ["GPIO%d" % pins[k]
+                                    for k in ("EN", "STEP", "DIR", "HALL")]
 MOT_X, MOT_Y = 1240, 170
 PSU_X, PSU_Y, PSU_W, PSU_H = 1170, 520, 310, 170
 
@@ -313,6 +391,12 @@ COLOURS = {
     "MBLUE":  ("motor blue",  "#2f61c4", 9),
     "MGREEN": ("motor green", "#1f8a4c", 9),
     "MBLACK": ("motor black", "#22262b", 9),
+    # The Hall's three leads.  Its VCC is the same 3V3 the driver's VIO is on
+    # and its GND the same ground, so they are drawn in the SAME colours as
+    # VIO and GNDL rather than in new ones - a third red on the page would
+    # imply a third node.  Only OUT is its own colour, because it is the only
+    # wire in the guide that carries a signal INTO the ESP32.
+    "HOUT": ("green, thin", "#1f8a4c", 7),
 }
 MOTOR_WIRES = [("red", "#d0342c"), ("blue", "#2f61c4"),
                ("green", "#1f8a4c"), ("black", "#22262b")]
@@ -386,7 +470,7 @@ def draw_esp(p, hot=()):
         p.rect(ESP_X + ESP_W, y - 11, 18, 22, fill=INK if on else "#9aa4ae", stroke="none")
         p.mono(ESP_X + ESP_W - 12, y + 6, n, 17, INK if on else MUTE, "end",
                "bold" if on else "normal")
-    p.text(ESP_X + 16, ESP_Y + ESP_H - 16, "other pins omitted", 13, FAINT)
+    p.text(ESP_X + 16, ESP_Y + ESP_H - 14, "other pins omitted", 13, FAINT)
 
 
 def draw_motor(p, x=None, y=None, hot=()):
@@ -676,11 +760,16 @@ def main():
         return 0
 
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+    import wiringgen as wg   # sys.modules copy: the one wiringgen_pages imported
     import wiringgen_pages
 
     # Running as __main__ means wiringgen_pages imports a SECOND copy of this
-    # module, with its own empty FACTS.  Hand the verified facts across.
+    # module, with its own empty FACTS and its own ESP_PINS.  Hand the verified
+    # facts and the parsed pin list across - draw_esp and esp_xy read THAT
+    # module's globals, not these.
     wiringgen_pages.FACTS.update(FACTS)
+    wg.set_esp_pins(pins)
+    set_esp_pins(pins)
 
     OUT.mkdir(parents=True, exist_ok=True)
     pages = wiringgen_pages.all_pages(pins, table)

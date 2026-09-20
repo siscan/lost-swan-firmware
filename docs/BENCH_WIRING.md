@@ -8,10 +8,15 @@ source pin, a named destination pin, and how to identify each one on the actual
 part in front of you — because the one thing that would make a photograph
 useless is a module whose silkscreen differs from mine.
 
-> **THE ILLUSTRATED VERSION IS `docs/wiring/bench-wiring.pdf`** — twenty-eight
+> **THE ILLUSTRATED VERSION IS `docs/wiring/bench-wiring.pdf`** — thirty-two
 > pages, one connection per page, drawn parts with their real pin labels, the
 > Vref procedure with the meter probes on the pads, a continuity checklist and
 > numbered power-on / power-off sequences. Print it and take it to the bench.
+>
+> **Three pages are the HALL SENSOR**, added 2026-09-20 with §2a: which way
+> round the A1121LUA-T goes, its three wires and the pull-up, and the two
+> checks that prove polarity before you trust a home. Gate 3 ran with no
+> sensor fitted and the guide said so on every page; this module has one.
 >
 > **Pages 1–2 and the three physical pages are LEVEL 0**, added 2026-09-12
 > because this file and the schematic pages together were a correct *schematic*
@@ -260,6 +265,176 @@ Everything shares one ground: ESP32 `GND`, driver logic `GND`, driver power
 same rail the supply negative lands on, and take the driver's two GND pins from
 that rail — but keep the **power** ground path short and direct, because that
 is the one carrying coil current.
+
+---
+
+## 2a. The Hall sensor - A1121LUA-T
+
+**New for the pitch-80 module (2026-09-20).** Gate 3 ran with no Hall and no
+magnet fitted and said so on every page. This module has both, so the column
+can home, `revs` can measure, and the ladder in §5 can be closed-loop. Three
+wires.
+
+Every fact in this section is from the Allegro **A1120-A1123/A1125 datasheet**
+(A1120-DS rev. 22), not from memory or from the A3144 text this repository
+carried until 2026-08-22.
+
+### The pinout, by the flat face
+
+The part is a **3-pin SIP (package UA)**, not a TO-92 - a flat epoxy slab with
+three leads in a row. One face carries the branding (the supplier emblem, two
+digits of the part number and a temperature-code letter); that is the
+**branded face**, and the datasheet numbers the pins in a view of it.
+
+**Hold it with the branded face towards you and the leads pointing down:**
+
+```
+        +-----------+
+        |   allegro |      <- branded face (the marked, flat side)
+        |    21 L   |         Hall element sits 0.50 mm behind it
+        +-----------+
+          |    |    |
+          1    2    3
+         VCC  GND  OUT
+```
+
+| terminal | pin (package UA) | what it is |
+|---|---|---|
+| `VCC` | **1** | supply, 3.0-24 V |
+| `GND` | **2** | the **centre** lead |
+| `VOUT` | **3** | open drain, sinks up to 25 mA |
+
+**The centre lead is GND, and that one is certain** whichever way round you
+read the part. If the two outer leads end up swapped the sensor simply does not
+work - the device gets no supply and its output is driven hard to 3.3 V through
+your pull-up. That is survivable (V_OUT is rated to 26 V) and it is exactly
+what cause 1 in the `home` decision tree below tells you to suspect.
+
+### The connections
+
+| # | sensor pin | goes to | ESP32-C5 pin | notes |
+|---|---|---|---|---|
+| 17 | `VCC` | -> | **3V3** | 3.0-24 V part; there is no 5 V rail |
+| 18 | `GND` | -> | **GND** | the same ground as everything else |
+| 19 | `OUT` | -> | **GPIO0** | open drain - needs the pull-up below |
+
+Plus **one resistor**, which is not a connection to anything on the ESP32:
+
+| # | part | from | to | value |
+|---|---|---|---|---|
+| 20 | pull-up | `OUT` | **3V3** | **10 kohm** |
+
+### The pull-up value, resolved
+
+Spec §2 carried `VERIFY` on this since 2026-08-22, because the 10 k it named
+came from A3144-era text and `HARDWARE_PLAN_2` specifies the rail and not the
+value. **Resolved 2026-09-20: 10 kohm.**
+
+The datasheet does not name a value - its application circuit draws a generic
+`R_L` - so this is derived from the numbers it does give, and those numbers
+leave an enormous window:
+
+- **Sink current at 3.3 V through 10 k is 330 uA.** The part is rated to sink
+  **25 mA** and current-limits at 30-60 mA, so this is about 1 % of its rating.
+- **The low level is therefore far below spec.** `V_OUT(sat)` is 185 mV typical
+  and 500 mV maximum **at 20 mA**; at 330 uA it is a small fraction of that,
+  and the ESP32-C5 wants below ~0.8 V.
+- **The high level is clean.** Output leakage is **10 uA maximum**, which
+  through 10 k is 100 mV of droop - the pin reads 3.2 V, well over the ~2.0 V
+  input threshold.
+- **Anything from ~1 k to ~47 k would work electrically.** 10 k is the middle
+  of it, it is what the loom will use on all five columns, and the value is
+  now written down rather than being a number somebody remembers.
+
+**Also fit 0.1 uF between VCC and GND at the sensor**, which the datasheet does
+state in words: *"It is strongly recommended that an external bypass capacitor
+be connected (in close proximity to the Hall element) between the supply and
+ground of the device."* On the bench a ceramic across the two leads at the
+sensor end of the flying lead is enough.
+
+### Polarity, and why it is the one thing that will waste your evening
+
+The A1121 is a **unipolar** switch. From the datasheet's own selection guide,
+the column is headed *"Output In South (Positive) Magnetic Field"* and the
+A1121's entry reads **On (logic low)**:
+
+- a **south** pole of sufficient strength turns the output **on**, which is
+  **LOW** (that is `motion.hall_active_low = true`, the firmware's default);
+- removing the field turns it off, which is high through the pull-up;
+- a **north** pole does **nothing at all**. Not a weaker trip - nothing.
+
+Switch points for the A1121: operate **B_OP = 95 G typical** (50 min, 135 max),
+release **B_RP = 70 G typical**, hysteresis 25 G typical. That hysteresis is
+what makes the edge clean enough to latch a step count against.
+
+`docs/ref/BOM.md` has carried "Hall polarity: one evening of *sensor is dead*
+is always a flipped magnet" as gotcha 2 since the beginning. The two checks
+below are how you avoid spending that evening, and the second one reads a
+magnet that is **already glued in** without touching it.
+
+#### Check 1 - the sensor works, and which face is its south
+
+Power the board. **The motor may be connected and VM may be off; nothing here
+turns a drum.** At the console:
+
+```
+hall
+```
+
+It prints, per column, the raw GPIO level and the debounced, polarity-corrected
+view. With nothing near the sensor, column 0 should read `raw=1 magnet=no`.
+
+Now take a **spare** magnet out of the bag and bring one face up to the
+sensor's branded face:
+
+- if `hall` flips to `magnet=YES`, **that face of the spare is its SOUTH**.
+  Mark it `S` with a marker, now, while you know.
+- if nothing happens, turn the spare over and try the other face. One of the
+  two will trip it. If neither does at 1-2 mm, go to cause 1 below.
+
+That is the whole of "is the sensor alive and which pole does it want", and it
+costs ten seconds.
+
+#### Check 2 - read the GLUED magnet's face without removing it
+
+The drum's magnet is epoxied into the idler disc and you are not going to prise
+it out to look at it. You do not have to: a magnet is its own polarity meter.
+
+Take the spare you just marked `S` and bring its `S` face towards the glued
+magnet's exposed face:
+
+| they | the glued magnet's outward face is | and so |
+|---|---|---|
+| **repel** | **SOUTH** | correct - it will trip the sensor |
+| **attract** | **NORTH** | wrong - it will never trip the sensor |
+
+Like poles repel, so a spare whose south face pushes back is facing another
+south. There is no ambiguity and no meter involved.
+
+If it reads north, **the magnet is in backwards** and no amount of firmware
+will fix it. Re-glue it the other way up, or move the sensor to the other side
+of the disc if the bracket allows. `motion.hall_active_low` does **not** help:
+that inverts how the firmware reads the OUTPUT, and a north pole produces no
+output transition to invert.
+
+#### Check 3 - turn the drum by hand and watch
+
+With the sensor wired and the drum free (`maint on`, or VM simply off), turn
+the drum slowly by hand through a full revolution while watching `hall`.
+
+Once per revolution, and once only, column 0 must read `magnet=YES`. If it
+reads yes over a wide arc the gap is too small or the magnet is too strong for
+the mounting; if it never reads yes, the decision tree under §5's `home` step
+says which of three things it is.
+
+`VERIFY` - record what you found:
+
+```
+spare magnet's S face marked?          yes / no
+glued magnet reads                     south / north
+`hall` trips once per revolution?      yes / no
+air gap, sensor face to disc face      ______ mm
+```
 
 ---
 
@@ -687,28 +862,82 @@ Do not hot-swap the PDO with VM live. The trigger renegotiates by dropping and
 re-raising the rail, and that is a supply transient into an energised output
 stage — `en 0` and remove VM first, every time.
 
+### Home it — and what to do when it will not
+
+**New for the pitch-80 module.** With a magnet fitted the column can home, and
+everything below is closed loop because of it.
+
+```
+home 0
+```
+
+The command **watches the pass** rather than printing `homing` and leaving you
+to read a scrollback. On success it prints the index and the `cal_offset`; on
+failure it prints a three-cause decision tree, because `no_hall` names the
+*signature* and not the fault — a dead sensor, a magnet the sensor never passes
+close enough to, and a magnet glued in backwards all produce exactly "1.2
+revolutions, no edge".
+
+The tree is §2a's three checks in the order that matters, plus the one fact the
+firmware can contribute and you cannot see: **whether the hall asserted at any
+point during the pass it just ran.** BRINGUP §28c step 3b has it on paper.
+
+### Measure the edges — and `hall_tol`
+
+```
+revs 0 10
+```
+
+**Expect 3200, flat.** There is no residue to alternate at 1:1, so any spread is
+a finding and not rounding. The command also proposes the **measured `hall_tol`**
+beside the derived 16 — twice the worst `|err|` over the ten revolutions, floored
+at 2 — and says which of the three outcomes you are in. BRINGUP §28c step 3c has
+the rule and the blanks. Record both numbers.
+
+### The speed ladder
+
+```
+ramp 0 2,5,10,20 30
+```
+
+An explicit list of rates, thirty seconds each, **closed loop**, one rung at a
+time with ENTER between them (`q` stops). Per rung it reports flips, drum
+revolutions, `hall_to_hall`, worst `|err|`, issued-minus-covered and the resync
+deltas — then asks for what only you can see.
+
+**Watch the cards, not the console.** Doubles, flutter and late seats move no
+counter in this firmware: position can stay perfect while the display is wrong.
+A rung that looks clean to the eye and reports a **major resync** is the most
+valuable line the command prints.
+
+Anything over this image's cap is refused **before any rung runs** — a partial
+ladder reads like a complete one.
+
 ### The one-flap-per-tick soak
 
 ```
-bench soak 0
+bench soak 0 60
 ```
 
-Sixty minutes, one flap per second. Leave it alone; `bench` shows progress,
-`bench stop` aborts.
+Sixty minutes by default, one flap per second; the duration is an argument
+(`bench soak <col> [minutes] [tick_s]`). Leave it alone; `bench` shows progress,
+`bench stop` aborts, and `bench samples` prints the per-minute record out of the
+soak's own buffer — which no log storm can evict, after one did.
 
-**With no Hall fitted this runs OPEN LOOP** and says so in the log and in the
-final report. That is deliberate and it was changed today: the soak used to call
-the closed-loop `go()`, which refuses without a home reference, so on your
-module it would have sat there for an hour doing nothing. The thermal question
-does not need a Hall — **the heat is in the holding current** — so it now falls
-back to open-loop flaps and omits the edge figures rather than printing zeroes
-that look like clean results.
+**Homed, this is CLOSED LOOP** and the report carries drum revolutions,
+`hall_to_hall`, worst edge error and the resync counts, because the edge
+verification was live for the whole hour. The console says `closed loop` when
+you start it.
 
-What you get: the thermal answer, which is what gate 3 is for.
-What you do not get: `hall_to_hall`, resyncs, edge error. Those wait for the
-magnet.
+**Unhomed, it falls back to OPEN LOOP** and says so — in the log, at the prompt
+before the hour starts, and in the report, which omits the edge figures rather
+than printing zeroes that look like clean results. That fallback was written for
+gate 3, where no Hall was fitted at all; on this module it means you skipped
+`home 0`. Stop and start again — an open-loop hour answers only the thermal
+half, and that half is already answered.
 
-At the end it stops and asks you to put a hand on the motor case.
+At the end it stops, asks for a **five-minute watched window** of card
+behaviour, and then asks you to put a hand on the motor case.
 
 ---
 
@@ -746,8 +975,10 @@ for the console if something smells hot.** Pull VM.
 
 - **Faults on columns 1–4.** Nothing is wired to them; they will latch
   `no_hall`. Ignore them.
-- **A `no_hall` fault on column 0 too**, before you enter maintenance. Also
-  expected — there is no magnet.
+- **A `no_hall` fault on column 0 too**, before you enter maintenance —
+  expected on a module with **no magnet fitted**. On the pitch-80 module there
+  is one, so a `no_hall` on column 0 is a finding: `home 0` prints the
+  three-cause tree, and §2a's checks settle which cause it is.
 - **The drum settling to a slightly different rest position** after `en 0`. The
   drum is unbalanced 3.92 N·cm against a 2.2 N·cm detent (§5.7), so an
   unpowered drum slews to its heavy side. That is the physics this whole

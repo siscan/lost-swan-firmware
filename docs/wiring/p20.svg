@@ -4,7 +4,7 @@
 <line x1="0" y1="88" x2="1600" y2="88" stroke="#c7ced6" stroke-width="2"/>
 <text x="52" y="47" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="29" fill="#14181d" text-anchor="start" font-weight="bold">Bulk capacitor  —  connection 13</text>
 <text x="52" y="74" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">100 uF, at the driver's OWN pins</text>
-<text x="1548" y="52" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="26" fill="#6b7683" text-anchor="end" font-weight="bold">20 / 29</text>
+<text x="1548" y="52" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="26" fill="#6b7683" text-anchor="end" font-weight="bold">20 / 32</text>
 <rect x="640" y="250" width="250" height="400" rx="6" fill="#f6f8fa" stroke="#14181d" stroke-width="3"/>
 <text x="765" y="204" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="21" fill="#14181d" text-anchor="middle" font-weight="bold">FYSETC TMC2209</text>
 <text x="765" y="226" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="14" fill="#6b7683" text-anchor="middle" font-weight="normal">standalone  ·  match by LABEL</text>

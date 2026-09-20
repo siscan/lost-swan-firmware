@@ -4,7 +4,7 @@
 <line x1="0" y1="88" x2="1600" y2="88" stroke="#c7ced6" stroke-width="2"/>
 <text x="52" y="47" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="29" fill="#14181d" text-anchor="start" font-weight="bold">What the schematic does not say</text>
 <text x="52" y="74" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">Three parts need preparing, one decision is already made, and one thing is deliberately NOT checked</text>
-<text x="1548" y="52" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="26" fill="#6b7683" text-anchor="end" font-weight="bold">2 / 29</text>
+<text x="1548" y="52" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="26" fill="#6b7683" text-anchor="end" font-weight="bold">2 / 32</text>
 <rect x="52" y="104" width="760" height="293" rx="8" fill="#ffffff" stroke="#14181d" stroke-width="2"/>
 <rect x="52" y="104" width="760" height="44" rx="8" fill="#eef2f6" stroke="none" stroke-width="2"/>
 <rect x="52" y="140" width="760" height="8" rx="0" fill="#eef2f6" stroke="none" stroke-width="2"/>
@@ -87,12 +87,12 @@
 <text x="894" y="133" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="19" fill="#14181d" text-anchor="start" font-weight="bold">Heatsink: not needed this session</text>
 <text x="864" y="182" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">DECIDED: the driver runs bare. 0.7 A RMS against the module's 2 A rating is</text>
 <text x="864" y="203" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">roughly an eighth of rated dissipation, and the soak's thermal question is the</text>
-<text x="864" y="224" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">motor sealed in PLA, not the driver. Page 29's STOP NOW list already carries</text>
+<text x="864" y="224" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">motor sealed in PLA, not the driver. Page 32's STOP NOW list already carries</text>
 <text x="864" y="245" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">'the driver too hot to keep a finger on', so this is watched rather than</text>
 <text x="864" y="266" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="15" fill="#14181d" text-anchor="start" font-weight="normal">assumed.</text>
 <text x="864" y="301" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="14" fill="#b8791a" text-anchor="start" font-weight="normal">Not independently verified: the exact RDS(on)-derived junction temperature. IF one</text>
 <text x="864" y="320" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="14" fill="#b8791a" text-anchor="start" font-weight="normal">ever goes on, the adhesive pad MUST clear the Vref trimpot - a heatsink</text>
-<text x="864" y="339" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="14" fill="#b8791a" text-anchor="start" font-weight="normal">overhanging the pot ends page 24.</text>
+<text x="864" y="339" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="14" fill="#b8791a" text-anchor="start" font-weight="normal">overhanging the pot ends page 27.</text>
 <rect x="840" y="360" width="708" height="234" rx="8" fill="#ffffff" stroke="#14181d" stroke-width="2"/>
 <rect x="840" y="360" width="708" height="44" rx="8" fill="#eef2f6" stroke="none" stroke-width="2"/>
 <rect x="840" y="396" width="708" height="8" rx="0" fill="#eef2f6" stroke="none" stroke-width="2"/>

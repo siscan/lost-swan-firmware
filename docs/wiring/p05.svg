@@ -4,7 +4,7 @@
 <line x1="0" y1="88" x2="1600" y2="88" stroke="#c7ced6" stroke-width="2"/>
 <text x="52" y="47" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="29" fill="#14181d" text-anchor="start" font-weight="bold">Solder the headers</text>
 <text x="52" y="74" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">SKIPPED this session - the modules arrived with headers already on</text>
-<text x="1548" y="52" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="26" fill="#6b7683" text-anchor="end" font-weight="bold">5 / 29</text>
+<text x="1548" y="52" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="26" fill="#6b7683" text-anchor="end" font-weight="bold">5 / 32</text>
 <rect x="52" y="108" width="1496" height="102" rx="6" fill="#eff8f2" stroke="#1a7f45" stroke-width="3"/>
 <rect x="52" y="108" width="9" height="102" rx="0" fill="#1a7f45" stroke="none" stroke-width="2"/>
 <text x="80" y="140" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="18" fill="#1a7f45" text-anchor="start" font-weight="bold">SKIP THIS PAGE AND GO TO PAGE 6. The FYSETC modules arrived PRE-SOLDERED - confirmed by opening the box, not inferred from a</text>

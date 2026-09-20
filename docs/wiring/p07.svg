@@ -4,7 +4,7 @@
 <line x1="0" y1="88" x2="1600" y2="88" stroke="#c7ced6" stroke-width="2"/>
 <text x="52" y="47" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="29" fill="#14181d" text-anchor="start" font-weight="bold">Which way up the driver goes</text>
 <text x="52" y="74" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#6b7683" text-anchor="start" font-weight="normal">Measured on the real part - and it is not the way a StepStick diagram draws it</text>
-<text x="1548" y="52" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="26" fill="#6b7683" text-anchor="end" font-weight="bold">7 / 29</text>
+<text x="1548" y="52" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="26" fill="#6b7683" text-anchor="end" font-weight="bold">7 / 32</text>
 <rect x="52" y="108" width="1496" height="76" rx="6" fill="#fdf0ef" stroke="#c0261b" stroke-width="3"/>
 <rect x="52" y="108" width="9" height="76" rx="0" fill="#c0261b" stroke="none" stroke-width="2"/>
 <text x="80" y="140" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="18" fill="#c0261b" text-anchor="start" font-weight="bold">THE HEADER PINS EXIT THE COMPONENT FACE - the face with the Vref trimpot on it. So the module seats POT-DOWN, against the</text>
@@ -14,7 +14,7 @@
 <text x="52" y="305" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">checking it or correcting it without pulling the module back out</text>
 <text x="52" y="330" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">- and pulling a module out of a live board is how they die. So</text>
 <text x="52" y="355" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">VREF IS SET BEFORE INSERTION, with the driver lying on the bench</text>
-<text x="52" y="380" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">on two flying leads. Page 24 is that procedure, and it is why</text>
+<text x="52" y="380" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">on two flying leads. Page 27 is that procedure, and it is why</text>
 <text x="52" y="405" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="17" fill="#14181d" text-anchor="start" font-weight="normal">that page comes before the module ever goes in.</text>
 <text x="280" y="482" font-family="DejaVu Sans, Verdana, Geneva, sans-serif" font-size="14" fill="#6b7683" text-anchor="middle" font-weight="normal">seen from the end</text>
 <rect x="130" y="496" width="300" height="18" rx="3" fill="#3c6e47" stroke="#14181d" stroke-width="2"/>
