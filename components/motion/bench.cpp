@@ -153,6 +153,29 @@ void print_verdict_prompt(const BenchStats& s, const BenchSchedule& sched) {
         std::printf("=====================================================\n\n");
         return;
     }
+    // WHAT THE HOUR CANNOT TELL YOU, said where the numbers are.
+    //
+    // Every figure above is a position figure.  The drum can hold perfect
+    // registration for an hour while cards double, flutter or fail to seat,
+    // and no counter in this firmware moves when they do - spec 17 (2026-08-23)
+    // says so in as many words.  A report that printed only what it can count
+    // reads as a complete result, so it asks for the other half explicitly and
+    // bounds the asking: nobody watches a drum for an hour, and a tally with no
+    // stated window is a number without a denominator.
+    if (!s.open_loop) {
+        std::printf("\n");
+        std::printf("  DOUBLES AND FLUTTER ARE EYES-ONLY.\n");
+        std::printf("  Nothing above can see a card that did not seat: position\n");
+        std::printf("  stays perfect while the display is wrong. Pick any five\n");
+        std::printf("  minutes of the run, watch, and fill this in:\n");
+        std::printf("\n");
+        std::printf("    watched window   ____ to ____ of %u min, %u flaps in it\n",
+                    tot / 60, (flaps * 300u) / (tot != 0 ? tot : 1));
+        std::printf("    doubles seen     ______      flutter  ______\n");
+        std::printf("    late seats       ______      jams     ______\n");
+        std::printf("\n");
+        std::printf("  A blank tally is a blank, not a zero. Say \"not watched\".\n");
+    }
     std::printf("\n");
     std::printf("  NOW PUT A HAND ON THE MOTOR CASE.\n");
     std::printf("\n");
@@ -377,9 +400,10 @@ bool bench_spin_start(int column, int32_t flaps_s, int seconds) {
     // be its own kind of lie.
     if (bench_speed_refused(flaps_s)) {
         ESP_LOGE(TAG,
-                 "%d flaps/s refused: the stand-in axle is PRINTED PLA and this "
-                 "build caps at %d flaps/s (1 drum rev/s).  The %d flaps/s show "
-                 "spin is not available in a bench image at any setting.",
+                 "%d flaps/s refused: this build caps at %d flaps/s and the cap "
+                 "is compiled in.  The %d flaps/s show spin is not available in a "
+                 "bench image at any setting; rebuild with -DSWAN_BENCH_CAP=<n> "
+                 "if the mechanism on the vise has changed.",
                  static_cast<int>(flaps_s), static_cast<int>(BENCH_MAX_FLAPS_S),
                  static_cast<int>(SHOW_SPIN_FLAPS_S));
         return false;

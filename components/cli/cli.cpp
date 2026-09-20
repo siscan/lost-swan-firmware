@@ -74,6 +74,37 @@ bool parse_col(const char* s, int& out, bool allow_all) {
     return true;
 }
 
+// The speed ladder's rung limit.  Eight is far more than a ladder anybody
+// would stand at a vise for, and it keeps the array on the REPL stack.
+constexpr int MAX_RUNGS = 8;
+
+// Wait for the operator, on the console they are already looking at.  Returns
+// false if they typed q/Q, which is how a ladder is abandoned without having
+// to reach for Ctrl-C.  getchar() on this REPL blocks on the USB-Serial-JTAG
+// driver, so this costs nothing while it waits.
+bool wait_for_enter() {
+    // BOUNDED, because this runs on the console REPL task and an unbounded
+    // wait on stdin is a wedged console.  getchar() returns EOF rather than
+    // blocking when the VFS is in a non-blocking mode, so without the bound
+    // the loop below would spin at 50 Hz for ever waiting for a keypress
+    // nobody is there to make.  Ten minutes is far longer than anyone stands
+    // watching one rung and short enough that a walked-away-from bench does
+    // not stay busy.
+    const int64_t until = esp_timer_get_time() + 600LL * 1000000;
+    while (esp_timer_get_time() < until) {
+        const int c = std::getchar();
+        if (c == EOF) {
+            vTaskDelay(pdMS_TO_TICKS(20));
+            continue;
+        }
+        if (c == 'q' || c == 'Q') return false;
+        if (c == '\n' || c == '\r') return true;
+    }
+    std::printf("    no keypress in 10 minutes - stopping rather than running the\n");
+    std::printf("    next rung at a bench nobody is standing at.\n");
+    return false;
+}
+
 // A pinned copy, always.  Before bind_ring (boot only, single-threaded) fall
 // back to the live table.
 RingSet ring_now() {
@@ -197,7 +228,10 @@ int cmd_dir(int argc, char** argv) {
         return 1;
     }
     p.dir_invert = (v != 0);
-    motion::set_params(p);
+    if (!motion::set_params(p)) {
+        std::printf("refused - see the log\n");
+        return 1;
+    }
     std::printf("dir_invert = %d\n", p.dir_invert ? 1 : 0);
     return 0;
 }
@@ -282,6 +316,7 @@ int cmd_bench(int argc, char** argv) {
         if (argc < 3 || argc > 5) {
             std::printf("usage: bench soak <col> [minutes] [tick_s]\n");
             std::printf("  default 60 minutes, one flap a second\n");
+            std::printf("  closed loop when the column is homed, open loop when not\n");
             std::printf("  `bench samples` prints the run's own per-minute record\n");
             return 1;
         }
@@ -289,6 +324,31 @@ int cmd_bench(int argc, char** argv) {
         if (!parse_long(argv[2], col)) return 1;
         if (argc >= 4 && !parse_long(argv[3], mins)) return 1;
         if (argc >= 5 && !parse_long(argv[4], tick)) return 1;
+        if (mins < 1 || mins > 1440) {
+            std::printf("minutes must be 1..1440\n");
+            return 1;
+        }
+        // SAY WHICH HALF OF THE ANSWER YOU ARE ABOUT TO GET, BEFORE THE HOUR.
+        //
+        // The soak falls back to open-loop flapping without a home reference,
+        // which is right and was added deliberately for gate 3 branch B - a
+        // module with no Hall fitted at all.  Branch A HAS one, and an
+        // unhomed column looks identical to a hall-less one from in here.
+        // So the difference is stated at the prompt rather than discovered in
+        // the report an hour later, when the only fix is another hour.
+        if (col >= 0 && col < N_COLUMNS) {
+            AxisInfo ha{};
+            motion::info(static_cast<int>(col), ha);
+            if (!ha.hall_valid) {
+                std::printf("\n  NO HOME REFERENCE ON COLUMN %ld.\n", col);
+                std::printf("  This run will be OPEN LOOP and will answer the THERMAL\n");
+                std::printf("  question only - no edges, no resyncs, no hall_to_hall.\n");
+                std::printf("  If a magnet IS fitted, `home %ld` first and the same hour\n", col);
+                std::printf("  also proves the drum kept its registration.\n\n");
+            } else {
+                std::printf("  closed loop: edge verification is live for the whole run\n");
+            }
+        }
         motion::BenchSchedule sch;
         sch.total_s = static_cast<uint32_t>(mins * 60);
         sch.tick_s = static_cast<uint32_t>(tick);
@@ -300,8 +360,12 @@ int cmd_bench(int argc, char** argv) {
     }
     // Status.
     const motion::BenchStats st = motion::bench_report();
-    std::printf("bench image, cap %d flaps/s (1 drum rev/s); show spin (%d) is absent\n",
+    // The cap is a build parameter, so the drum-revolution figure is derived
+    // rather than the words "1 drum rev/s" being printed beside whatever
+    // number the image happens to carry.
+    std::printf("bench image, cap %d flaps/s (%.2f drum rev/s); show spin (%d) is absent\n",
                 static_cast<int>(motion::BENCH_MAX_FLAPS_S),
+                static_cast<double>(motion::BENCH_MAX_FLAPS_S) / N_RING,
                 static_cast<int>(motion::SHOW_SPIN_FLAPS_S));
     if (!motion::bench_running() && st.total_s == 0) {
         std::printf("no run yet.  `bench soak <col>` starts the hour.\n");
@@ -347,12 +411,109 @@ int cmd_step(int argc, char** argv) {
     return err == ESP_OK ? 0 : 1;
 }
 
+// WHY A HOMING FAILURE PRINTS A DECISION TREE (BRINGUP 28c step 3b).
+//
+// A homing pass that finds no edge is ONE observation with THREE causes, and
+// the firmware cannot tell them apart: a dead sensor, a magnet the sensor
+// never passes close enough to, and a magnet in backwards all produce exactly
+// "1.2 revolutions, no edge".  Spec 5.8 says so about the classifier and it is
+// just as true here - `no_hall` names the SIGNATURE, not the fault.
+//
+// What separates them is three things a person does with their hands, in a
+// fixed order, and the order matters: checking polarity before checking that
+// the sensor is powered at all wastes the evening that docs/ref/BOM.md gotcha
+// 2 has warned about since the beginning.  So the tree is printed at the
+// moment it is needed, on the console the person is already looking at.
+//
+// The firmware contributes the one fact it CAN observe and a person cannot:
+// whether the hall asserted at any point during the pass it just ran.  That
+// turns branch 2 from a question into an answer.
+void print_home_tree(int col, bool saw_magnet_during_pass) {
+    std::printf("\n");
+    std::printf("  COLUMN %d DID NOT FIND A HALL EDGE.\n", col);
+    std::printf("  One observation, three causes. Work down, in this order.\n\n");
+
+    std::printf("  During the pass just now, the hall read magnet=%s.\n\n",
+                saw_magnet_during_pass ? "YES at least once" : "no, the whole way round");
+
+    std::printf("  1. Turn the drum by hand with `hall` on screen.\n");
+    std::printf("     NEVER reads magnet=YES, at any angle\n");
+    std::printf("        -> THE SENSOR IS UNPOWERED OR MISWIRED.\n");
+    std::printf("           VCC to 3V3, GND to the CENTRE lead, OUT to GPIO%d,\n",
+                PIN_HALL[col]);
+    std::printf("           and the 10 k pull-up from OUT to 3V3 - without it the\n");
+    std::printf("           open-drain output cannot pull the pin up at all.\n");
+    std::printf("           Check the two OUTER leads are not swapped.\n\n");
+
+    std::printf("  2. Reads magnet=YES by hand, but never during `home`\n");
+    std::printf("        -> AIR GAP, or the magnet is not where the sensor sweeps.\n");
+    std::printf("           By hand you can hold the magnet anywhere; the drum\n");
+    std::printf("           can only take it past one fixed point. Close the gap\n");
+    std::printf("           to 1-2 mm and check the sensor faces the disc track\n");
+    std::printf("           the magnet actually runs on.\n\n");
+
+    std::printf("  3. Nothing from the drum magnet, but a SPARE held to the\n");
+    std::printf("     sensor DOES trip it\n");
+    std::printf("        -> POLARITY. The magnet is glued in backwards.\n");
+    std::printf("           The A1121 is unipolar: a SOUTH pole turns it on and a\n");
+    std::printf("           north pole does nothing at all. Mark the spare face\n");
+    std::printf("           that trips it S, then hold that face to the glued\n");
+    std::printf("           magnet: REPEL = south = correct, ATTRACT = north =\n");
+    std::printf("           re-glue it. `motion.hall_active_low` does NOT fix\n");
+    std::printf("           this - there is no transition for it to invert.\n\n");
+
+    std::printf("  Full procedure: docs/BENCH_WIRING.md section 2a, and the\n");
+    std::printf("  illustrated pages. BRINGUP 28c step 3b has the blanks.\n\n");
+}
+
 int cmd_home(int argc, char** argv) {
     int col = -1;
     if (argc == 2 && !parse_col(argv[1], col, true)) return 1;
     const esp_err_t err = motion::home(col);
-    std::printf("%s\n", err == ESP_OK ? "homing" : esp_err_to_name(err));
-    return err == ESP_OK ? 0 : 1;
+    if (err != ESP_OK) {
+        std::printf("%s\n", esp_err_to_name(err));
+        return 1;
+    }
+    if (col < 0) {
+        // `home all` is five staggered passes; watching them would tie the
+        // REPL up for half a minute and the tree is per-column anyway.
+        std::printf("homing all five (staggered); `stats` for the outcome\n");
+        return 0;
+    }
+
+    // WATCHED, like `revs`, because the answer arrives seconds later and on
+    // another task.  A bare "homing" leaves the operator reading a scrollback
+    // for a log line, and the log line cannot say what the hall did.
+    std::printf("homing column %d...\n", col);
+    bool saw_magnet = false;
+    AxisInfo a{};
+    // 1.2 revolutions at the homing speed, three automatic retries, plus the
+    // settle move and a margin.  Generous on purpose: timing out EARLY here
+    // would print a failure tree for a column that was about to succeed.
+    const int64_t deadline_ms = esp_timer_get_time() / 1000 + 45000;
+    for (;;) {
+        vTaskDelay(pdMS_TO_TICKS(20));
+        motion::info(col, a);
+        if (a.hall_level) saw_magnet = true;
+        if (a.state == AxisState::Idle && a.hall_valid) {
+            std::printf("homed: index %d, cal_offset %ld usteps\n", a.index,
+                        static_cast<long>(a.cal_offset));
+            std::printf("  the edge is the reference; `revs %d 10` measures the\n", col);
+            std::printf("  distance between edges and `cal %d +/-n` places blank.\n", col);
+            return 0;
+        }
+        if (a.state == AxisState::Fault) {
+            std::printf("FAULT: %s\n", fault_cause_name(a.fault_cause));
+            print_home_tree(col, saw_magnet);
+            return 1;
+        }
+        if (esp_timer_get_time() / 1000 > deadline_ms) {
+            std::printf("still %s after 45 s - not waiting further.\n",
+                        a.state == AxisState::Homing ? "homing" : "not homed");
+            print_home_tree(col, saw_magnet);
+            return 1;
+        }
+    }
 }
 
 int cmd_go(int argc, char** argv) {
@@ -404,9 +565,10 @@ int cmd_spin(int argc, char** argv) {
                            USTEPS_PER_FLAP_DEN;
     const esp_err_t err = motion::step_open_loop(col, usteps, static_cast<int32_t>(fs));
     if (err == ESP_ERR_NOT_SUPPORTED) {
-        std::printf("REFUSED: %ld flaps/s is over this image's cap of %d (1 drum rev/s).\n",
+        std::printf("REFUSED: %ld flaps/s is over this image's cap of %d flaps/s.\n",
                     fs, static_cast<int>(motion::BENCH_MAX_FLAPS_S));
-        std::printf("  This is a bench image and the stand-in axle is printed PLA.\n");
+        std::printf("  This is a bench image. The cap is compiled in: rebuild with\n");
+        std::printf("  -DSWAN_BENCH_CAP=<n> if the mechanism on the vise has changed.\n");
         return 1;
     }
     std::printf("%s: %lld usteps at %ld flaps/s\n", err == ESP_OK ? "spinning" : "failed",
@@ -484,6 +646,13 @@ int cmd_revs(int argc, char** argv) {
     int64_t sum = 0;
     uint32_t seen = 0;
     uint32_t last_rev = rev0;
+    // THE STATISTIC SPEC 5.4 ACTUALLY GRADES ON.  It bands |err| - the
+    // difference between where an edge arrived and where the last one plus a
+    // revolution said it would - not the spread of hall_to_hall.  They are the
+    // same number on a healthy drum and they part company the moment one
+    // revolution is long and the next one short, which is exactly when the
+    // tolerance matters.
+    int32_t worst_err = 0;
 
     while (seen < static_cast<uint32_t>(n)) {
         vTaskDelay(pdMS_TO_TICKS(20));
@@ -496,6 +665,8 @@ int cmd_revs(int argc, char** argv) {
                         static_cast<long>(a.last_hall_err));
             if (seen == 0 || h < lo) lo = h;
             if (seen == 0 || h > hi) hi = h;
+            const int32_t e = a.last_hall_err < 0 ? -a.last_hall_err : a.last_hall_err;
+            if (e > worst_err) worst_err = e;
             sum += h;
             ++seen;
         }
@@ -531,18 +702,262 @@ int cmd_revs(int argc, char** argv) {
 
     motion::stop(col);
     if (seen > 0) {
-        std::printf("n=%lu  min=%ld  max=%ld  mean=%.2f  spread=%ld\n",
+        const MotionParams cur = motion::params();
+        std::printf("n=%lu  min=%ld  max=%ld  mean=%.2f  spread=%ld  worst |err|=%ld\n",
                     static_cast<unsigned long>(seen), static_cast<long>(lo),
                     static_cast<long>(hi), static_cast<double>(sum) / seen,
-                    static_cast<long>(hi - lo));
-        std::printf("expected %lld EXACTLY at the 1:1 direct drive; set motion.hall_tol\n",
+                    static_cast<long>(hi - lo), static_cast<long>(worst_err));
+        std::printf("expected %lld EXACTLY at the 1:1 direct drive: there is no residue\n",
                     static_cast<long long>(USTEPS_PER_SPOOL_REV_NOMINAL));
-        std::printf("from the spread - which should be zero, so any spread is a finding\n");
+        std::printf("to alternate, so ANY spread is a finding and not rounding.\n\n");
+
+        // THE MEASURED hall_tol CANDIDATE (BRINGUP 28c step 3c).
+        //
+        // 16 is a DERIVED default - a quarter of a flap, geometry and nothing
+        // more.  Spec 5.4 has said since the drive change that the real value
+        // comes from measured edge repeatability, and this is the measurement.
+        //
+        // The rule, stated so the number is not a black box: the silent band
+        // must be wider than the repeatability of a healthy drum, or ordinary
+        // jitter is reported as a major resync.  Twice the worst error seen
+        // over n revolutions is the margin; the floor of 2 exists because a
+        // band of 0 or 1 would make the next quantisation step a "fault".
+        const int32_t derived = static_cast<int32_t>(ring_target_usteps(1) / 4);
+        int32_t cand = worst_err * 2;
+        if (cand < 2) cand = 2;
+        std::printf("  hall_tol: derived %ld (a quarter flap), measured candidate %ld\n",
+                    static_cast<long>(derived), static_cast<long>(cand));
+        std::printf("  currently %ld in this image.\n", static_cast<long>(cur.hall_tol));
+        if (!hall_tol_plausible(cand)) {
+            std::printf("  THE SPREAD IS TOO WIDE TO ABSORB. %ld usteps is over half a\n",
+                        static_cast<long>(cand));
+            std::printf("  flap (%ld), and a tolerance there swallows more than half of\n",
+                        static_cast<long>(ring_target_usteps(1)));
+            std::printf("  every real slip. This is a MECHANICAL finding - a slipping\n");
+            std::printf("  coupling, a marginal magnet, or a microstep setting that is\n");
+            std::printf("  not 1/16. Do not widen the tolerance to make it go away.\n");
+        } else if (cand > derived) {
+            std::printf("  The drum is less repeatable than a quarter flap, so %ld would\n",
+                        static_cast<long>(derived));
+            std::printf("  report ordinary jitter as a major resync. Use %ld:\n",
+                        static_cast<long>(cand));
+            std::printf("    motion.params hall_tol=%ld   then `save`\n",
+                        static_cast<long>(cand));
+        } else {
+            std::printf("  Repeatability is better than a quarter flap, so the measurement\n");
+            std::printf("  gives no reason to widen. KEEP %ld: narrowing to the noise\n",
+                        static_cast<long>(derived));
+            std::printf("  floor buys earlier detection of tiny slips and pays for it\n");
+            std::printf("  with false major resyncs the first warm afternoon.\n");
+        }
+        std::printf("  Record BOTH numbers in BRINGUP 28c step 3c - the derived one is\n");
+        std::printf("  what shipped and the measured one is what the drum did.\n");
     }
     std::printf("index is now unknown - re-home before `go`\n");
     return 0;
 }
 
+// ===========================================================================
+// THE SPEED LADDER  (BRINGUP 28c step 6)
+// ===========================================================================
+//
+// `ramp <col> <r1,r2,...> <dwell_s>` - an explicit list of rates, each held
+// for dwell_s seconds, CLOSED LOOP, reporting the hall figures per rung and
+// stopping for a human observation before the next one.
+//
+// WHY A LIST AND NOT A SWEEP.  Spec 14.1 step 5 says "sweep 10 -> 25 flaps/s
+// and note where flaps stop clearing cleanly", which is a shape that only
+// works if the interesting thing is a threshold.  It is not: what fails first
+// on a loaded drum is a CARD doing something - a double, a flutter, a late
+// seat - and those are eyes-only.  A sweep gives you one number and no
+// evidence; a ladder of 2, 5, 10, 20 gives four rungs you can describe and
+// compare, and the gaps between them are where the behaviour changes.
+//
+// WHY CLOSED LOOP.  Gate 3 ran open loop because there was no Hall.  There is
+// one now, so every rung goes through motion::go and therefore through the
+// edge verification in spec 5.4 - which means a rung can report that the drum
+// LOST REGISTRATION at that speed, which is the one failure an open-loop spin
+// cannot see at all.  A rung that looks fine to the eye and reports a major
+// resync is the most valuable line this command can print.
+//
+// NOT motion.ramp.  The dispatcher command of that name is the Calibrate
+// page's INDEX WALK - it steps through ring positions at one speed.  This is
+// the same word for a different thing, and it lives here rather than in the
+// dispatcher for the reason the whole serial CLI does (CLAUDE.md): it is
+// bench tooling that has to work before ModeManager means anything.
+int cmd_ramp(int argc, char** argv) {
+    if (argc != 4) {
+        std::printf("usage: ramp <col> <r1,r2,...> <dwell_s>\n");
+        std::printf("  e.g. ramp 0 2,5,10,20 30   - closed loop, one rung at a time\n");
+        if (motion::BENCH_BUILD) {
+            std::printf("  this image refuses any rung over %d flaps/s\n",
+                        static_cast<int>(motion::BENCH_MAX_FLAPS_S));
+        }
+        return 1;
+    }
+    int col;
+    long dwell;
+    if (!parse_col(argv[1], col, false) || !parse_long(argv[3], dwell)) return 1;
+    if (dwell < 1 || dwell > 600) {
+        std::printf("dwell_s must be 1..600\n");
+        return 1;
+    }
+
+    // Parse the list first and REFUSE THE WHOLE LADDER if any rung is over
+    // the cap.  Refusing rung four after running three is worse than useless:
+    // it leaves a partial result that reads like a complete one.
+    int32_t rungs[MAX_RUNGS];
+    int n = 0;
+    const char* s = argv[2];
+    while (*s != 0) {
+        char* end = nullptr;
+        const long v = std::strtol(s, &end, 10);
+        if (end == s) {
+            std::printf("cannot read a rate at \"%s\"\n", s);
+            return 1;
+        }
+        if (n >= MAX_RUNGS) {
+            std::printf("at most %d rungs\n", MAX_RUNGS);
+            return 1;
+        }
+        if (v < 1 || v > 400) {
+            std::printf("%ld flaps/s is not a sensible rate\n", v);
+            return 1;
+        }
+        if (motion::bench_speed_refused(static_cast<int32_t>(v))) {
+            std::printf("REFUSED: rung %ld is over this image's cap of %d flaps/s.\n",
+                        v, static_cast<int>(motion::BENCH_MAX_FLAPS_S));
+            std::printf("  Nothing was run. The cap is compiled in; rebuild with\n");
+            std::printf("  -DSWAN_BENCH_CAP=<n> if the mechanism has changed.\n");
+            return 1;
+        }
+        rungs[n++] = static_cast<int32_t>(v);
+        s = end;
+        while (*s == ',' || *s == ' ') ++s;
+    }
+    if (n == 0) {
+        std::printf("no rates given\n");
+        return 1;
+    }
+
+    AxisInfo a{};
+    motion::info(col, a);
+    if (!a.hall_valid) {
+        // Refused rather than quietly falling back to open loop.  An
+        // open-loop ladder reports no edge errors and no resyncs, and four
+        // rungs of zeroes read exactly like four clean rungs.  That is the
+        // same lie bench.cpp had to be taught not to tell on 2026-09-11.
+        std::printf("REFUSED: column %d has no hall reference.\n", col);
+        std::printf("  This ladder is CLOSED LOOP - that is the point of running it\n");
+        std::printf("  now rather than at gate 3. `home %d` first.\n", col);
+        return 1;
+    }
+
+    const MotionParams saved = motion::params();
+    std::printf("\n  SPEED LADDER, column %d, %d rung%s, %ld s each\n", col, n,
+                n == 1 ? "" : "s", dwell);
+    std::printf("  Closed loop: every rung is graded by the edge verification.\n");
+    std::printf("  WATCH THE CARDS. Doubles and flutter are eyes-only - no\n");
+    std::printf("  counter in this firmware can see a card that did not seat.\n\n");
+
+    int rc = 0;
+    for (int i = 0; i < n; ++i) {
+        MotionParams pr = saved;
+        pr.flaps_s_normal = rungs[i];
+        if (!motion::set_params(pr)) {
+            std::printf("  rung %d (%ld flaps/s) REFUSED; ladder stopped.\n", i + 1,
+                        static_cast<long>(rungs[i]));
+            rc = 1;
+            break;
+        }
+
+        AxisInfo b0{};
+        motion::info(col, b0);
+        const uint32_t rev0 = b0.revs, min0 = b0.resync_minor, maj0 = b0.resync_major;
+        const uint32_t flt0 = b0.faults, flip0 = b0.flips_total;
+        int32_t worst = 0;
+        int index = b0.index >= 0 ? b0.index : 0;
+
+        std::printf("  --- rung %d of %d: %ld flaps/s ---\n", i + 1, n,
+                    static_cast<long>(rungs[i]));
+        const int64_t until = esp_timer_get_time() + static_cast<int64_t>(dwell) * 1000000;
+        bool faulted = false;
+        while (esp_timer_get_time() < until) {
+            AxisInfo c{};
+            motion::info(col, c);
+            if (c.state == AxisState::Fault) {
+                std::printf("  FAULTED at %ld flaps/s: %s\n",
+                            static_cast<long>(rungs[i]), fault_cause_name(c.fault_cause));
+                faulted = true;
+                break;
+            }
+            const int32_t e = c.last_hall_err < 0 ? -c.last_hall_err : c.last_hall_err;
+            if (e > worst) worst = e;
+            if (c.state == AxisState::Idle) {
+                index = (index + 1) % RING_SLOT_COUNT;
+                motion::go(col, index);
+            }
+            vTaskDelay(pdMS_TO_TICKS(20));
+        }
+        motion::stop(col);
+
+        AxisInfo b1{};
+        motion::info(col, b1);
+        // MISSED STEPS, stated for what it is: the difference between the
+        // usteps the DDA issued and the distance the hall says the drum
+        // actually covered.  It is only meaningful over whole revolutions,
+        // so a rung that saw no edge reports n/a rather than a number.
+        const uint32_t revs = b1.revs - rev0;
+        const uint32_t flips = b1.flips_total - flip0;
+        std::printf("    flips %lu   drum revolutions %lu\n",
+                    static_cast<unsigned long>(flips), static_cast<unsigned long>(revs));
+        if (revs > 0) {
+            std::printf("    hall_to_hall %ld   worst |err| %ld usteps\n",
+                        static_cast<long>(b1.hall_to_hall), static_cast<long>(worst));
+            const long missed = static_cast<long>(flips) * USTEPS_PER_FLAP_NUM -
+                                static_cast<long>(revs) * USTEPS_PER_SPOOL_REV_NOMINAL;
+            std::printf("    issued - covered  %+ld usteps  (%+.2f flaps)\n", missed,
+                        static_cast<double>(missed) / USTEPS_PER_FLAP_NUM);
+        } else {
+            std::printf("    no edge this rung - hall figures n/a\n");
+        }
+        std::printf("    resyncs %lu minor, %lu major   faults %lu\n",
+                    static_cast<unsigned long>(b1.resync_minor - min0),
+                    static_cast<unsigned long>(b1.resync_major - maj0),
+                    static_cast<unsigned long>(b1.faults - flt0));
+        if (faulted) {
+            rc = 1;
+            break;
+        }
+
+        // THE PROMPT.  The firmware has said everything it can; the rest of
+        // this rung is in somebody's eyes, and asking for it BEFORE the next
+        // rung is what makes the answer specific to this speed.  Spec 17,
+        // 2026-08-23: the firmware detects a stall and cannot detect a card
+        // fluttering or failing to seat.
+        std::printf("\n    WATCH THE CARDS AT THIS SPEED, then record:\n");
+        std::printf("      finger behaviour  clean / hesitant / dragging\n");
+        std::printf("      doubles           none / occasional / frequent\n");
+        std::printf("      seating           flat / late / bouncing\n");
+        if (i + 1 < n) {
+            std::printf("\n    ENTER to run rung %d (%ld flaps/s), or `q` to stop.\n",
+                        i + 2, static_cast<long>(rungs[i + 1]));
+            if (!wait_for_enter()) {
+                std::printf("    stopped after rung %d.\n", i + 1);
+                break;
+            }
+        }
+    }
+
+    if (!motion::set_params(saved)) {
+        std::printf("  could not restore the original speeds - check `stats`.\n");
+        rc = 1;
+    }
+    std::printf("\n  Ladder done. Speeds restored (%ld flaps/s normal).\n",
+                static_cast<long>(saved.flaps_s_normal));
+    std::printf("  The index is where the last rung left it; `home %d` to be sure.\n", col);
+    return rc;
+}
 int cmd_cal(int argc, char** argv) {
     if (argc != 3) {
         std::printf("usage: cal <col> <+/-usteps>    (then `save`)\n");
@@ -1119,7 +1534,15 @@ int cmd_maint(int argc, char** argv) {
     motion::set_columns(c);
     MotionParams p = motion::params();
     p.maintenance = on;
-    motion::set_params(p);
+    // A read-modify-write of the live params, so the only way this refuses
+    // is a live value already over the cap - which config::load makes
+    // impossible at boot.  Checked anyway: leaving the control core out of
+    // maintenance while the console prints "maintenance on" is the exact
+    // shape of the defect fixed on 2026-09-12.
+    if (!motion::set_params(p)) {
+        std::printf("refused - maintenance NOT applied to the control core\n");
+        return 1;
+    }
     g_mm->cmd_maintenance(on, g_utc_ms());
     // PERSIST IT.  Spec 5.9 makes maintenance survive a reboot deliberately -
     // pulling power mid-repair must not restart a countdown on top of your
@@ -1188,6 +1611,8 @@ esp_err_t start() {
     reg("go", "go <col> <index|token>", cmd_go);
     reg("spin", "spin <col> <flaps_s> <seconds>", cmd_spin);
     reg("revs", "revs <col> <n> - measure hall_to_hall", cmd_revs);
+    reg("ramp", "ramp <col> <r1,r2,...> <dwell_s> - closed-loop speed ladder",
+        cmd_ramp);
     reg("cal", "cal <col> <+/-usteps> - nudge the calibration offset", cmd_cal);
     reg("save", "persist the current config to NVS", cmd_save);
     reg("wifi", "wifi <ssid> <pass> | wifi status | wifi clear", cmd_wifi);
