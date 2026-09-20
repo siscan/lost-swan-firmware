@@ -59,7 +59,7 @@ AxisInfo IdfMotionAdmin::info(int col) {
 
 MotionParams IdfMotionAdmin::params() { return motion::params(); }
 
-void IdfMotionAdmin::set_params(const MotionParams& p) { motion::set_params(p); }
+bool IdfMotionAdmin::set_params(const MotionParams& p) { return motion::set_params(p); }
 
 bool IdfMotionAdmin::home(int col) { return motion::home(col) == ESP_OK; }
 

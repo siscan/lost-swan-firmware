@@ -41,7 +41,7 @@ struct FakeMotion : api::MotionAdmin {
     }
     AxisInfo info(int col) override { return axes[static_cast<size_t>(col)]; }
     MotionParams params() override { return p; }
-    void set_params(const MotionParams& np) override { p = np; }
+    bool set_params(const MotionParams& np) override { p = np; return true; }
     // Models the target's rule rather than always succeeding: a disabled column
     // is never homed (spec 5.9), and a re-home-all with every column disabled
     // posts nothing - which used to be reported as success by both the fake and

@@ -21,7 +21,7 @@ class IdfMotionAdmin final : public api::MotionAdmin {
 public:
     AxisInfo info(int col) override;
     MotionParams params() override;
-    void set_params(const MotionParams& p) override;
+    bool set_params(const MotionParams& p) override;
     bool home(int col) override;
     bool set_enabled(bool on) override;
     bool enabled() override;

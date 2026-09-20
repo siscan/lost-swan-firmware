@@ -112,13 +112,15 @@ public:
 
     MotionParams params() override { return p_; }
 
-    void set_params(const MotionParams& p) override {
+    bool set_params(const MotionParams& p) override {
         p_ = p;
         for (int i = 0; i < N_COLUMNS; ++i) {
             ax_[static_cast<size_t>(i)].params = p_;
             // cal lives on the axis, not in the params copy the tick reads.
             ax_[static_cast<size_t>(i)].params.cal[i] = p_.cal[i];
         }
+        // The dev server is never a bench image, so there is no cap to refuse.
+        return true;
     }
 
     // EN is ganged (spec 2.2): all five or none.

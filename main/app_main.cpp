@@ -28,6 +28,7 @@
 #include "hal/pins.h"
 #include "hal/status_led.h"
 #include "modes/mode_manager.h"
+#include "motion/bench_policy.h"
 #include "motion/motion.h"
 #include "net/bindings.h"
 #include "net/httpd.h"
@@ -293,6 +294,20 @@ extern "C" void app_main() {
     const esp_app_desc_t* desc = esp_app_get_description();
     ESP_LOGI(TAG, "LOST Swan split-flap - %s (%s), board %s", desc->version, desc->idf_ver,
              swan::BOARD_NAME);
+    // THE BANNER PRINTS THE CAP, because the cap is a build parameter now
+    // and two bench images are two different safety contracts.  The
+    // version tag carries it (`+devkitc1.bench20`), but a number inside a
+    // flavour string is easy to read past - this line says it in flaps/s
+    // and in drum revolutions, which is the unit the mechanism is in.
+    if (swan::motion::BENCH_BUILD) {
+        ESP_LOGW(TAG, "*** BENCH IMAGE: every commanded speed is capped at %d "
+                      "flaps/s (%.2f drum rev/s) and REFUSED above it. ***",
+                 static_cast<int>(swan::motion::BENCH_MAX_FLAPS_S),
+                 static_cast<double>(swan::motion::BENCH_MAX_FLAPS_S) / swan::N_RING);
+        ESP_LOGW(TAG, "*** The %d flaps/s show spin is absent from this image at "
+                      "any setting. ***",
+                 static_cast<int>(swan::motion::SHOW_SPIN_FLAPS_S));
+    }
 
     // The OTA confirm watcher goes FIRST, before anything that could hang.
     //

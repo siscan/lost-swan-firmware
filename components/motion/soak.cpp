@@ -174,7 +174,17 @@ bool soak_start(uint32_t wraps, int32_t flaps_s) {
     if (flaps_s > 0) {
         MotionParams p = params();
         p.flaps_s_normal = flaps_s;
-        set_params(p);
+        // Refused, never clamped (bench_policy.h).  A soak that quietly ran
+        // at the cap would file its wrap counts and resyncs against a speed
+        // nobody asked for, which is worse than not running at all.
+        if (!set_params(p)) {
+            ESP_LOGE(TAG, "%d flaps/s is over this image's bench cap; "
+                          "soak not started", static_cast<int>(flaps_s));
+            const std::lock_guard<std::mutex> lock(g_mu);
+            g_rep.running = false;
+            g_rep.stopped_because = "speed over the bench cap";
+            return false;
+        }
     }
 
     g_stop.store(false, std::memory_order_relaxed);

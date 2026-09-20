@@ -35,8 +35,10 @@ public:
     virtual ~MotionAdmin() = default;
     virtual AxisInfo info(int col) = 0;
     virtual MotionParams params() = 0;
-    // Live apply, no persistence - the UI sliders use this.
-    virtual void set_params(const MotionParams& p) = 0;
+    // Live apply, no persistence - the UI sliders use this.  FALSE means
+    // refused and NOTHING applied: a bench image caps every speed and
+    // refuses rather than clamping, so `ok` keeps meaning executed.
+    virtual bool set_params(const MotionParams& p) = 0;
     virtual bool home(int col) = 0;  // col < 0 = all
     // EN is ganged: this is all five drivers or none (spec 2.2/5.8).  Exposed
     // because dropping it is a recovery state a person has to be able to leave

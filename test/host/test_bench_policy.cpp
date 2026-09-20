@@ -1,8 +1,12 @@
-// The stand-in bench build's cap and cadence (spec 15 phase 8, BRINGUP 28b).
+// The stand-in bench build's cap and cadence (spec 15 phase 8, BRINGUP 28b/28c).
 //
 // The cap is a SAFETY CONTRACT on a printed PLA axle, so it is tested in both
 // directions: that a bench image refuses the show spin, and that a normal image
 // is not quietly crippled by a constant that leaked out of the bench build.
+//
+// Since 2026-09-20 the cap is a BUILD PARAMETER (-DSWAN_BENCH_CAP) that may only
+// lower a compiled-in ceiling, so the tests below check the RULE at every cap in
+// range rather than one session's number.
 #include "check.h"
 #include "motion/bench.h"
 #include "motion/bench_policy.h"
@@ -15,29 +19,62 @@ namespace {
 // This suite is built WITHOUT SWAN_BENCH (the host suite is not a bench image),
 // so BENCH_BUILD is false here and the "normal build" half is the live one.
 // The bench half is checked against the constants directly, which is what the
-// firmware's own clamp is built from.
+// firmware's own refusal is built from.
 void test_normal_build_is_not_capped() {
     CHECK(!BENCH_BUILD);
     CHECK_EQ(bench_speed_cap(), 0);
-    // The identity, at every speed the machine uses.
-    CHECK_EQ(bench_clamp_flaps_s(8), 8);
-    CHECK_EQ(bench_clamp_flaps_s(15), 15);
-    CHECK_EQ(bench_clamp_flaps_s(25), 25);
-    CHECK_EQ(bench_clamp_flaps_s(SHOW_SPIN_FLAPS_S), SHOW_SPIN_FLAPS_S);
+    // Nothing is refused, at every speed the machine uses.
+    CHECK(!bench_speed_refused(8));
+    CHECK(!bench_speed_refused(15));
+    CHECK(!bench_speed_refused(25));
     CHECK(!bench_speed_refused(SHOW_SPIN_FLAPS_S));
+    // Even an absurd one: a normal image's only limit is the step ISR, and a
+    // cap constant leaking out of the bench build would cripple the display
+    // silently.
+    CHECK(!bench_speed_refused(100000));
 }
 
-// The cap itself, independent of which flavour this suite was built as: one
-// drum revolution per second, which the ring size makes 50 flaps/s.
-void test_the_cap_is_one_drum_rev_per_second() {
-    CHECK_EQ(BENCH_MAX_FLAPS_S, 50);
-    CHECK_EQ(BENCH_MAX_FLAPS_S, N_RING);
+// The CEILING, which no build may exceed: one drum revolution per second,
+// which the ring size makes 50 flaps/s.
+void test_the_ceiling_is_one_drum_rev_per_second() {
+    CHECK_EQ(BENCH_CAP_CEILING, 50);
+    CHECK_EQ(BENCH_CAP_CEILING, N_RING);
     // A revolution a second, expressed the other way round, in usteps.
-    CHECK_EQ(flaps_s_to_usteps_s(BENCH_MAX_FLAPS_S), 3200);
-    CHECK_EQ(flaps_s_to_usteps_s(BENCH_MAX_FLAPS_S), USTEPS_PER_SPOOL_REV_NOMINAL);
+    CHECK_EQ(flaps_s_to_usteps_s(BENCH_CAP_CEILING), 3200);
+    CHECK_EQ(flaps_s_to_usteps_s(BENCH_CAP_CEILING), USTEPS_PER_SPOOL_REV_NOMINAL);
     // And it is eight times slower than the show spin, which is the ratio the
     // refusal message quotes.
-    CHECK_EQ(SHOW_SPIN_FLAPS_S / BENCH_MAX_FLAPS_S, 8);
+    CHECK_EQ(SHOW_SPIN_FLAPS_S / BENCH_CAP_CEILING, 8);
+}
+
+// THE CAP IS A BUILD PARAMETER AND MAY ONLY GO DOWN (2026-09-20).  This suite
+// is not built with SWAN_BENCH_CAP, so what is checkable here is the invariant
+// rather than one session's number: whatever the parameter is set to, the
+// header pins it into 1..ceiling with a static_assert, and the refusal rule is
+// the same function at any cap.
+void test_the_cap_may_only_lower_the_ceiling() {
+    CHECK(BENCH_MAX_FLAPS_S >= 1);
+    CHECK(BENCH_MAX_FLAPS_S <= BENCH_CAP_CEILING);
+    // Unset here, so it IS the ceiling - which also pins the default.
+    CHECK_EQ(BENCH_MAX_FLAPS_S, BENCH_CAP_CEILING);
+}
+
+// REFUSE, NEVER CLAMP.  The rule the whole build parameter rests on, checked
+// as a rule rather than against one number: for any cap, everything at or
+// below it passes and the first step above it is refused.  bench_clamp_flaps_s
+// is deliberately GONE - a silent clamp in the header is a trap still loaded,
+// and it is what made a bench image answer `ok` to a speed it did not run.
+void test_refusal_is_a_step_at_the_cap() {
+    for (int32_t cap = 1; cap <= BENCH_CAP_CEILING; ++cap) {
+        // The predicate the firmware uses, evaluated as the firmware evaluates
+        // it: cap > 0 && want > cap.  Spelled out here because bench_speed_cap()
+        // is 0 in this build and cannot be moved.
+        const auto refused = [cap](int32_t want) { return want > cap; };
+        CHECK(!refused(cap));
+        CHECK(!refused(cap - 1 > 0 ? cap - 1 : 1));
+        CHECK(refused(cap + 1));
+        CHECK(refused(SHOW_SPIN_FLAPS_S));
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -107,11 +144,36 @@ void test_the_coils_hold_for_almost_all_of_it() {
     CHECK(holding > 0.92);
 }
 
+// THE BOOT PATH IS THE ONE EXCEPTION, and it must SAY SO.  bench_enforced only
+// earns its place if `changed` is true exactly when it moved the value - that
+// flag is the whole difference between an announced substitution and the silent
+// clamp this replaced.
+void test_boot_substitution_reports_itself() {
+    // Not a bench build here, so nothing is ever over the cap and nothing is
+    // ever reported as changed - which is the half that matters for a display.
+    bool changed = false;
+    CHECK_EQ(bench_enforced(SHOW_SPIN_FLAPS_S, changed), SHOW_SPIN_FLAPS_S);
+    CHECK(!changed);
+    CHECK_EQ(bench_enforced(15, changed), 15);
+    CHECK(!changed);
+
+    // `changed` ACCUMULATES rather than being reset per call, which is what
+    // lets a caller enforce three fields and log once.  Checked because the
+    // opposite convention would look identical at one call site and lose the
+    // report at the second.
+    changed = true;
+    CHECK_EQ(bench_enforced(15, changed), 15);
+    CHECK(changed);
+}
+
 }  // namespace
 
 void run_tests() {
     test_normal_build_is_not_capped();
-    test_the_cap_is_one_drum_rev_per_second();
+    test_the_ceiling_is_one_drum_rev_per_second();
+    test_the_cap_may_only_lower_the_ceiling();
+    test_refusal_is_a_step_at_the_cap();
+    test_boot_substitution_reports_itself();
     test_schedule_defaults();
     test_flap_cadence();
     test_run_end();

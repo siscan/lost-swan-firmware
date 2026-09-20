@@ -481,7 +481,26 @@ void apply_dir_level() {
 }
 
 esp_err_t init(const MotionParams& p) {
+    // THE BACKSTOP.  config::load is where an over-cap speed is caught and
+    // announced, and it is the only caller today - but init() is a second door
+    // into g_params and it takes whatever it is handed.  A door that trusts its
+    // caller is exactly how the cap came to be applied where speeds are
+    // CONFIGURED and not where they are commanded (spec 17, 2026-09-11).
+    //
+    // ERROR rather than WARN: reaching here with an over-cap value means the
+    // boot path did not catch it, which is a defect and not a stale record.
     g_params = p;
+    if (BENCH_BUILD) {
+        bool changed = false;
+        g_params.flaps_s_normal = bench_enforced(g_params.flaps_s_normal, changed);
+        g_params.flaps_s_alarm = bench_enforced(g_params.flaps_s_alarm, changed);
+        g_params.flaps_s_home = bench_enforced(g_params.flaps_s_home, changed);
+        if (changed) {
+            ESP_LOGE(TAG, "a speed over this image's cap of %d flaps/s reached "
+                          "motion::init; capped. config::load should have caught it.",
+                     static_cast<int>(BENCH_MAX_FLAPS_S));
+        }
+    }
 
     for (int i = 0; i < N_COLUMNS; ++i) {
         g_step_bit[i] = pin_mask(PIN_STEP[i]);
@@ -550,36 +569,50 @@ esp_err_t init(const MotionParams& p) {
     return ESP_OK;
 }
 
-void set_params(const MotionParams& p) {
-    MotionParams q = p;
-    // THE BENCH CAP IS APPLIED HERE, at the one place every speed enters the
-    // motion layer, and it CLAMPS rather than trusts.  A bench image can be
-    // handed speeds from NVS written by another build, from the Settings
-    // sliders, or from a peer over MQTT; none of those may put the show spin
-    // through a printed axle.  In a normal build bench_clamp_flaps_s is the
-    // identity and this costs nothing.
-    q.flaps_s_normal = bench_clamp_flaps_s(q.flaps_s_normal);
-    q.flaps_s_alarm = bench_clamp_flaps_s(q.flaps_s_alarm);
-    q.flaps_s_home = bench_clamp_flaps_s(q.flaps_s_home);
+const char* params_refused_because(const MotionParams& p) {
+    if (bench_speed_refused(p.flaps_s_normal)) return "flaps_s_normal";
+    if (bench_speed_refused(p.flaps_s_alarm)) return "flaps_s_alarm";
+    if (bench_speed_refused(p.flaps_s_home)) return "flaps_s_home";
+    return nullptr;
+}
+
+bool set_params(const MotionParams& p) {
+    // THE BENCH CAP, at the place speeds are CONFIGURED - and it REFUSES.
+    //
+    // It used to clamp here, silently, which is two failures wearing one coat.
+    // The obvious one: a bench image answered "ok" to a speed it then did not
+    // run, which is the reply-means-receipt defect the 2026-08-24 sweep cleared
+    // out of everything else.  The quieter one: a clamp and a refusal disagree
+    // about what the machine did, so `spin` refused 400 while the Settings
+    // slider accepted it and ran 50 - two answers to the same question from one
+    // image.  One rule now, everywhere a speed enters: refused, with the number.
+    //
+    // Nothing is applied on a refusal.  A partial apply would be a third answer.
+    if (const char* which = params_refused_because(p)) {
+        ESP_LOGE(TAG,
+                 "%s refused: this bench image caps at %d flaps/s and nothing "
+                 "lifts it. Rebuild with -DSWAN_BENCH_CAP=<n> if the mechanism "
+                 "on the vise has changed.",
+                 which, static_cast<int>(BENCH_MAX_FLAPS_S));
+        return false;
+    }
     portENTER_CRITICAL(&g_lock);
-    g_params = q;
+    g_params = p;
     // g_hall_invert is read by the step ISR, so it is published inside the
     // spinlock like everything else in that group.
-    // Everything below reads `q`, not `p`.  They are identical for fields the
-    // cap does not touch, but reading the argument here would silently bypass
-    // the clamp the day another field joins it.
-    g_hall_invert = q.hall_active_low ? HALL_MASK_ALL : 0u;
+    g_hall_invert = p.hall_active_low ? HALL_MASK_ALL : 0u;
     portEXIT_CRITICAL(&g_lock);
     // DIR takes effect immediately, which is the point: bench step 3 is a
     // person watching a drum and typing `dir` until it turns the descending
     // way.  The pin is a level the driver samples on the next STEP edge, so
     // changing it between moves is safe; changing it DURING one would reverse
     // mid-move, which is why the dispatcher refuses it on a moving axis.
-    g_dir_invert.store(q.dir_invert, RLX);
+    g_dir_invert.store(p.dir_invert, RLX);
     apply_dir_level();
     for (int i = 0; i < N_COLUMNS; ++i) {
-        g_ctl[i].cal_offset.store(normalize_cal(q.cal[i]), RLX);
+        g_ctl[i].cal_offset.store(normalize_cal(p.cal[i]), RLX);
     }
+    return true;
 }
 
 void set_columns(const ColumnConfig& c) {

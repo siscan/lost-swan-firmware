@@ -21,8 +21,24 @@ namespace motion {
 // which is the caller's business.
 esp_err_t init(const MotionParams& p);
 
-void set_params(const MotionParams& p);
+// REFUSES rather than clamps, and returns false having changed NOTHING, when
+// any of the three speeds exceeds a bench image's compiled-in cap
+// (bench_policy.h).  It used to clamp silently, which made a bench image answer
+// "ok" to a speed it then did not run - the reply-means-execution failure the
+// 2026-08-24 sweep existed to remove.  In a normal build there is no cap and
+// this never fails.
+//
+// The BOOT path must still come up with a usable config, so an over-cap value
+// arriving from NVS is caught in config::load, which logs it and substitutes
+// the cap - announced, not silent, and the same shape as accel_plausible and
+// hall_tol_migrated beside it.
+bool set_params(const MotionParams& p);
 MotionParams params();
+
+// Which field, if any, a set_params would refuse.  Returns nullptr when the
+// params are acceptable.  Exists so a caller can say WHICH speed was too fast
+// rather than reporting a bare failure.
+const char* params_refused_because(const MotionParams& p);
 
 void enable(bool on);
 bool is_enabled();

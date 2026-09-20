@@ -7,6 +7,7 @@
 
 #include "modes/wear.h"
 #include "motion/axis_control.h"   // REHOME_RETRIES, published so the UI stops guessing
+#include "motion/bench_policy.h"   // the bench cap, so a refusal names the number
 #include "ring/json_lite.h"
 #include "ring/json_write.h"
 
@@ -456,16 +457,33 @@ std::string do_display_frame(Context& ctx, const RingSet& ring, const json::Valu
 std::string do_motion_params(Context& ctx, const json::Value& p) {
     MotionParams mp = ctx.motion.params();
     int v = 0;
+    // THE BENCH CAP IS CHECKED HERE TOO, before anything is applied, so the
+    // refusal can name the speed and the cap.  motion::set_params refuses the
+    // same values - this is not a second rule, it is the same rule said where a
+    // caller can read it.  Leaving it to set_params alone would answer a
+    // browser with a bare "refused" and no number.
+    const auto speed_ok = [](int32_t want, const char* which) -> const char* {
+        if (want < 1 || want > 40) return "out of range";
+        if (motion::bench_speed_refused(want)) return "over this image's bench cap";
+        (void)which;
+        return nullptr;
+    };
     if (as_int_field(p, "flaps_s_normal", v)) {
-        if (v < 1 || v > 40) return err_result("flaps_s_normal out of range");
+        if (const char* why = speed_ok(v, "flaps_s_normal")) {
+            return err_result(std::string("flaps_s_normal ") + why);
+        }
         mp.flaps_s_normal = v;
     }
     if (as_int_field(p, "flaps_s_alarm", v)) {
-        if (v < 1 || v > 40) return err_result("flaps_s_alarm out of range");
+        if (const char* why = speed_ok(v, "flaps_s_alarm")) {
+            return err_result(std::string("flaps_s_alarm ") + why);
+        }
         mp.flaps_s_alarm = v;
     }
     if (as_int_field(p, "flaps_s_home", v)) {
-        if (v < 1 || v > 40) return err_result("flaps_s_home out of range");
+        if (const char* why = speed_ok(v, "flaps_s_home")) {
+            return err_result(std::string("flaps_s_home ") + why);
+        }
         mp.flaps_s_home = v;
     }
     if (as_int_field(p, "accel", v)) {
@@ -523,7 +541,13 @@ std::string do_motion_params(Context& ctx, const json::Value& p) {
         }
         mp.dir_invert = di->boolean;
     }
-    ctx.motion.set_params(mp);
+    if (!ctx.motion.set_params(mp)) {
+        // Belt and braces: the checks above should have caught every over-cap
+        // value, so reaching this means a field joined MotionParams without
+        // joining them.  Answering `ok` for params that were not applied is the
+        // one outcome that must not be possible.
+        return err_result("motion params refused; nothing was applied");
+    }
     // Keep the modes layer's copy in step.  alarm_flaps_s was seeded from
     // MotionParams once at boot and never re-synced, so raising the alarm speed
     // with the Settings slider left the zero choreography spinning at the old

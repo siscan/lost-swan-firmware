@@ -87,6 +87,24 @@ std::string running_tag_part(int which) {
     return dot == std::string::npos ? std::string{} : tag.substr(dot + 1);
 }
 
+// The OTA hold, pushed into the CONTROL CORE.  The dispatcher refusing
+// motion.rehome does nothing about a staggered home already posted or a fault
+// retry the core scheduled itself, which is why this exists at all (spec 10.4).
+//
+// It is a read-modify-write of the live params, so set_params can only refuse
+// if a live speed is already over a bench image's cap - which config::load
+// makes impossible at boot.  Checked anyway and logged at ERROR: a silently
+// dropped hold means the core keeps homing through a flash write, and the
+// symptom would be dropped steps blamed on the ISR.
+void set_core_hold(bool on) {
+    MotionParams mp = motion::params();
+    mp.ota_hold = on;
+    if (!motion::set_params(mp)) {
+        ESP_LOGE(TAG, "motion params refused; the control core is NOT %s the OTA hold",
+                 on ? "under" : "released from");
+    }
+}
+
 // ---------------------------------------------------------------------------
 // The confirm watcher (spec 10.4)
 // ---------------------------------------------------------------------------
@@ -251,11 +269,7 @@ esp_err_t ota_post(httpd_req_t* req) {
     // And into the control core, which is where automatic re-homing actually
     // lives.  The dispatcher refusing motion.rehome does nothing about a
     // staggered home already posted, or a retry the core schedules by itself.
-    {
-        MotionParams mp = motion::params();
-        mp.ota_hold = true;
-        motion::set_params(mp);
-    }
+    set_core_hold(true);
     // MQTT, the mqtt task and lwIP are all flash-resident and stall on every
     // sector erase; say goodbye properly rather than letting the broker time us
     // out mid-write.
@@ -267,11 +281,7 @@ esp_err_t ota_post(httpd_req_t* req) {
     esp_err_t err = esp_ota_begin(target, OTA_WITH_SEQUENTIAL_WRITES, &handle);
     if (err != ESP_OK) {
         g_ctx->modes.cmd_ota_hold(false, wall_ms());
-        {
-            MotionParams mp = motion::params();
-            mp.ota_hold = false;
-            motion::set_params(mp);
-        }
+        set_core_hold(false);
         mqtt_reconfigure();
         set_error(esp_err_to_name(err));
         return send_json(req, refuse("begin_failed", esp_err_to_name(err)),
@@ -285,11 +295,7 @@ esp_err_t ota_post(httpd_req_t* req) {
     // Assistant until the next reboot.
     auto release = [&]() {
         g_ctx->modes.cmd_ota_hold(false, wall_ms());
-        {
-            MotionParams mp = motion::params();
-            mp.ota_hold = false;
-            motion::set_params(mp);
-        }
+        set_core_hold(false);
         mqtt_reconfigure();   // reconnects if it is configured; a no-op if not
     };
     auto fail = [&](const char* what, const char* status) {

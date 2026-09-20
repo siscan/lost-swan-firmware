@@ -4,6 +4,7 @@
 
 #include "esp_log.h"
 #include "hal/boot_health.h"
+#include "motion/bench_policy.h"
 #include "nvs.h"
 #include "nvs_flash.h"
 
@@ -137,18 +138,67 @@ esp_err_t init() {
     return err;
 }
 
+namespace {
+
+// THE BENCH CAP, ON THE ONE PATH THAT CANNOT BE REFUSED.
+//
+// motion::set_params refuses an over-cap speed outright, which is right
+// everywhere a person or a peer asks for one - but this is the BOOT load, and a
+// refusal here means an image that comes up with none of its motion config
+// applied.  A bench board's NVS routinely carries 25 flaps/s written by a normal
+// build, and the §28c image caps at 20.
+//
+// So this substitutes, ANNOUNCED - the same shape as accel_plausible and
+// hall_tol_migrated beside it, and for the same reason: a value this image
+// cannot honour must not survive a boot silently.  The line names the field, the
+// value and the cap, and NVS is left alone until somebody types `save`.
+//
+// IT RUNS ON EVERY EXIT OF load(), INCLUDING THE EARLY ONES.  It first did not,
+// and a virgin NVS returns at the top - so a fresh bench20 board would have come
+// up with the COMPILED default of 25 flaps/s alarm, uncapped, and handed it
+// straight to ModesConfig::alarm_flaps_s.  The defaults are the DISPLAY's, and
+// they belong to no particular bench.
+void enforce_bench_cap(MotionParams& p) {
+    if (!motion::BENCH_BUILD) return;
+    struct Field { const char* name; int32_t* f; };
+    const Field fields[] = {
+        {"flaps_s_normal", &p.flaps_s_normal},
+        {"flaps_s_alarm", &p.flaps_s_alarm},
+        {"flaps_s_home", &p.flaps_s_home},
+    };
+    for (const Field& fl : fields) {
+        bool changed = false;
+        const int32_t was = *fl.f;
+        *fl.f = motion::bench_enforced(was, changed);
+        if (changed) {
+            ESP_LOGW(TAG,
+                     "%s of %d flaps/s exceeds this image's bench cap of %d; using "
+                     "the cap. `save` to make it permanent.",
+                     fl.name, static_cast<int>(was),
+                     static_cast<int>(motion::BENCH_MAX_FLAPS_S));
+        }
+    }
+}
+
+}  // namespace
+
 esp_err_t load(MotionParams& p) {
     nvs_handle_t h;
     esp_err_t err = nvs_open(NS, NVS_READONLY, &h);
     if (err == ESP_ERR_NVS_NOT_FOUND) {
         ESP_LOGI(TAG, "no saved config; running on spec defaults");
+        enforce_bench_cap(p);
         return ESP_OK;
     }
-    if (err != ESP_OK) return err;
+    if (err != ESP_OK) {
+        enforce_bench_cap(p);
+        return err;
+    }
 
     get_i32(h, K_FS_NORM, &p.flaps_s_normal);
     get_i32(h, K_FS_ALRM, &p.flaps_s_alarm);
     get_i32(h, K_FS_HOME, &p.flaps_s_home);
+    enforce_bench_cap(p);
     // Validated, not trusted - same reason as hall_tol below.  accel == 0
     // divides by zero in the ramp, and a value from the rim-gear era commands
     // 2.58x the drum angular acceleration it used to.

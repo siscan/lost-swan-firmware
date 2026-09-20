@@ -32,9 +32,16 @@ message(STATUS "LOST Swan board: ${SWAN_BOARD}")
 # in is exactly the thing that could be mistaken for the real display.
 option(SWAN_SIM_AXES "Compile the simulated-drum axes in (runtime-selectable)" ON)
 option(SWAN_RELEASE "Release build: refuse anything that could fake the mechanism" OFF)
-# The stand-in bench build (BRINGUP 28b gate 3).  One real column on a PRINTED
+# The stand-in bench build (BRINGUP 28b/28c).  One real column on a PRINTED
 # PLA axle: the speed cap is compiled in and there is no key that lifts it.
 option(SWAN_BENCH "Stand-in bench build: hard speed cap, no show spin" OFF)
+# The cap itself, in flaps/s.  Empty means "the ceiling", which is one drum
+# revolution per second = N_RING = 50.  It may only go DOWN: a parameter that
+# can lower a compiled-in ceiling is not a way to lift it, and the mechanism on
+# the vise changes between sessions while the firmware does not.  The §28c
+# pitch-80 module has no shroud and its cards lift somewhere above ~100 flaps/s,
+# so that session builds at 20.
+set(SWAN_BENCH_CAP "" CACHE STRING "Bench speed cap in flaps/s (<=50); empty = 50")
 
 if(SWAN_RELEASE AND SWAN_SIM_AXES)
     message(FATAL_ERROR
@@ -49,6 +56,32 @@ if(SWAN_BENCH AND SWAN_RELEASE)
     message(FATAL_ERROR
         "SWAN_BENCH=1 with SWAN_RELEASE=1: a capped bench image is not a "
         "release image. Pick one.")
+endif()
+
+# The cap is checked HERE as well as by the static_assert in bench_policy.h,
+# because a configure-time message naming the number is legible and a template
+# error four headers deep is not.
+if(SWAN_BENCH_CAP STREQUAL "")
+    set(SWAN_BENCH_CAP_EFFECTIVE 50)
+else()
+    if(NOT SWAN_BENCH)
+        message(FATAL_ERROR
+            "SWAN_BENCH_CAP=${SWAN_BENCH_CAP} without SWAN_BENCH=ON: a normal "
+            "image has no cap to set. Add -DSWAN_BENCH=ON, or drop the cap.")
+    endif()
+    if(NOT SWAN_BENCH_CAP MATCHES "^[0-9]+$")
+        message(FATAL_ERROR "SWAN_BENCH_CAP must be a whole number of flaps/s, "
+                            "got '${SWAN_BENCH_CAP}'")
+    endif()
+    if(SWAN_BENCH_CAP LESS 1 OR SWAN_BENCH_CAP GREATER 50)
+        message(FATAL_ERROR
+            "SWAN_BENCH_CAP=${SWAN_BENCH_CAP} is outside 1..50. The ceiling is "
+            "one drum revolution per second and it is a safety contract: this "
+            "parameter may only LOWER it.")
+    endif()
+    set(SWAN_BENCH_CAP_EFFECTIVE ${SWAN_BENCH_CAP})
+    idf_build_set_property(COMPILE_DEFINITIONS
+                           "SWAN_BENCH_CAP=${SWAN_BENCH_CAP}" APPEND)
 endif()
 
 idf_build_set_property(COMPILE_DEFINITIONS
@@ -77,7 +110,14 @@ if(SWAN_BENCH)
     # First in the chain deliberately: a capped image must announce itself
     # as one wherever a version string is read - the boot log, sys.version,
     # and an OTA that would otherwise put a capped image on the wall.
-    set(SWAN_FLAVOUR "bench")
+    #
+    # THE CAP IS PART OF THE FLAVOUR (2026-09-20).  `bench20` and `bench50` are
+    # two different safety contracts - one may drive an unshrouded module and
+    # the other may not - and esp_app_desc_t has nowhere else to record that.
+    # Without it the two images report the same string, so nothing on the board,
+    # in the journal or in an OTA precheck can tell them apart, which is exactly
+    # the argument that put the board map and the sim flavour here.
+    set(SWAN_FLAVOUR "bench${SWAN_BENCH_CAP_EFFECTIVE}")
 elseif(SWAN_RELEASE)
     set(SWAN_FLAVOUR "rel")
 elseif(SWAN_SIM_AXES)
