@@ -32,7 +32,7 @@ Columns are physically grouped 3 + 2 with a band between (no colon column).
 | Drivers | 5 × TMC2209 modules, **standalone (no UART)** | MS1 = MS2 = high → 1/16 microstep, internal 256 interpolation. `VERIFY` against the vendor's silkscreen/doc; a different default pull changes every motion constant. **Run current is 0.7 A RMS — see §5.7a**, which is the plan of record since 2026-09-06 and the number the bench is held to; this row said ~1.1–1.2 A until 2026-09-11 and was three weeks stale against its own spec. Standstill current reduction left enabled. |
 | Drive | **DIRECT, 1:1** — the NEMA 17 sits stationary INSIDE the drum and turns it directly (2026-09-06, `docs/ref/DRIVE_CHANGE.md`) | The 85T rim gear is dead: with 50 flaps loaded the pinion collided with the card edges at every angular position and a mesh sweep found no collision-free angle. 64 µsteps/flap, 3200/revolution, both exact. |
 | Rotation | **One direction only** (the rings are *descending* since v3, §4: one forward flip decrements). Reverse is mechanically forbidden (flaps jam on the bezel lip). | **DIR is a ganged GPIO again** on boards with a spare non-strapping pin — GPIO24 on the DevKitC-1, absent on the XIAO (§2.1). The motor now faces the other way inside the drum, so which level gives the descending sense is a bench measurement (step 3), and `motion.dir_invert` settles it without a soldering iron. EN is a single ganged GPIO. |
-| Home sensor | 5 × **A1121LUA-T** digital Hall (TO-92), **Ø6×3 N42** magnet at R52 on the idler disc, one per column | **Changed from the A3144 on 2026-08-22** (`HARDWARE_PLAN_2` §4 rev 2): Allegro retired the A314x family and every A3144 in the channel is untraceable third-party die. The consequence that matters here is the supply: the A1121 runs from **3.0–24 V**, so it sits directly on **3V3** and **the 5 V sensor rail is deleted**. Output is **open-drain** — pull it up to **3V3**; the resistor value is `VERIFY`, HP2 specifies the rail and not the value, and the 10 k this row used to name came from A3144-era text. Unipolar, **95 G operate**, active-LOW with the magnet present (`VERIFY`). One operate edge per spool revolution. **The magnet is N42** — `PROCUREMENT_STATUS` records 120 × Ø6×3 N42 axial discs bought, inside HP2 §4's N35–N48 window. Consequence worth stating because nothing else will: a stronger magnet reaches the 95 G operate threshold at a **greater distance**, so the real operate arc is likely **wider** than `sim_drum.h` models it. That is a `VERIFY` for the bench (edge repeatability, step 6), not a reason to change a constant — nothing in the firmware depends on the modelled width except the simulation. |
+| Home sensor | 5 × **A1121LUA-T** digital Hall (TO-92), **Ø6×3 N42** magnet at R52 on the idler disc, one per column | **Changed from the A3144 on 2026-08-22** (`HARDWARE_PLAN_2` §4 rev 2): Allegro retired the A314x family and every A3144 in the channel is untraceable third-party die. The consequence that matters here is the supply: the A1121 runs from **3.0–24 V**, so it sits directly on **3V3** and **the 5 V sensor rail is deleted**. Output is **open-drain** — pull it up to **3V3** through **10 kΩ**, RESOLVED 2026-09-20 from the Allegro A1120-DS rev. 22 datasheet rather than from memory. The datasheet names no value (its application circuit draws a generic `R_L`), so 10 k is derived from the numbers it does give and the window is enormous: 3.3 V through 10 k sinks **330 µA** against a **25 mA** rating and a 30–60 mA current limit, `V_OUT(sat)` is 185 mV typ / 500 mV max **at 20 mA** so the low level is far under threshold, and 10 µA max leakage through 10 k droops the high level by 100 mV. Anything from ~1 k to ~47 k works; 10 k is the middle of it and is now written down. The datasheet also *states* a **0.1 µF bypass** between VCC and GND close to the element — fit it. Package **UA, 3-pin SIP** (not TO-92): pin 1 `VCC`, pin 2 `GND`, pin 3 `VOUT`, numbered in a view of the **branded face**; the centre lead is GND whichever way the part is read. Unipolar, **B_OP 95 G typ** (50 min, 135 max), **B_RP 70 G typ**, 25 G hysteresis. **Active-LOW with the magnet present is also RESOLVED** — the selection guide's column is headed *"Output In South (Positive) Magnetic Field"* and the A1121's entry reads **On (logic low)**, so `motion.hall_active_low = true` is a datasheet fact and not a guess. What remains a bench question is the WIRING, which changes what the GPIO sees and not what the sensor does. **A north pole does nothing at all** — not a weaker trip, nothing — so a magnet glued in backwards cannot be rescued by `hall_active_low`; `docs/BENCH_WIRING.md` §2a has the repel/attract check that reads a glued magnet without removing it. One operate edge per spool revolution. **The magnet is N42** — `PROCUREMENT_STATUS` records 120 × Ø6×3 N42 axial discs bought, inside HP2 §4's N35–N48 window. Consequence worth stating because nothing else will: a stronger magnet reaches the 95 G operate threshold at a **greater distance**, so the real operate arc is likely **wider** than `sim_drum.h` models it. That is a `VERIFY` for the bench (edge repeatability, step 6), not a reason to change a constant — nothing in the firmware depends on the modelled width except the simulation. |
 | Audio | MAX98357A I2S mono amp + 40 mm 4 Ω 3 W speaker | 3 GPIOs (BCLK, LRCLK, DIN). Gain pin left at default 9 dB. `VERIFY` SD/shutdown pin handling on the module. No hardware volume → software gain. |
 | Power | **20 V USB-C PD** (trigger board, `HARDWARE_PLAN_2` §5, LOCKED) → drivers; buck → logic and amp; **halls run off 3V3** | Was "12 V 6 A PSU" here until 2026-09-06; the plan moved to 20 V PD and this row had not followed. There is no 24 V in USB-C PD, and 20 V leaves headroom under the TMC2209 ceiling for regen. **EN is a diode-OR node the rail can veto — §2.6**, which also says why Power Good is not read and why the node boots *enabled*. |
 | Status | Onboard LED on GPIO27 on either C5 board | XIAO: single yellow LED, active low → blink patterns. DevKitC-1: WS2812 RGB → colour-coded status. |
@@ -624,8 +624,18 @@ it would have become 64 % of a flap when a flap became 64 µsteps, widening the
 silent band until it swallowed real slips.  A tolerance that stops meaning what
 its own comment says is worse than one that is merely wrong.
 
-`HALL_TOL_SILENT` is still set from measured edge repeatability (bench step 6);
-16 is the geometric default, not a measurement.
+`HALL_TOL_SILENT` is still set from measured edge repeatability; 16 is the
+geometric default, not a measurement.  **BRINGUP §28c step 3c is where that
+measurement happens**, and `revs <col> <n>` now proposes the number rather than
+leaving it to be invented: the candidate is **twice the worst `|err|` over n
+revolutions**, floored at 2, because the silent band has to be wider than the
+repeatability of a healthy drum or ordinary jitter grades as a major resync.
+Three outcomes, and the third is the one that matters: a candidate at or under
+16 means **keep 16** (narrowing to the noise floor buys earlier detection of
+tiny slips and pays in false resyncs); between 16 and 32 means use it; **over
+32 is a MECHANICAL finding and not a tolerance to widen** — past half a flap a
+tolerance accepts more than half of every real slip, which is the ceiling
+`hall_tol_migrated` already enforces.
 
 **EDGE VERIFICATION IS NOT REDUNDANT WITH REBOOT-AND-RE-HOME, and the case
 that proves it is reachable** (added 2026-09-11).  §5.8's rule that a dropped EN
@@ -1705,7 +1715,10 @@ motion.accel             default 14000, range 1000..60000 (ACCEL_MIN/MAX in
                          web slider).  Derived from the drum at 1:1, not inherited
                          from the rim gear - 82000 stalled it (5.2, 17)
 motion.hall_tol          default 16 (a quarter flap; DERIVED from the flap, not
-                         a literal - see 5.4)
+                         a literal - see 5.4).  The MEASURED value comes from
+                         BRINGUP 28c step 3c: `revs <col> <n>` proposes twice
+                         the worst |err| over n revolutions, and says to keep 16
+                         when the drum is more repeatable than that
 motion.dir_invert        default false.  Which level on the ganged DIR pin turns
                          the drum in the DESCENDING sense (§4).  The motor sits
                          inside the drum facing the opposite way to the old gear
@@ -1857,7 +1870,10 @@ watchdog cannot see it stop.  §17, 2026-08-24.
 `sim fault <col> slip <±µsteps>|miss <n>|clear` · `maint on|off` ·
 `pins` · `hall` (live levels) · `en 0|1` · `step <col> <n>` · `home <col>|all`
 · `go <col> <index>` · `spin <col> <flaps_s> <seconds>` · `revs <col> <n>`
-(measure hall_to_hall over n revolutions) · `cal <col> <±µsteps>` · `save` ·
+(measure hall_to_hall over n revolutions) · `cal <col> <±µsteps>` ·
+`ramp <col> <r1,r2,…> <dwell_s>` (the closed-loop speed ladder, BRINGUP §28c
+step 5 — **not** `motion.ramp`, which is the Calibrate page's index walk) ·
+`save` ·
 `frame a b c d e` · `mode …` · `stats` · `wifi …` · `mqtt …` · `audio play <cue>`
 · `reboot`.
 
@@ -1966,9 +1982,28 @@ Each phase ends with a flashable build and a bench checklist.
    clock-cadence heat soak ending in a hand on the motor case, a slow
    continuous spin for runout and wire routing, and live direction selection.
    Built as its own flavour (`-DSWAN_BENCH=ON`, reported as
-   `0.4.0+<board>.bench`) because **the show spin is locked out in code**: the
-   stand-in axle is printed PLA and the ≤1 drum rev/s cap is a safety contract,
-   not a config default.  BRINGUP §28b gate 3 is the session.
+   `0.4.0+<board>.bench<cap>`) because **the show spin is locked out in code**:
+   the stand-in axle is printed PLA and the cap is a safety contract, not a
+   config default.  BRINGUP §28b gate 3 is the session.
+
+   **The cap is a BUILD PARAMETER since 2026-09-20** — `-DSWAN_BENCH_CAP=<n>`,
+   default and ceiling **one drum revolution per second** (`N_RING` = 50
+   flaps/s).  It may only go DOWN, enforced by a `static_assert` in
+   `bench_policy.h` and again at CMake configure time, so it is not a way to
+   lift the cap: it is the cap following the mechanism, which changes between
+   sessions while the firmware does not.  §28c builds at **20** because the
+   pitch-80 module has **no shroud** and its cards lift above roughly
+   100 flaps/s.  The number is in the version string because two caps are two
+   different safety contracts and `esp_app_desc_t` has nowhere else to say so.
+
+   **REFUSED, NEVER CLAMPED, on every path.**  `motion::set_params` used to
+   clamp the three configured speeds silently, so a bench image answered `ok`
+   to a speed it then did not run while `spin` refused the same value — two
+   answers to one question from one image.  It refuses now and applies nothing;
+   the §10.2a dispatcher checks first so the refusal can name the number; and
+   `config::load` is the one path that substitutes, **announced at WARN**,
+   because a boot that applied none of its stored config is worse than a boot
+   that says which value it could not honour.  BRINGUP §28c is the session.
 
 Toolchain `[Q1, default]`: ESP-IDF 5.5.x (latest patch), C++17, `idf.py`.
 Arduino-as-IDF-component is the fallback if a specific Arduino library is
@@ -3741,6 +3776,148 @@ numbered section — if you find one that disagrees, fix the section.
   section that disagrees with this log is a bug in the spec, not a subtlety.
 
 ---
+
+- 2026-09-20 — **THE HALL SESSION'S FIRMWARE, and the cap becomes a build
+  parameter.**  The pitch-80 module arrives with a sensor and a magnet, so this
+  is the first session in which a column can home, and BRINGUP **§28c** is the
+  numbered run.
+
+  **The bench cap is now `-DSWAN_BENCH_CAP=<flaps/s>`, and §28c builds at 20.**
+  The cap was one compiled-in constant, 50 flaps/s = one drum revolution per
+  second, written for a bare stand-in drum on a printed axle.  It was never
+  really "the safe speed"; it was "the safe speed for THAT mechanism", and the
+  mechanism changes between sessions while the firmware does not.  **The
+  pitch-80 module has no shroud** and its cards lift off the drum somewhere
+  above ~100 flaps/s, with nothing to stop one leaving.
+
+  The parameter **may only lower** the compiled-in ceiling of one drum rev/s —
+  a `static_assert` in `bench_policy.h` and a CMake check at configure time both
+  refuse anything over it, so CLAUDE.md's *"do not add a way to lift the cap"*
+  is kept rather than bent.  The cap is in the **version string**
+  (`0.4.0+devkitc1.bench20`) and on the **boot banner**, because two caps are
+  two different safety contracts and `esp_app_desc_t` has nowhere else to record
+  one; without it an OTA precheck and a journal boot line cannot tell a 20 image
+  from a 50 image.
+
+  **And it REFUSES on every path, where it used to clamp on one.**  This is the
+  half worth recording, because the clamp was not merely quiet — it made the
+  image contradict itself.  `motion::set_params` clamped the three *configured*
+  speeds, so the Settings slider and MQTT accepted 400 and ran 50 while
+  `step_open_loop` refused the same value with a message (the 2026-09-11 entry
+  above is the other half of the same defect).  One rule now: refused, with the
+  number, and **nothing applied** — a partial apply would be a third answer.
+  `set_params` returns a bool, the §10.2a dispatcher checks before it calls so
+  the refusal can name the speed to a browser, and the CLI, the overnight soak
+  and the OTA hold all check their return.  **`config::load` is the single
+  exception and it is a substitution, announced at WARN**: the boot path cannot
+  be refused, because an image that applied none of its stored config is worse
+  than one that says which value it could not honour.  That is the same shape as
+  `accel_plausible` and `hall_tol_migrated` two lines away.
+
+  **Two `VERIFY` tags in §2 are resolved from the A1121's datasheet** (Allegro
+  A1120-DS rev. 22), not from a bench run and not from memory:
+
+  - **The pull-up is 10 kΩ.**  The datasheet names no value — its application
+    circuit draws a generic `R_L` — so this is derived from the numbers it does
+    give, and the window turns out to be enormous: 330 µA through 10 k at 3.3 V
+    against a 25 mA rating, `V_OUT(sat)` of 185 mV typ **at 20 mA**, and 10 µA
+    of leakage drooping the high level by 100 mV.  Anything from ~1 k to ~47 k
+    is electrically fine.  10 k was always the right answer; what it lacked was
+    a reason, and "the 10 k this row used to name came from A3144-era text" is
+    exactly the kind of provenance that gets a number quietly changed later.
+  - **Active-LOW with the magnet present is a datasheet fact.**  The selection
+    guide's column is headed *"Output In South (Positive) Magnetic Field"* and
+    the A1121's entry reads **On (logic low)**.  `motion.hall_active_low = true`
+    is already the default, so no constant moved — what changed is that it is no
+    longer a guess.  The bench still settles the WIRING, which decides what the
+    GPIO sees rather than what the sensor does.
+
+  Also from the datasheet and now in §2 and `BENCH_WIRING.md` §2a: package **UA,
+  3-pin SIP** (not TO-92), **pin 1 VCC, pin 2 GND, pin 3 VOUT** numbered in a
+  view of the branded face, `B_OP` 95 G typ / `B_RP` 70 G typ / 25 G hysteresis,
+  and the **0.1 µF bypass** the datasheet states in words.
+
+  **A NORTH POLE PRODUCES NO TRANSITION, so `hall_active_low` cannot rescue a
+  flipped magnet.**  Worth its own sentence because the setting looks like it
+  should: it inverts how the firmware reads an output, and a north pole never
+  moves the output at all.  `docs/ref/BOM.md` gotcha 2 — *"one evening of 'the
+  sensor is dead' is always a flipped magnet"* — has said so since the
+  beginning; §2a now carries the check that acts on it, and it reads a magnet
+  that is **already glued in**: the sensor itself identifies the spare's south
+  face, and then repel/attract reads the glued one without prising it out.
+
+  **`home` prints a decision tree on failure, and `no_hall` is why it has to.**
+  §5.8 says the classifier names the *signature*, not the fault, and homing is
+  where that bites hardest: a dead sensor, a magnet the sensor never passes
+  close enough to, and a magnet glued in backwards all produce exactly "1.2
+  revolutions, no edge".  Three causes, one observation, and the firmware cannot
+  separate them.  What separates them is three things a person does with their
+  hands **in a fixed order**, and the order is load-bearing — checking polarity
+  before checking that the sensor is powered at all is how gotcha 2 costs an
+  evening.  So `cmd_home` now WATCHES the pass (like `revs`) and prints the tree
+  at the moment it is needed, contributing the one fact a person cannot see:
+  **whether the hall asserted at any point during the pass it just ran**, which
+  turns branch 2 from a question into an answer.  BRINGUP §28c step 3b is the
+  same tree on paper.
+
+  **`hall_tol` gets its measurement, and `revs` proposes the number.**  16 has
+  always been *derived* — a quarter of a flap — and §5.4 has said since the drive
+  change that the real value comes from measured edge repeatability.  §28c step
+  3c is that measurement.  The rule is stated rather than hidden: the candidate
+  is **twice the worst `|err|` over n revolutions**, floored at 2, because the
+  silent band must be wider than a healthy drum's repeatability or ordinary
+  jitter grades as a major resync.  A candidate at or under 16 means **keep 16**
+  — narrowing to the noise floor buys earlier detection of tiny slips and pays
+  for it with false resyncs on the first warm afternoon.  Over half a flap it is
+  reported as a **mechanical finding and not a tolerance**, which is the ceiling
+  `hall_tol_migrated` already enforces.  Both numbers get recorded: the derived
+  one is what shipped and the measured one is what the drum did.
+
+  **The speed ladder is a LIST, not a sweep** (`ramp <col> <r1,r2,…> <dwell_s>`).
+  §14.1 step 5 asks for a sweep from 10 to 25 flaps/s noting where flaps stop
+  clearing cleanly, which is the right shape only if the interesting thing is a
+  threshold.  It is not: what fails first on a loaded drum is a *card* doing
+  something — a double, a flutter, a late seat — and every one of those is
+  eyes-only, because §17 (2026-08-23) already records that the firmware detects
+  a stall and **cannot** detect a card that did not seat.  Four rungs you can
+  describe beat one number with nothing behind it.
+
+  It is **closed loop**, which is the whole reason it waited for this session:
+  every rung goes through `motion::go` and therefore through §5.4's edge
+  verification, so a rung can report that the drum **lost registration** at that
+  speed — the one failure an open-loop spin cannot see at all.  A rung that
+  looks clean to the eye and reports a major resync is the most valuable line it
+  prints.  It refuses the whole ladder up front if any rung is over the cap,
+  because refusing rung four after running three leaves a partial result that
+  reads like a complete one; and it refuses entirely without a home reference
+  rather than falling back to open loop, because four rungs of zeroes read
+  exactly like four clean rungs.  **Note the name collision, deliberately kept:**
+  the dispatcher's `motion.ramp` is the Calibrate page's index walk.  Same word,
+  different thing, different layer.
+
+  **The soak's report asks for the half it cannot count.**  Every figure it
+  prints is a position figure, and position can stay perfect for an hour while
+  cards double or fail to seat.  So a completed closed-loop run now asks for a
+  **five-minute watched window** with a flap count in it — bounded on purpose,
+  because nobody watches a drum for an hour and a tally with no stated window is
+  a number without a denominator — and says in as many words that **a blank
+  tally is a blank, not a zero**.  The duration argument (`bench soak <col>
+  [minutes]`, default 60) already existed; what is new is that the console warns
+  BEFORE the hour starts when there is no home reference, since an unhomed
+  column and a hall-less one look identical from inside the firmware and the
+  difference costs an hour to discover in the report.
+
+  **Three pages added to `docs/wiring/`** (28 → 32, still a registry so no
+  cross-reference moved): which way round the sensor goes, its three wires and
+  the pull-up, and the polarity checks.  The generator's guard was extended to
+  the Hall with the same standard as every other pin — the sensor's OUT lands on
+  column 0's GPIO out of `hal/pins.h` or **nothing is drawn** — and the section
+  parsers are now scoped to their own `##` section, because §2a adds a second
+  table of the same shape and an unscoped driver parser swallowed its rows.
+  Also removed while there: `ESP_PINS` in `wiringgen.py` carried the GPIO
+  numbers as **literals**, which is precisely the thing the generator exists to
+  stop.  It failed safely rather than lying, but "fails loudly if the pin map
+  moves" is a weaker promise than "follows the pin map", and it is derived now.
 
 - 2026-09-12 — **THE FIRST BENCH SESSION WITH A REAL MOTOR.  GATE 3 PASSED, AND
   THE MECHANISM IS NO LONGER UNVERIFIED.**  BRINGUP §28b gate 3, branch B (no

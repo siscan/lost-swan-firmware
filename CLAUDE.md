@@ -128,7 +128,7 @@ docs/OWNER.md                  living with the display: the owner's manual
 docs/MOTION_SYNC.md            motion ownership/atomics/critical-section contract
 docs/BENCH_WIRING.md           the prose bench wiring guide, and the source the
                                illustrated pages are checked against
-docs/wiring/                   GENERATED: p01..p28.svg + .png + bench-wiring.pdf,
+docs/wiring/                   GENERATED: p01..p32.svg + .png + bench-wiring.pdf,
                                the illustrated guide. Never hand-edited
 docs/FUTURE.md                 planned-but-not-built shapes (the scriptable zero
                                choreography), and what shipped code must not break
@@ -184,7 +184,7 @@ tools/jscheck.py               web asset syntax scan (no node needed); run by
 tools/wiringgen.py             docs/wiring/*.svg, generated from hal/pins.h +
                                docs/BENCH_WIRING.md and REFUSING to draw if they
                                disagree; --check runs in test-host.ps1 and CI
-tools/wiringgen_pages.py       the 28 page bodies and PAGE_ORDER, the registry
+tools/wiringgen_pages.py       the 32 page bodies and PAGE_ORDER, the registry
                                that makes "page N" in the prose a symbol; no GPIO
 tools/wiringrender.ps1         SVG -> PNG + one PDF, via Edge headless
 tools/devserver/               host dev server: real /ws, real ModeManager, sim axes
@@ -306,13 +306,27 @@ LEDC/MCPWM/RMT. At 1:1 it is 25.6 k per column, 128 k aggregate, 51.2 % of the
 ISR ceiling — the GPTimer + DDA in §5.2 stands, and it was never really an
 option anyway (two RMT TX channels for five axes).
 
-**The stand-in bench build is the current work** (`-DSWAN_BENCH=ON`, reported as
-`0.4.0+<board>.bench`, BRINGUP §28b gate 3). It is the first firmware here that
-drives a real motor. **The show spin is locked out in code**: every commanded
-speed is clamped to 1 drum rev/s at the one place speeds enter the motion layer,
-because the stand-in axle is printed PLA and the cap is a safety contract rather
-than a config default. `bench soak` refuses a simulated column, for the same
-reason. Do not add a way to lift the cap.
+**The bench build is the current work** (`-DSWAN_BENCH=ON`, reported as
+`0.4.0+<board>.bench<cap>`). Gate 3 (BRINGUP §28b) passed on 2026-09-12 with no
+Hall fitted; **§28c is the hall session** — a pitch-80 module with the sensor and
+the magnet, and the first closed loop this project has ever run.
+
+**THE SHOW SPIN IS LOCKED OUT IN CODE, and the cap is a build parameter.**
+`-DSWAN_BENCH_CAP=<flaps/s>`, default and **ceiling** one drum revolution per
+second (50). It may only go DOWN — a `static_assert` and a CMake check both
+refuse more — because the mechanism on the vise changes between sessions while
+the firmware does not: §28c builds at **20**, since that module has no shroud and
+its cards lift above ~100 flaps/s. **Do not add a way to lift the cap.** The
+number is in the version string and on the boot banner, because two caps are two
+different safety contracts.
+
+**Refused, never clamped, on every path.** `motion::set_params` returns false and
+applies NOTHING; the §10.2a dispatcher checks first so a refusal can name the
+speed; `config::load` is the single exception and it *substitutes and says so at
+WARN*, because the boot path cannot be refused without coming up with none of its
+stored config. A silent clamp made the image contradict itself — the Settings
+slider ran 50 while `spin` refused the same value. `bench soak` refuses a
+simulated column, for the same family of reasons.
 
 **Phases 4, 5 and 6 done and verified on the board.** Phase 4/5: MQTT with HA
 discovery, OTA with rollback (survival proven in both directions, BRINGUP §23),
@@ -419,6 +433,10 @@ Things later work must not undo:
   nothing at all if any of them disagree**. Do not hand-edit an SVG under
   `docs/wiring/`; change the source and re-run the generator. CI diffs the
   committed pages against a fresh run.
+  The guard covers the **Hall** to the same standard since 2026-09-20: the
+  sensor's OUT lands on column 0's GPIO out of `hal/pins.h` or nothing is drawn.
+  Its section parsers are scoped to their own `##` heading, because §2a is a
+  second table of the same shape and an unscoped driver parser eats its rows.
   **The physical pages (level 0, 2026-09-12) are a weaker claim and say so.**
   They take their connections from the same parsed sources, but a breadboard
   row/column coordinate is layout — no source states which hole anything sits
@@ -475,14 +493,19 @@ rule: no consumer reads two relaxed atomics as a pair outside
 axis_read_published) and the simulated-axis suite green; Linux CI is the
 reliability source of truth.
 
-**What has and has not touched a drum.** Everything since 2026-08-23 runs on
-real silicon — the board is on the bench — but against **simulated drums**. No
-motor, driver or Hall sensor has ever been connected. So: the firmware is
-verified, the *mechanism* is not, and any number about the mechanism (the gear
-ratio 85/33 against the stale 68/26 prose, `hall_tol`, the jam/slip thresholds,
-`flaps_s_alarm`) is settled by a bench run, not by code and not by a simulated
-soak. `sim_drum.h` was written from the same assumptions as the classifier that
-reads it, so a clean simulated result proves the plumbing and nothing else.
+**What has and has not touched a drum.** A real motor and a real TMC2209 ran
+for an hour on 2026-09-12 (§28b gate 3): the thermal question is answered, and
+`step 0 3200` made 64 µsteps/flap and 3200/revolution bench facts rather than
+arithmetic. **That run had no Hall and no magnet**, so it was open loop
+throughout and proved nothing about registration. Everything else still runs
+against **simulated drums**.
+
+So: a number about the mechanism is settled by a bench run, not by code and not
+by a simulated soak. `hall_tol`, the jam/slip thresholds and `flaps_s_alarm` are
+all still open — `hall_tol` gets its measurement in §28c step 3c, and
+`flaps_s_alarm` cannot be set until the card stock is frozen (§28b step 6a).
+`sim_drum.h` was written from the same assumptions as the classifier that reads
+it, so a clean simulated result proves the plumbing and nothing else.
 
 **The repository is QUIET as of 2026-08-25**, closed on green CI, waiting for
 hardware. If you are opening it after that date: the software side is finished

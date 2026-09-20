@@ -1236,7 +1236,7 @@ sealed inside a PLA drum that softens at 55–60 °C, and the clock holds positi
 99 % of the day — does it cook?*
 
 **WIRE IT FROM THE ILLUSTRATED GUIDE.** `docs/wiring/bench-wiring.pdf` is the
-twenty-eight-page picture version of `docs/BENCH_WIRING.md` — one connection per
+thirty-two-page picture version of `docs/BENCH_WIRING.md` — one connection per
 page, the driver and the DevKitC-1 drawn with their real pin labels, Vref with
 the meter probes on the pads, a five-pair continuity checklist to beep before
 first power, and numbered power-on / power-off sequences. Its pin numbers are
@@ -2028,3 +2028,376 @@ faceplate. Those come after the real axle.
 
 **If it fails:** spec §5.7a Plan B — UART mode, `IHOLD` ≈ 15 %. Read the pin
 cost there first; it is not free on either board map.
+
+
+---
+
+## 28c — THE HALL SESSION, on the pitch-80 module
+
+**The first closed loop this project has ever run.** Gate 3 answered the thermal
+question with no Hall and no magnet fitted, open loop, and every page and every
+report said so. This module has the sensor and the magnet, so the column can
+home, `revs` can measure, the ladder can be graded by the edge verification and
+the soak can report registration as well as heat.
+
+**Build it at a cap of 20 flaps/s.**
+
+```
+.\build.ps1 -B build-bench -DSWAN_BOARD=devkitc1 -DSWAN_BENCH=ON -DSWAN_BENCH_CAP=20 app
+.\build.ps1 -B build-bench -p COM3 app-flash
+```
+
+The banner must read `0.4.0+devkitc1.bench20` and the boot log must carry
+
+```
+*** BENCH IMAGE: every commanded speed is capped at 20 flaps/s (0.40 drum rev/s)
+    and REFUSED above it. ***
+```
+
+**Why 20 and not 50.** The cap is a build parameter now (spec §15 phase 8) and
+it exists because the mechanism on the vise changes between sessions while the
+firmware does not. **This module has no shroud.** Above roughly 100 flaps/s a
+card lifts off the drum and there is nothing to stop it leaving; 20 keeps a wide
+margin under that while still being four times the alarm speed the show uses.
+50 was a perfectly good number for a bare stand-in drum and is the wrong one
+here. The parameter may only ever go **down** — CMake and a `static_assert` both
+refuse anything over one drum revolution per second.
+
+**App only.** `app-flash` writes 0x20000 and nothing else: the NVS holding
+`col_mode`, the calibration and `mqtt.enabled = false` survives, and so does the
+LittleFS image. A full `flash` destroys all of it.
+
+---
+
+### Step 1 — Vref, by meter, MANDATORY this time
+
+Gate 3 left this as its one loose end: the pot was never read and the value
+went into the record as **INFERRED** from supply current. Supply current is not
+coil current — a TMC2209 is a switching regulator, so what the bench PSU shows
+is roughly coil power over rail volts. **This session closes it with a meter.**
+
+The procedure is `docs/BENCH_WIRING.md` §4 step 2 and the illustrated pages. In
+outline, and in this order:
+
+- [ ] **Driver OUT of the breadboard**, lying on the bench on two flying leads
+      (VIO and GND). The header pins exit the component face, so once the module
+      is seated the pot is pressed against the board and unreachable.
+- [ ] **Motor disconnected. VM off. USB on.**
+- [ ] Read the sense resistor marking with your eyes, not from memory:
+
+   ```
+   R _______   =  0. _______ ohm
+   ```
+
+- [ ] Set Vref against the target for THAT resistor — **≈0.99 V at 0.11 Ω**,
+      **≈1.29 V at 0.15 Ω**. Black probe on GND, red on the pot wiper.
+
+   ```
+   Vref measured   _______ V      target _______ V
+   ```
+
+- [ ] Insert the driver, pot-down. **9 V at 0.5 A** for first power.
+- [ ] Only once nothing is warm and nothing smells: **20 V** for the rest of the
+      session.
+
+   ```
+   9 V first power  ok / not ok : ______________
+   20 V soak rail   ok / not ok : ______________
+   ```
+
+**Do not skip to 20 V.** The current limit at 9 V is the only thing between a
+wiring mistake and a dead driver, and every irreversible mistake in this guide
+needs VM to be live.
+
+---
+
+### Step 2 — verify the `maint off` re-home fix
+
+**Do this before anything else that depends on homing, because inspection is
+all the fix has.** The full procedure is §28b Step 0 above — it is unchanged and
+it is written for a module with the magnet fitted, which is this one.
+
+- [ ] Run §28b Step 0 end to end.
+
+   ```
+   did `maint off` start a home?  yes / no : ______________
+   ```
+
+If it prints `NOT homing (spec §5.9)`, **stop and report it**. §5.9's
+re-home-on-leaving is a safety claim about drums that have been moved by hand,
+and every later step here assumes a home means something.
+
+---
+
+### Step 3 — `step 0 3200`, the geometry, again
+
+One command settles three things `revs` cannot: the drive ratio, the microstep
+setting and the coil pairing.
+
+- [ ] Put a pen mark on the drum wall.
+- [ ] `step 0 3200`
+- [ ] The mark must return to **exactly** where it started.
+
+   ```
+   one revolution exactly?  yes / no : ______________
+   ```
+
+This passed at gate 3 and is repeated because this is a different drum. A mark
+that lands short or long is a microstep setting that is not 1/16 or a coupling
+that slipped, and it is cheaper to find here than inside a homing pass.
+
+---
+
+### Step 3a — `home 0`
+
+- [ ] `maint off` (if you are still in it), `en 1`
+- [ ] `home 0`
+
+The command **watches the pass** and reports the outcome rather than printing
+`homing` and leaving you reading a scrollback:
+
+```
+homed: index 0, cal_offset <n> usteps
+```
+
+   ```
+   homed?  yes / no : ______________       cal_offset ______ usteps
+   ```
+
+If it fails it prints the decision tree in step 3b, with one branch already
+answered — the firmware records whether the hall asserted at any point during
+the pass it just ran, which is the one fact a person at the vise cannot see.
+
+---
+
+### Step 3b — WHEN `home` FINDS NO EDGE: one observation, three causes
+
+**`no_hall` names the signature, not the fault.** A dead sensor, a magnet the
+sensor never passes close enough to, and a magnet glued in backwards all produce
+exactly "1.2 revolutions, no edge". The firmware cannot tell them apart and does
+not pretend to; what separates them is three things you do with your hands, **in
+this order**. The order is the point — checking polarity before checking that
+the sensor is powered at all is how `docs/ref/BOM.md` gotcha 2 costs an evening.
+
+The console prints this tree on a failed `home`. It is here too so it can be
+read on paper beside the board.
+
+**1. Turn the drum by hand with `hall` on screen. It NEVER reads
+`magnet=YES`, at any angle.**
+
+> **The sensor is unpowered or miswired.** `VCC` to 3V3, `GND` to the **centre**
+> lead, `OUT` to **GPIO0**, and the **10 kΩ pull-up from OUT to 3V3** — without
+> it the open-drain output cannot pull the pin up at all and `hall` reads noise.
+> Check the two **outer** leads are not swapped; the centre one is GND whichever
+> way round you read the part.
+
+**2. It DOES read `magnet=YES` by hand, but never during `home`.**
+
+> **Air gap, or the magnet is not where the sensor sweeps.** By hand you can
+> hold a magnet anywhere; the drum can only take it past one fixed point. Close
+> the gap to 1–2 mm and check the sensor faces the track on the disc that the
+> magnet actually runs on. This is the branch the firmware can half-answer for
+> you: the tree it prints says whether the hall asserted during the pass.
+
+**3. Nothing from the drum's magnet, but a SPARE held to the sensor DOES trip
+it.**
+
+> **Polarity. The magnet is glued in backwards.** The A1121 is unipolar: a
+> **south** pole turns it on and a north pole does **nothing at all** — not a
+> weaker trip, nothing. Mark the spare face that trips the sensor `S`, then hold
+> that face to the glued magnet: **repel = south = correct**, **attract = north
+> = re-glue it**. `motion.hall_active_low` does **not** rescue this; it inverts
+> how the firmware reads an output that never moved.
+
+   ```
+   reads magnet=YES by hand?          yes / no : ______________
+   reads magnet=YES during `home`?    yes / no : ______________
+   spare magnet trips the sensor?     yes / no : ______________
+   glued magnet reads                 south / north : ______________
+   air gap                            ______ mm
+   cause, if it failed                1 / 2 / 3 : ______________
+   ```
+
+---
+
+### Step 3c — `revs 0 10`, and the MEASURED `hall_tol`
+
+- [ ] `revs 0 10`
+
+**Expect 3200, flat.** The direct drive has no residue to alternate, so *any*
+spread is a finding and not rounding — a slipping coupling, a marginal magnet,
+or a microstep setting that is not 1/16. The command prints the table §14.1
+carries: 3200 is 1:1, ~8242 is the dead 85T/33T rim gear, ~7555 the 36T
+revision, ~8369 the stale prose.
+
+```
+n=10  min=3200  max=3200  mean=3200.00  spread=0  worst |err|=0
+```
+
+   ```
+   min ______  max ______  mean ______  spread ______  worst |err| ______
+   ```
+
+**THE SPREAD IS THE MEASUREMENT `hall_tol` HAS BEEN WAITING FOR.** 16 is a
+*derived* default — a quarter of a flap, geometry and nothing more — and spec
+§5.4 has said since the drive change that the real value comes from measured
+edge repeatability. This is that measurement, and the command now proposes a
+number rather than leaving you to invent one.
+
+The rule it uses, stated so the number is not a black box: the silent-accept
+band must be **wider than the repeatability of a healthy drum**, or ordinary
+jitter is reported as a major resync. So the candidate is **twice the worst
+`|err|` over ten revolutions**, floored at 2, and then:
+
+| candidate | what the command says |
+|---|---|
+| ≤ 16 | **keep 16.** Repeatability is better than a quarter flap; narrowing to the noise floor buys earlier detection of tiny slips and pays for it with false major resyncs on the first warm afternoon. |
+| 16 < c ≤ 32 | **use the candidate.** The drum is less repeatable than a quarter flap, so 16 would grade ordinary jitter as a major resync. `motion.params hall_tol=<c>` then `save`. |
+| > 32 | **a mechanical finding, not a tolerance.** Over half a flap swallows more than half of every real slip. Do not widen it to make the symptom go away. |
+
+**Record BOTH numbers** — the derived one is what shipped, the measured one is
+what the drum did, and the decision log wants to see them side by side:
+
+   ```
+   derived hall_tol        16
+   measured candidate      ______
+   set to                  ______      (or "kept 16")
+   ```
+
+---
+
+### Step 4 — the one-hour soak, closed loop this time
+
+- [ ] `bench soak 0 60`
+
+The duration is an argument (`bench soak <col> [minutes] [tick_s]`, default 60
+minutes and one flap a second). **Run the full hour**: a short run is not a
+shorter answer, it is no answer, and the report says so and refuses to print the
+hand-on-the-case verdict.
+
+**It must say `closed loop` when you start it.** If it warns that there is no
+home reference, you skipped step 3a — stop, `home 0`, and start the hour again.
+An open-loop hour answers the thermal half only, and that half is already
+answered.
+
+What is different from gate 3: the report now carries drum revolutions,
+`hall_to_hall`, worst edge error and the resync counts, because the edge
+verification was live for the whole run. `bench samples` prints the per-minute
+record out of the bench buffer, which no log storm can evict.
+
+   ```
+   elapsed        ______ / 3600 s          flaps ______
+   drum revs      ______      hall_to_hall ______ .. ______
+   worst |err|    ______      resyncs ______ minor / ______ major
+   faults         ______      heap ______ -> ______ (min ______)
+   motor case     comfortable / hot but holdable / snatch away
+   drum wall      ______________
+   ```
+
+**And the half no counter can see.** Position can stay perfect for an hour while
+cards double, flutter or fail to seat — spec §17 (2026-08-23) says the firmware
+detects a stall and cannot detect a card that did not seat. So the report asks
+for a **five-minute watched window** rather than a claim about the hour, because
+nobody watches a drum for an hour and a tally with no stated window is a number
+without a denominator:
+
+   ```
+   watched window   ______ to ______ of 60 min,  ______ flaps in it
+   doubles seen     ______      flutter  ______
+   late seats       ______      jams     ______
+   ```
+
+**A blank tally is a blank, not a zero.** If you did not watch, write "not
+watched".
+
+---
+
+### Step 5 — the speed ladder
+
+- [ ] `ramp 0 2,5,10,20 30`
+
+An explicit list of rates, each held for the dwell, **closed loop**, one rung at
+a time. Press ENTER between rungs, or `q` to stop.
+
+**Why a list and not a sweep.** §14.1 step 5 asks for a sweep from 10 to 25
+flaps/s and "note where flaps stop clearing cleanly", which is the right shape
+only if the interesting thing is a threshold. It is not: what fails first on a
+loaded drum is a *card* doing something — a double, a flutter, a late seat — and
+those are eyes-only. Four rungs you can describe and compare beat one number
+with no evidence behind it.
+
+**Why closed loop.** Every rung goes through `motion::go`, so every rung is
+graded by the edge verification in §5.4. That means a rung can report that the
+drum **lost registration** at that speed, which is the one failure an open-loop
+spin cannot see at all. **A rung that looks fine to the eye and reports a major
+resync is the most valuable line this command prints.**
+
+Per rung it reports flips, drum revolutions, `hall_to_hall`, worst `|err|`,
+issued-minus-covered in µsteps and flaps, and the resync and fault deltas — then
+stops and asks for what only you can see.
+
+   ```
+   rung   flaps/s   revs   h2h    worst|err|   issued-covered   min/maj   finger        doubles
+   1      2         ____   ____   ____         ____             ____      ____________  ________
+   2      5         ____   ____   ____         ____             ____      ____________  ________
+   3      10        ____   ____   ____         ____             ____      ____________  ________
+   4      20        ____   ____   ____         ____             ____      ____________  ________
+   ```
+
+**Anything over 20 is refused by this image**, whole-ladder, before a single
+rung runs — a partial ladder reads like a complete one. That is the cap doing
+its job, not a fault.
+
+**This still does not set `flaps_s_alarm`.** §28b step 6a froze the step loss at
+card release as mechanical, pending thinner cards, and the ladder measures a
+property of the loaded drum. Record the rungs; commit the constant when the card
+stock is settled.
+
+---
+
+### Step 6 — the current ladder (OPTIONAL)
+
+**Only if there is time and the soak passed.** Every Vref change is a **driver
+pull**: power down, lift the module out, set the pot on flying leads, put it
+back. Three settings is three teardowns, so decide up front whether the answer
+is worth the handling — each insertion is a chance to bridge something.
+
+At each setting:
+
+- [ ] Power down. Pull the driver. Set Vref. Re-insert pot-down. Power up at 9 V,
+      then 20 V.
+- [ ] `bench spin 0 20 600` — ten minutes at the top of the ladder.
+- [ ] **Hand on the motor case at the end**, and on the drum wall.
+
+   ```
+   Vref      I_RMS      case after 10 min                  drum wall
+   ______ V  ______ A   comfortable / hot / snatch away    ____________
+   ______ V  ______ A   comfortable / hot / snatch away    ____________
+   ______ V  ______ A   comfortable / hot / snatch away    ____________
+   ```
+
+**Watch the temperature, not the clock.** If a setting is uncomfortable before
+the ten minutes are up, stop it there and write down when — that is the result,
+and finishing the rung adds nothing but risk to a printed axle.
+
+The point of the ladder is to find how much margin 0.7 A actually has, not to
+pick a new number. **0.7 A stays the plan of record** (§5.7a) unless something
+here contradicts it, and a lower setting that survives ten minutes has not
+survived an hour.
+
+---
+
+### What 28c settles, and what it does not
+
+**Settles:** that the Hall wiring and the magnet's polarity are right; that a
+column can home; the measured edge repeatability, and therefore `hall_tol`; that
+registration holds over an hour of real motion at clock cadence; and how the
+cards behave at four speeds, watched.
+
+**Does not settle:** `flaps_s_alarm` (the drum's load is about to change),
+`motion.accel` (same reason — §5.2's derivation stands until the flap stop and
+the card stock are frozen), anything about five columns in a shared enclosure,
+or anything at all about the show spin, which this image cannot produce.
+
+**Blanks stay blank until measured.** A filled-in guess is worse than an empty
+line, because the next session reads it as a result.
