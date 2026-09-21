@@ -3907,6 +3907,65 @@ numbered section — if you find one that disagrees, fix the section.
   column and a hall-less one look identical from inside the firmware and the
   difference costs an hour to discover in the report.
 
+  **§28c RUNS IN MAINTENANCE THROUGHOUT, because the frame scheduler is live
+  and column 0 is not excluded from it.**  Nico asked the question the sheet
+  did not answer: with maintenance off and EN on, does the modes layer drive
+  column 0 during the bench steps?  It does, and nothing in the bench build
+  stops it.
+
+  `modes_task` is created unconditionally — the only `BENCH_BUILD` conditional
+  in `app_main.cpp` is the boot banner — and ticks at 20 Hz.  The hold set is
+  complete and singular: `held = maintenance_ || ota_hold_ || no_drivers`.
+  There is no bench term, and **no bench command takes a hold**: `bench.cpp`
+  and `soak.cpp` contain no reference to ModeManager, maintenance or the OTA
+  hold at all.  Columns 1–4 are disabled and excluded from every frame; column
+  0 is `real` and is not.  Clock mode issues a frame even with no SNTP (blank,
+  then the wifi glyph after the 15 s grace), so the scheduler has a desired
+  frame for column 0 from the first tick.
+
+  The contention is specifically with **open-loop moves**, and it is designed
+  behaviour rather than an oversight.  `StepOpen` publishes
+  `index = RING_INVALID` on completion and leaves the axis **Idle** with
+  `hall_valid` still **true** (it is cleared only in `begin_home`).  The
+  convergence predicate is `c.state == AxisState::Idle && c.index != want`, and
+  an unknown index is the one value that can never satisfy that equality — so
+  it is the case most certain to be re-commanded.  `motion::go`'s two
+  preconditions both pass, so the `go` is *accepted*: the drum walks up to a
+  full revolution to put column 0 back on the clock's blank, within 50 ms.  The
+  pass's own comment says it exists partly to "land the post-spin choreography
+  (index unknown after open-loop)".  It is doing its job.
+
+  Without the fix, `step 0 3200` returns the pen mark to its start and then
+  walks off it — **a correct 1:1 result read as a failure** — and every rung of
+  the ladder, every `revs`, every soak flap gets a competing `go` posted over
+  it.  At rest it is quiet: a freshly homed column sits on the home slot, which
+  is what the blank frame wants.  It only fights once a manual command has
+  moved the column somewhere else, which is every command in the session.
+
+  So §28c gains **step 2a: `maint on`, then `en 1`**, in that order and both of
+  them.  `maint on` releases EN and stops every axis (it is ganged); the `en 1`
+  that follows re-energises and, because maintenance is on, deliberately does
+  **not** re-home — `EN asserted, maintenance on - NOT homing (spec 5.9); the
+  drums are yours` is the confirmation.  Every bench command works there, and
+  that was checked rather than assumed: `ReqKind::Home` carries no maintenance
+  gate (maintenance suppresses *automatic* re-homing, not a commanded one),
+  `StepOpen` is refused only mid-`Homing`, and the control core actually
+  **widens** what `Go` accepts in maintenance — any state but `Homing`, where
+  normally it is Idle-or-Moving only.  One behaviour change to know rather than
+  discover: in maintenance a fault does not automatically re-home, which for a
+  bench session is the better side of the trade and is why the sheet says so.
+
+  And the sheet now **ends with `maint off`**, because console `maint on`
+  persists (§5.9, deliberately) and a board left in maintenance boots without
+  homing and with EN released — five drums free to slew on this drive.
+
+  Recorded at this length because the shape generalises: **a bench command and
+  the frame scheduler are two independent writers to the same axis**, and the
+  serial CLI sits below the dispatcher precisely so it can drive `motion::`
+  directly (2026-08-23).  That is the right design and it is why maintenance —
+  which is a *scheduler* hold, not a motion one — is the tool for owning a
+  column, rather than adding a bench hold nothing else would respect.
+
   **Three pages added to `docs/wiring/`** (28 → 32, still a registry so no
   cross-reference moved): which way round the sensor goes, its three wires and
   the pull-up, and the polarity checks.  The generator's guard was extended to

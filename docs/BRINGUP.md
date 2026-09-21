@@ -2129,6 +2129,91 @@ and every later step here assumes a home means something.
 
 ---
 
+### Step 2a — GO BACK INTO MAINTENANCE, then re-assert EN
+
+**Every step from here runs in maintenance, and that is not tidiness — the
+frame scheduler will otherwise undo your commands within 50 ms.**
+
+- [ ] `maint on`
+- [ ] `en 1`
+
+**In that order, and both of them.** `maint on` releases EN and posts a Stop to
+all five (it is ganged), which also aborts the verification home you just
+started — that is fine, step 2 only needed to see it *begin*. The `en 1` that
+follows re-energises the coils and, **because maintenance is on, deliberately
+does not re-home**: the log says `EN asserted, maintenance on - NOT homing
+(spec 5.9); the drums are yours`. That line is the confirmation the pair worked.
+
+#### Why: the scheduler is live and column 0 is not excluded from it
+
+The bench build does **not** suspend the modes layer, and no bench command
+takes a hold. Three things hold the scheduler and nothing else does:
+
+```
+mode_manager.cpp:370    const bool held = maintenance_ || ota_hold_ || no_drivers;
+```
+
+`modes_task` is created unconditionally (`app_main.cpp:497` — the only
+`BENCH_BUILD` conditional in that file is the boot banner) and ticks at 20 Hz.
+Columns 1–4 are `disabled` and therefore excluded from every frame; **column 0
+is `real`, so it is not.** The display boots into clock mode and issues a frame
+even with no SNTP — blank, then the wifi glyph after the 15 s grace — so the
+scheduler has a desired frame for column 0 from the first tick.
+
+Then, every 50 ms:
+
+```
+frame.cpp:159    if (c.state == AxisState::Idle && c.index != want) {
+frame.cpp:160        if (port_.go(i, want)) posted_[k] = want;
+```
+
+**An unknown index is the one value that can never satisfy that equality.** A
+completed open-loop move publishes `index = RING_INVALID` (-1) and leaves the
+axis **Idle** with `hall_valid` still **true** — `hall_valid` is cleared only in
+`begin_home`. So `motion::go`'s two preconditions both pass and the convergence
+`go` is *accepted*: the drum turns, up to a full revolution forward, to put
+column 0 back on the clock's blank. The comment on that pass says so in as many
+words — it exists partly to "land the post-spin choreography (index unknown
+after open-loop)". It is doing its job; its job is just not what this session
+wants.
+
+Concretely, without this step:
+
+- **`step 0 3200`** — the pen mark returns to the start, and ~50 ms later the
+  drum walks off it again. You would read a correct 1:1 result as a failure.
+- **`revs`, `bench spin`, the ladder's rungs, every soak flap** — each one ends
+  with the column somewhere that is not blank, and each one gets a competing
+  `go` posted over it.
+
+At rest it is quiet: a freshly homed column sits on the home slot, which is
+what the blank clock frame wants, so convergence is a no-op. **It only fights
+you once a manual command has moved the column somewhere else** — which is
+every command in this session.
+
+#### All of it works in maintenance — that is checked, not assumed
+
+| command | why it works in maintenance |
+|---|---|
+| `home 0` | `ReqKind::Home` carries no maintenance gate at all. Maintenance suppresses **automatic** re-homing, not a commanded one. |
+| `revs 0 10`, `step`, `bench spin` | `ReqKind::StepOpen` is refused only mid-`Homing`. |
+| `bench soak 0 60`, `ramp` | Closed loop via `motion::go`, which has no maintenance gate — and the control core *widens* what Go accepts in maintenance (`axis_control.cpp:159`): any state but `Homing`, where normally it is Idle-or-Moving only. A hall reference is still required, which is why `home 0` comes first. |
+
+`bench soak` also requires EN to be asserted, which is what the `en 1` bought.
+
+**One behaviour change worth knowing rather than discovering:** in maintenance
+the control core does not automatically re-home after a fault
+(`axis_control.cpp:40`). For a bench session that is the better side of the
+trade — a rung that faults stays faulted and visible instead of quietly
+retrying three times — but it means a fault during the ladder or the soak will
+not clear itself. `home 0` clears it.
+
+- [ ] **AND AT THE END OF THE SESSION: `maint off`.** Console `maint on`
+      persists to NVS, deliberately (§5.9 — pulling power mid-repair must not
+      restart a countdown on top of your hands). Leave it set and the board
+      boots into maintenance next time, does not home, and leaves EN released.
+
+---
+
 ### Step 3 — `step 0 3200`, the geometry, again
 
 One command settles three things `revs` cannot: the drive ratio, the microstep
@@ -2150,7 +2235,10 @@ that slipped, and it is cheaper to find here than inside a homing pass.
 
 ### Step 3a — `home 0`
 
-- [ ] `maint off` (if you are still in it), `en 1`
+**Still in maintenance, EN still asserted** (step 2a). Do not leave maintenance
+to home — a commanded `home` works in it, and leaving would hand column 0 back
+to the frame scheduler.
+
 - [ ] `home 0`
 
 The command **watches the pass** and reports the outcome rather than printing
@@ -2401,3 +2489,8 @@ or anything at all about the show spin, which this image cannot produce.
 
 **Blanks stay blank until measured.** A filled-in guess is worse than an empty
 line, because the next session reads it as a result.
+
+**Before you pack up: `maint off`.** It persists (§5.9), and a board left in
+maintenance boots without homing and with EN released — which on the direct
+drive means five drums free to slew. Leaving it set is a decision; leaving it
+set by accident is how the next session starts confused.
