@@ -1,5 +1,6 @@
 #include "cli/cli.h"
 
+#include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -1519,6 +1520,31 @@ int cmd_sim(int argc, char** argv) {
     return 0;
 }
 
+// on|off|1|0|true|false|yes|no, case-insensitive.  FALSE means "not one of
+// those", so a caller can refuse instead of guessing - which matters wherever
+// the two directions are not equally safe.
+bool parse_onoff(const char* s, bool& out) {
+    if (s == nullptr || *s == '\0') return false;
+    char b[8] = {};
+    size_t n = 0;
+    while (s[n] != '\0') {
+        if (n >= sizeof(b) - 1) return false;  // longer than any token we take
+        b[n] = static_cast<char>(std::tolower(static_cast<unsigned char>(s[n])));
+        ++n;
+    }
+    if (std::strcmp(b, "on") == 0 || std::strcmp(b, "1") == 0 ||
+        std::strcmp(b, "true") == 0 || std::strcmp(b, "yes") == 0) {
+        out = true;
+        return true;
+    }
+    if (std::strcmp(b, "off") == 0 || std::strcmp(b, "0") == 0 ||
+        std::strcmp(b, "false") == 0 || std::strcmp(b, "no") == 0) {
+        out = false;
+        return true;
+    }
+    return false;
+}
+
 int cmd_maint(int argc, char** argv) {
     if (g_mm == nullptr || g_utc_ms == nullptr) {
         std::printf("modes not available\n");
@@ -1529,7 +1555,24 @@ int cmd_maint(int argc, char** argv) {
         std::printf("maintenance: %s\n", c.maintenance ? "ON" : "off");
         return 0;
     }
-    const bool on = std::atoi(argv[1]) != 0 || std::strcmp(argv[1], "on") == 0;
+    const bool was = c.maintenance;
+    // PARSE STRICTLY, AND REFUSE WHAT IS NOT RECOGNISED.  This used to accept
+    // only a non-zero number or the exact lowercase "on", so every other token
+    // - "ON", "True", "yes", a typo - silently became `maint off`.  The
+    // capitalisation is the firmware's OWN: `maint` prints "maintenance: ON"
+    // and the confirmation reads "maintenance ON - nothing moves on its own",
+    // so `maint ON` is exactly what somebody mirroring the console types.
+    // That was survivable while leaving maintenance posted no Home.  Now that
+    // it correctly re-homes, the same typo turns a drum at the vise while the
+    // person believes they have just ENTERED maintenance - which is the state
+    // 5.9 and the park-pin procedure require before hands go near the
+    // mechanism.  Defaulting an unrecognised word to the moving direction is
+    // the wrong way round.
+    bool on = false;
+    if (!parse_onoff(argv[1], on)) {
+        std::printf("usage: maint on|off  (got '%s' - nothing changed)\n", argv[1]);
+        return 1;
+    }
     c.maintenance = on;
     motion::set_columns(c);
     MotionParams p = motion::params();
@@ -1551,10 +1594,30 @@ int cmd_maint(int argc, char** argv) {
     // the console - which is what BRINGUP tells a bench operator to type
     // before touching a drum - was forgotten by the next boot.
     const esp_err_t merr = config::save_columns(motion::columns());
-    // Leaving maintenance re-homes from motion::enable(true) now - one rule
-    // in one place - so there is no explicit home(-1) here any more.
+
+    // Leaving maintenance re-homes (spec 5.9), and THIS path posts it - the
+    // same explicit home(-1) the dispatcher does, so the console and HTTP are
+    // one behaviour rather than two that happen to agree in one state.
+    // maintenance_exit_homes() carries the reasoning; the short version is
+    // that motion::enable(true) returns early when EN is already asserted,
+    // which is precisely what `maint on` then `en 1` leaves behind.
+    const bool leaving = maintenance_exit_homes(was, on);
+    const bool homed = leaving && motion::home(-1) == ESP_OK;
+
+    // THREE outcomes, not two.  "re-homing" used to be printed unconditionally,
+    // including when nothing had been posted at all.  But "nothing to re-home"
+    // is a statement about the COLUMNS - every one disabled - and must not also
+    // be printed for `maint off` typed when maintenance was already off, which
+    // posts nothing because there was no transition and says nothing about any
+    // column.  Two different facts that a single flag collapses into one.
+    const char* tail = "";
+    if (!on) {
+        tail = !leaving ? " (it was already off)"
+                        : (homed ? "; re-homing"
+                                 : "; nothing to re-home - every column is disabled");
+    }
     std::printf("maintenance %s%s%s\n", on ? "ON - nothing moves on its own" : "off",
-                on ? "" : "; re-homing",
+                tail,
                 merr == ESP_OK ? "" : " (NOT SAVED - it will not survive a reboot)");
     return merr == ESP_OK ? 0 : 1;
 }

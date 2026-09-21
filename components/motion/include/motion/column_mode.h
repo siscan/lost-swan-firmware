@@ -58,6 +58,28 @@ struct ColumnConfig {
     }
 };
 
+// What a maintenance change must cause, in one place, because the console and
+// the dispatcher are two callers of one rule (spec 5.9: "leaving re-arms
+// everything and re-homes all five").
+//
+// THE RE-HOME IS THE CALLER'S JOB AND NEVER enable()'s.  `motion::enable(true)`
+// also posts a re-home, and relying on that side effect is a defect: enable()
+// opens with a `changed` guard that returns EARLY when EN is already asserted,
+// and the re-home loop sits BELOW it.  `maint on` then `en 1` leaves exactly
+// that state - EN up, maintenance on - and BRINGUP 28c step 2a creates it
+// deliberately, so it is the normal bench state and not a corner.  A `maint
+// off` from there posted nothing and printed "re-homing" anyway.
+//
+// The 2026-09-12 fix - assign g_cols before calling enable() - was NECESSARY
+// AND NOT SUFFICIENT: it corrected which flag enable() reads, and control
+// never reached the read.  Note what this rule does NOT take as an argument:
+// whether EN is asserted.  Leaving maintenance re-homes, full stop; making the
+// re-home conditional on the enable state is the bug, restated.
+// EN is deliberately NOT part of this: motion::set_columns already asserts or
+// releases it from the same transition, and a second place computing it is a
+// second place for the two to disagree.  This answers one question only.
+constexpr bool maintenance_exit_homes(bool was, bool now) { return was && !now; }
+
 // A fresh NVS must boot every column REAL and out of maintenance.  Simulated
 // motion that could be reached by accident is worse than no simulated motion:
 // the whole point is that it can never be mistaken for the real thing.

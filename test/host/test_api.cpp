@@ -1072,6 +1072,86 @@ void test_maintenance_command() {
     CHECK_EQ(r.motion.last_home_col, -1);  // all five
 }
 
+// The state BRINGUP 28c step 2a creates DELIBERATELY, and the one this path
+// got wrong: maintenance ON, then EN asserted by hand (`en 1`), then
+// maintenance off.
+//
+// motion::enable(true) also posts a re-home, and the console path used to rely
+// on that side effect alone.  enable() opens with a `changed` guard that
+// returns EARLY when EN is already asserted, and the re-home loop sits BELOW
+// it - so from this exact state a `maint off` posted nothing to any column and
+// printed "re-homing" regardless.  The 2026-09-12 fix corrected WHICH flag
+// enable() reads; control never got as far as reading it.
+//
+// WHAT THIS TEST DOES AND DOES NOT COVER, because the name promises more than
+// it can deliver and an overstated test is worse than a missing one.
+//
+// The defect was in cli.cpp, which is an IDF shell and cannot be linked on the
+// host.  This drives the DISPATCHER, which was never broken here - api.cpp has
+// posted home(-1) explicitly since 2026-08-24.  And the EN steps below are
+// INERT on this path: nothing in motion.maintenance reads the enable state,
+// FakeMotion::set_columns does not drive EN the way motion::set_columns does,
+// so the enable() coupling that IS the defect is modelled by nothing.  Delete
+// the two EN commands and this test passes identically.
+//
+// The fake is deliberately NOT taught that coupling.  Modelling it means
+// entering maintenance drops EN in the fake, and the EN gate above refuses
+// motion.cal and motion.spin with EN down - so test_maintenance_command would
+// start failing, which is a real inconsistency between that gate and 5.9's
+// "manual commands work regardless" and is not this change's to settle.
+//
+// So: what pins the console is that both callers now invoke the shared
+// maintenance_exit_homes() and post home(-1) themselves, and that rule is
+// pinned by test_maintenance_exit_rule below.  This test is a cheap
+// end-to-end guard on the dispatcher keeping its explicit home, no more - it
+// duplicates test_maintenance_command's coverage and is kept because it names
+// the state a reader will come looking for.
+void test_maintenance_exit_rehomes_with_en_already_asserted() {
+    Rig r;
+
+    CHECK(is_ok(r.cmd(R"({"cmd":"motion.maintenance","payload":true})")));
+    CHECK(r.motion.cols.maintenance);
+
+    // Entering maintenance releases EN on the target (motion::set_columns ->
+    // enable(false)).  The fake does not do that, so drive it explicitly - the
+    // sequence then READS like the board's even though, per the note above,
+    // the outcome here does not depend on it.
+    CHECK(is_ok(r.cmd(R"({"cmd":"motion.enable","payload":false})")));
+    CHECK(!r.motion.enabled());
+
+    // `en 1` while still in maintenance - step 2a.  ON THE TARGET this is what
+    // disarmed the re-home: the enable(true) that leaving maintenance performs
+    // then changes nothing and returns before the loop.
+    CHECK(is_ok(r.cmd(R"({"cmd":"motion.enable","payload":true})")));
+    CHECK(r.motion.enabled());
+
+    const int homes_before = r.motion.homes;
+    CHECK(is_ok(r.cmd(R"({"cmd":"motion.maintenance","payload":false})")));
+    CHECK(!r.motion.cols.maintenance);
+    CHECK(r.motion.homes > homes_before);  // what the console failed to do
+    CHECK_EQ(r.motion.last_home_col, -1);  // all five, not one
+}
+
+// The rule both callers share, and the property that makes it right: it does
+// not take the enable state as an argument AT ALL.  A re-home that only
+// happens when enable() observes a change is a re-home that does not happen
+// when EN is already up - which is the defect, restated as a signature.
+void test_maintenance_exit_rule() {
+    CHECK(maintenance_exit_homes(true, false));    // leaving: re-home
+    CHECK(!maintenance_exit_homes(false, true));   // entering: never
+    CHECK(!maintenance_exit_homes(false, false));  // no change either way
+    CHECK(!maintenance_exit_homes(true, true));
+
+    // Four inputs, four assertions - the whole truth table, once each.  The
+    // two that matter most: entering never moves anything, because a person
+    // has their hands in the mechanism, and `maint on` typed twice (true,true)
+    // must not re-home a drum they are holding.
+
+    // Constexpr, so a wrong answer is a build failure rather than a test one.
+    static_assert(maintenance_exit_homes(true, false), "leaving re-homes");
+    static_assert(!maintenance_exit_homes(false, true), "entering never does");
+}
+
 
 // --------------------------------------------------------------------------
 // One command at a time, whatever the transport
@@ -1347,6 +1427,8 @@ void run_tests() {
     test_ring_swap_vs_readers();
     test_column_commands();
     test_maintenance_command();
+    test_maintenance_exit_rehomes_with_en_already_asserted();
+    test_maintenance_exit_rule();
     test_dispatch_is_serialised();
     test_countdown_identity();
     test_no_unlocked_mode_access();

@@ -942,13 +942,23 @@ std::string dispatch_after_gates(Context& ctx, const RingSet& ring, std::string_
                             ? p.boolean
                             : (p.get("on") != nullptr && p.get("on")->boolean);
         ColumnConfig cfg = ctx.motion.columns();
+        const bool was = cfg.maintenance;
         cfg.maintenance = on;
         if (!ctx.motion.set_columns(cfg)) return err_result("could not apply");
         const auto r = ctx.modes.cmd_maintenance(on, utc_ms);
         if (!r.ok) return err_result(r.err ? r.err : "rejected");
         // Leaving re-arms: everything re-homes, because the drums have been
-        // moved by hand and nothing knows where they are.
-        if (!on) ctx.motion.home(-1);
+        // moved by hand and nothing knows where they are.  Through the shared
+        // rule, so the console cannot drift from this - it did, and the drift
+        // was invisible because both paths agree in the state a test starts in.
+        // And REPORT it, because ok must mean executed: leaving maintenance
+        // with every column disabled homes nothing, which is exactly the state
+        // the boot path was changed to keep bootable.  motion.rehome answers
+        // the identical case with a note; this said a bare ok.
+        if (maintenance_exit_homes(was, on) && !ctx.motion.home(-1)) {
+            return note_result("left maintenance, but every column is disabled - "
+                               "nothing to home");
+        }
         return ok_result();
     }
     if (c == "motion.sim_fault") {
