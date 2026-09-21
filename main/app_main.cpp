@@ -431,7 +431,21 @@ extern "C" void app_main() {
         swan::motion::enable(false);
     } else {
         swan::motion::enable(true);
-        ESP_ERROR_CHECK(swan::motion::home(-1));  // staggered inside motion
+        // NOT ESP_ERROR_CHECK.  home(-1) reports ESP_ERR_INVALID_STATE when it
+        // posted nothing, and "every column disabled" is a legitimate config -
+        // a fully disassembled display, or one stripped down to a single
+        // module - reached deliberately from the console or Settings.  An
+        // abort here made that a PANIC LOOP: the state is persisted, so the
+        // next boot reads the same NVS and aborts again, and the display is
+        // bricked by a setting rather than by a fault.  Disabled columns are
+        // excused on purpose (spec 5.9); a boot that homes none of them is the
+        // rule working, not a failure.
+        const esp_err_t herr = swan::motion::home(-1);  // staggered inside motion
+        if (herr != ESP_OK) {
+            ESP_LOGE(TAG, "boot home posted nothing (%s): every column is "
+                          "disabled - nothing will home until one is re-enabled",
+                     esp_err_to_name(herr));
+        }
     }
 
     swan::time_service::init(g_app.ntp.c_str());
