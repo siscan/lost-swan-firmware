@@ -1508,10 +1508,19 @@ Do it with the **magnet fitted** (this session) so a home can actually complete:
    ```
    expected: motion: maintenance off; EN asserted
    expected: a homing pass on column 0 - state goes HOMING, not IDLE
-   THE BUG LOOKED LIKE: "maintenance off; re-homing" and then nothing at all,
-   plus "EN asserted, maintenance on - NOT homing (spec 5.9)" in the log, which
-   is the tell.
+   THE BUG LOOKS LIKE: "maintenance off; re-homing" and then nothing at all.
    ```
+
+   **There are TWO of these, and the second one prints no tell whatever.**  The
+   2026-09-12 defect left `EN asserted, maintenance on - NOT homing (spec 5.9)`
+   in the log, and that line is worth looking for.  The 2026-09-21 one does
+   not: `enable()` returns at its `changed` guard, which sits ABOVE the line
+   that prints it, so the log is simply silent.  **Silence here is a failure,
+   not a pass** - the check is `stats`, below, and nothing else.
+
+   The `en 1` on the line above is what makes this test mean something: it
+   asserts EN while maintenance is still on, which is the exact state the
+   second defect needed.  Do not skip it or reorder it.
 
 - [ ] `stats` within a second or two — column 0 reads **HOMING**
 

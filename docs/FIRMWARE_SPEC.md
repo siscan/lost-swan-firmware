@@ -3777,6 +3777,115 @@ numbered section — if you find one that disagrees, fix the section.
 
 ---
 
+- 2026-09-21 — **The 2026-09-12 `maint off` fix was NECESSARY AND NOT
+  SUFFICIENT: the early return sits ABOVE the loop.**  Found while preparing the
+  §28c board, by reading the path rather than running it — running it means
+  homing a column, which is motion, and the bench was not live.
+
+  The 09-12 entry below records that console `maint off` re-homed nothing and
+  said it did, and fixes it by assigning `g_cols` **before** calling
+  `enable()`, so the flag `enable()` reads is already clear.  That is correct
+  and it is half the path.  `motion::enable()` opens with
+
+  ```
+  motion.cpp:835   const bool changed = (was != on);
+  motion.cpp:837   if (!changed) return;
+  ```
+
+  and **the maintenance check and the re-home loop are both below it**.  So the
+  fix corrected *which flag `enable()` reads*, and control never got as far as
+  reading it.  With EN already asserted, `enable(true)` returns at :837 and
+  posts nothing.
+
+  **The state that triggers it is the normal bench state, not a corner.**
+  `maint on` releases EN; `en 1` re-asserts it while staying in maintenance —
+  and that pair is BRINGUP **§28c step 2a**, added the day before, deliberately,
+  so that bench commands own column 0 instead of fighting the frame scheduler.
+  Every `maint off` after it posted no Home to any column and still printed
+  `maintenance off; re-homing`.  §5.9's "leaving re-arms everything and
+  re-homes all five" is a safety claim about drums that have been moved by
+  hand, and it was silently not honoured for the whole of a session.
+
+  **THE SHEET WOULD HAVE CAUGHT IT, and that is recorded because the first
+  draft of this entry claimed the opposite.**  §28c step 2 runs §28b step 0
+  verbatim, and step 0 is `maint` → `col` → **`en 1`** → **`maint off`** →
+  `stats`, ending in the line `did \`maint off\` start a home?  yes / no`.
+  That `en 1` asserts EN while maintenance is still on — precisely the state
+  the early return eats.  So the procedure written on 2026-09-12 for the
+  PREVIOUS incarnation of this bug pointed straight at this one, and the first
+  run would have produced a NO.
+
+  What reading the source bought was finding it **before** the bench instead of
+  during it, with a cause attached: step 0 would have reported a NO and nothing
+  else, and the tell it tells you to look for — `EN asserted, maintenance on -
+  NOT homing` — is not even printed on this path, because `enable()` returns
+  above that line too.  A checklist that detects a fault it cannot explain
+  costs the session's first hour; the claim to avoid making is that it detects
+  nothing.
+
+  - **The fix is one rule with two callers, not a second patch.**
+    `maintenance_exit_homes(was, now)` in `motion/column_mode.h` (pure,
+    constexpr) answers the one question both callers were answering
+    separately.  `cli.cpp`'s `cmd_maint` and `api.cpp`'s `motion.maintenance`
+    both call it and **post `home(-1)` themselves**.  The re-home is the
+    caller's job and never `enable()`'s side effect.  EN is deliberately not
+    part of it: `motion::set_columns` already drives EN from the same
+    transition, and a second place computing that is a second place for the
+    two to disagree.
+  - **Note what the rule does not take as an argument: whether EN is
+    asserted.**  Making the re-home conditional on the enable state is the
+    defect restated, which is exactly what relying on `enable()` amounted to.
+    `test_maintenance_exit_rule` pins that signature;
+    `test_maintenance_exit_rehomes_with_en_already_asserted` drives the full
+    `maintenance on → en 1 → maintenance off` sequence through the dispatcher.
+  - **Scope, stated because the test is not what it looks like:** `cli.cpp` is
+    an IDF shell and cannot be linked on the host, so the sequence test drives
+    the **dispatcher** — which was always correct here, because `api.cpp` had
+    called `home(-1)` explicitly since 2026-08-24.  What makes the console
+    correct is that both now call the shared rule.  Checked by reverting:
+    replacing the call with `if (maintenance_exit_homes(was, on) &&
+    !enabled())` — `enable()`'s guard, modelled — fails the new test **and the
+    existing `test_maintenance_command`**, at four assertions.
+  - **Reporting, on both paths, because `ok` must mean executed.**  `maint
+    off` printed `re-homing` unconditionally; it now distinguishes three
+    outcomes — re-homing, `nothing to re-home - every column is disabled`
+    (about the columns), and `(it was already off)` (about there being no
+    transition at all).  A single flag collapsed the last two into one claim.
+    `motion.maintenance` likewise returns a note rather than a bare `ok` when
+    it left maintenance and homed nothing, which is how `motion.rehome` has
+    answered the identical case since 2026-08-24.
+  - **AND THE PARSER, WHICH THIS FIX MADE DANGEROUS.**  `maint` accepted only
+    a non-zero number or the exact lowercase `on`, so every other token — `ON`,
+    `True`, `yes`, a typo — silently became `maint off`.  The capitalisation is
+    the firmware's OWN: `maint` prints `maintenance: ON` and the confirmation
+    reads `maintenance ON - nothing moves on its own`, so `maint ON` is what
+    somebody mirroring the console types.  That was survivable while leaving
+    maintenance posted no Home.  **Once it correctly re-homes, the same typo
+    turns a drum at the vise while the person believes they have just entered
+    maintenance** — the state §5.9 and the park-pin procedure require before
+    hands or a pin go near the mechanism.  It now takes on/off/1/0/true/false/
+    yes/no case-insensitively and **refuses anything else, changing nothing**.
+    Recorded as its own lesson: a latent parser sloppiness became a safety
+    defect the moment the command it guards started doing something.  Found by
+    the review of this very fix, which is the argument for running one.
+
+- 2026-09-21 — **`ESP_ERROR_CHECK(motion::home(-1))` at boot becomes a logged
+  error.  Every column disabled is a legitimate state and must not panic.**
+  Found by the same audit.  `home(-1)` returns `ESP_ERR_INVALID_STATE` when it
+  posted nothing (motion.cpp:883 — added deliberately, because it "used to say
+  ok"), and `app_main.cpp` wrapped it in `ESP_ERROR_CHECK`, which aborts.
+
+  A display with all five columns disabled is a **fully disassembled one**, or
+  one stripped to a single module — reachable from the console or from
+  Settings, and exactly the configuration a long repair ends the day in.  The
+  state is persisted, so the abort is not a one-off: the next boot reads the
+  same NVS and aborts again.  **A setting bricks the board**, with no console
+  long enough to fix it from, which is the brick-loop shape §10.4 already
+  rejected three times for the OTA mark-valid criterion.
+
+  Disabled columns are excused on purpose (§5.9).  A boot that homes none of
+  them is the rule working, and it now says so at ERROR and carries on.
+
 - 2026-09-20 — **THE HALL SESSION'S FIRMWARE, and the cap becomes a build
   parameter.**  The pitch-80 module arrives with a sensor and a magnet, so this
   is the first session in which a column can home, and BRINGUP **§28c** is the
