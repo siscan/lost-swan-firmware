@@ -147,6 +147,12 @@ struct AxisCtl {
     uint32_t seq_seen = 0;
     uint32_t home_delay = 0;  // control ticks until homing starts
     uint8_t rehome_retries = 0;
+    // An operate edge has arrived at least once since boot.  Deliberately NOT
+    // hall_valid: begin_home() clears that (the first edge of a pass has no
+    // predecessor), so a homing timeout read it as always false and could never
+    // tell "never saw an edge" (sensor, retry) from "saw them and lost them"
+    // (stopped drum, jam, no retry) - spec 5.8.
+    bool hall_seen = false;
     // Latched at the Seek->Settle edge and published with `homed`; see
     // TickEvents::recovered_after.
     uint8_t recovered_after = 0;

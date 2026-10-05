@@ -4633,3 +4633,19 @@ numbered section — if you find one that disagrees, fix the section.
     on flavour `rel` only.  The "remove limits" mode was not built (see the limits bullet
     above).  CI runs on pushes to `master` and on pull requests only, so a bare push of a
     branch runs nothing.
+
+- 2026-10-05 - **§5.8's second jam signature was dead code, and now fires.**  A
+  homing pass that times out on a column that HAD seen an edge is a stopped
+  drum: `jam`, stop at once, no retry.  The code asked `hall_valid`, which
+  `begin_home` clears at the start of every pass (the first edge of a pass has no
+  predecessor to verify against), so at the Seek timeout it was always false and
+  the verdict was always `no_hall` - three retries of ~7.5 s each into whatever
+  stopped the drum, the exact grinding the rule exists to prevent.  Found by the
+  2026-10-04 audit, verified by reading the only two writers of the flag, fixed
+  with a control-tick-private `hall_seen` that `begin_home` leaves alone.  Reached
+  by slip recovery, a button hold, or leaving maintenance with the park pin still
+  in, on a column that homed earlier in the boot.  `test_homing_timeout_after_edges_is_a_jam`
+  fails without the fix (4 faults, cause `no_hall`, instead of 1, `jam`);
+  `test_no_magnet_faults` pins the other half, a column that never saw an edge
+  still retries.  The in-motion jam check was never affected.  The thresholds
+  stay `VERIFY`: this fixes which branch runs, not whether the numbers are right.
