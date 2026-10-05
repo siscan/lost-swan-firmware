@@ -2093,6 +2093,40 @@ LittleFS image. A full `flash` destroys all of it.
 
 ---
 
+### Parts for this session — tick them off BEFORE the first wire
+
+Everything below is what §28c touches that gate 3 did not. Nico reported on
+2026-10-05 that the orders had arrived; this list is how "arrived" becomes "I
+have each of these in my hand", because a missing 0.1 uF or a single magnet is
+discovered at step 3b, an hour in, and costs the session.
+
+- [ ] **A1121LUA-T ×2 or more** (six were ordered). One goes on the column; a
+      second is for **identifying a magnet's south face** (`BENCH_WIRING.md` §2a)
+      and as a spare. Three-lead flat SIP with a **branded face**, not a TO-92.
+- [ ] **Ø6×3 N42 axial magnets ×2 or more** (120 were ordered). One on the disc;
+      one loose, because the repel/attract check needs a known reference and
+      the glued one cannot be turned over.
+- [ ] **10 kΩ resistor ×1** (the pull-up, `OUT` to 3V3), from the resistor kit.
+- [ ] **0.1 uF ceramic ×1** across VCC and GND at the sensor end. It is in the
+      Digi-Key ceramics line, **not** a named item on any list, so look for it.
+- [ ] **Three flying leads** to the sensor, long enough to reach the drum
+      bracket, plus heatshrink over the three solder joints (adjacent bare leads
+      that touch read exactly like a dead sensor).
+- [ ] **30-minute epoxy** for the magnet (in hand per `PROCUREMENT_STATUS`) and
+      an **oil-based paint marker** to mark the working face on the magnet
+      *before* it is glued (`PROCUREMENT_STATUS` §4: bench-test one pair and mark
+      the working face first; a flipped magnet is the usual "dead sensor").
+- [ ] **A multimeter** that reads 0.01 V for step 1's Vref, and the
+      **current-limited bench PSU** for 9 V / 0.5 A first power.
+- [ ] The checks still open in `PROCUREMENT_STATUS` §4 that touch this module
+      (for instance the motor shaft's D-cut, and whether the 8 mm shafts match
+      each other).
+
+If any box stays empty, stop and say which one; the session can wait for a
+resistor and cannot be rescued from a flipped magnet.
+
+---
+
 ### Step 1 — Vref, by meter, MANDATORY this time
 
 Gate 3 left this as its one loose end: the pot was never read and the value
