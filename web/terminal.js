@@ -273,14 +273,30 @@ function buildPad() {
 
 // A real keyboard drives the same path - a kiosk may well have one attached.
 function bindKeyboard() {
+  // A MOUSE OR TOUCH CLICK MUST NOT LEAVE KEYBOARD FOCUS ON THE CONTROL IT HIT.
+  // The strip's buttons are the only way to reach PROTOCOL, PEARL and FLAME
+  // without typing the name, and a click left focus parked on the button; every
+  // key handler then (correctly) stood aside for a focused control, so digits,
+  // Y/N, CHESS and even ESC did nothing until the person clicked empty screen.
+  // `detail` is 0 for a keyboard-activated click, so Tab-and-Enter users keep
+  // their focus ring.
+  document.addEventListener("click", (ev) => {
+    if (!(ev.detail > 0)) return;
+    const b = ev.target && ev.target.closest ? ev.target.closest("button") : null;
+    if (b) setTimeout(() => { try { b.blur(); } catch (e) { /* detached */ } }, 0);
+  });
+
   window.addEventListener("keydown", (ev) => {
     if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
-    // Not while a control has focus: preventDefault on Space or Enter there
+    // A focused control keeps ENTER and SPACE: preventDefault on either
     // suppresses the button's own activation, so tabbing to CRT and pressing
-    // Space typed a separator instead of toggling it.
+    // Space typed a separator instead of toggling it.  It keeps ONLY those -
+    // every other key is the terminal's whatever has focus, or one stray focus
+    // makes the keyboard dead.  A text field keeps everything.
     const t = ev.target;
-    if (t && (t.tagName === "BUTTON" || t.tagName === "INPUT" || t.tagName === "A" ||
-              t.isContentEditable)) {
+    if (t && (t.tagName === "INPUT" || t.isContentEditable)) return;
+    if (t && (t.tagName === "BUTTON" || t.tagName === "A") &&
+        (ev.key === "Enter" || ev.key === " ")) {
       return;
     }
     if (ev.repeat) return;   // a held digit used to fill the buffer
