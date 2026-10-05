@@ -4580,6 +4580,41 @@ numbered section — if you find one that disagrees, fix the section.
     firmware FAULTS on it), "~3.1 s at 15 flaps/s" (25 flaps is 1.7 s at 15, 3.1 s at 8),
     §5.10's spliced sentence, §10.2a's EN-down list (`motion.cal`), §10.3's HA table
     (nineteen shipped), §11's `mqtt.uri`, and a note under §16.
+  - **The limits, as found, for the "remove limits" request** (read from the code, one
+    read-only `GET /api/state`; nothing was run on a drum).  *Which* limits matters,
+    because they live in four different places:
+    1. **The bench cap.**  The flashed board reports `0.4.0+devkitc1.bench20`
+       (`sys.version`, read 2026-10-04; `drivers_enabled` false, `maintenance` true, no
+       simulated columns), so every speed over **20 flaps/s is REFUSED on every path** -
+       `motion.params`, `motion.spin`, the console's `spin`, `ramp` and `bench soak`;
+       only the boot load substitutes, at WARN.  `-DSWAN_BENCH_CAP` may only go DOWN from
+       50 (a `static_assert` and a CMake check), so **20 -> 50 is a rebuild with
+       `-DSWAN_BENCH_CAP=50` and needs no new mode.**
+    2. **The dispatcher's ranges, on EVERY build**: `motion.params` speeds and
+       `motion.spin` are refused above **40 flaps/s** (`api.cpp`), and the `index.html`
+       sliders carry the same literals (pinned by `test_ui_ranges.js`).  So §3's
+       400 flaps/s show spin is unreachable from the web UI, MQTT and HA in any build.
+       `motion::step_open_loop` itself has no upper bound outside the bench build.
+       `accel` is 1000..60000 (deliberately under the 82000 that stalled the drum) and
+       `hall_tol` is at most 32 (half a flap).
+    3. **The step DDA clamps velocity at `TICK_HZ`**, 50 000 usteps/s per axis = 781
+       flaps/s.  That is physics, not a policy.
+    4. **Protections, which are not limits**: a jam stops with no retry; two faults, or
+       one during an alarm spin, drop EN; EN-down, maintenance and OTA refuse display
+       commands; the ISR liveness check.  They exist because retrying drives a stepper
+       into an obstruction and an unpowered drum slews.
+
+    Nothing above 25 flaps/s has ever run on this rig, and the cap's reasons are
+    physical: a printed PLA axle, an unshrouded drum whose cards lift above ~100
+    flaps/s, regen into a source-only PSU that has not been measured, and ISR CPU time
+    at 25 600 usteps/s per axis (51 % of the budget, by arithmetic only).  **Not built.**
+    If wanted, the shape that keeps CLAUDE.md's "do not add a way to lift the cap"
+    honest is a build-time flavour (`-DSWAN_UNLIMITED=ON`) that lifts item 2 only: never
+    the default, a configure-time FATAL with `SWAN_RELEASE` and with `SWAN_BENCH`, in the
+    version tag, the boot banner, the state document and both strips, refused by OTA
+    onto any other flavour, with no runtime, NVS or MQTT switch and item 4 untouched.
+    It needs three decisions from Nico first: the scope, an explicit amendment of that
+    CLAUDE.md rule, and the ceiling (400 or 781).
   - **Raised and deliberately NOT changed**, so none of it is rediscovered as a defect:
     the chess engine beats a random mover 119 games in 120 though its header says
     checkmate must be reachable by somebody who does not play chess; chess has no
@@ -4595,5 +4630,6 @@ numbered section — if you find one that disagrees, fix the section.
     maintenance" is masked by the shell's own gate; the console's display commands skip
     the dispatcher's maintenance / EN / OTA gates; `config::load_app` takes NVS values the
     API would refuse (granularity, dwell, hold, spin); the OTA `LosesSimulation` gate keys
-    on flavour `rel` only.  The "remove limits" mode was not built.  CI runs on pushes to
-    `master` and on pull requests only, so a bare push of a branch runs nothing.
+    on flavour `rel` only.  The "remove limits" mode was not built (see the limits bullet
+    above).  CI runs on pushes to `master` and on pull requests only, so a bare push of a
+    branch runs nothing.
