@@ -4,11 +4,10 @@
 // flaps.  It owns a full-screen overlay and removes it before the promise
 // resolves, so a caller that awaits play() can trust the DOM is clean.
 //
-// The logo is an ORIGINAL vector built here from geometry - two concentric
-// regular octagons, the eight I Ching trigrams one per edge, a stylised swan -
-// for the same reason web/glyphs.svg is original artwork rather than a traced
-// screengrab.  Paths also mean it stroke-animates and stays sharp from a 195 px
-// phone to a 440 px kiosk; a bitmap would do neither.
+// The logo is SUPPLIED ART (web/bootanim_logo.js) - a frame, the eight-trigram
+// ring, a disc, a swan and the DHARMA wordmark in one 200x200 system; "THE
+// MARK" below says how it is used.  It is vector, so it animates and stays
+// sharp from a 195 px phone to a 440 px kiosk; a bitmap would do neither.
 //
 // It plays on every load of terminal.html while the station is SWAN, in both
 // content modes, and is always skippable - spec 10.2b says exactly when, in one
@@ -27,12 +26,17 @@
   // Beats, ms from the first painted frame.  Three ordered draws then the
   // type-in, ~4.4 s all in: this stands between a viewer and a countdown, so it
   // is a flourish on a budget rather than a title sequence.
-  const T_FRAME = 0,    D_FRAME = 520, S_FRAME = 180;  // 1. the frame
-  const T_RING  = 520,  D_RING  = 260, S_RING  = 105;  // 2. the trigram ring
-  const T_DISC  = 1420, D_DISC  = 380;                 // 3. the disc
-  const T_SWAN  = 1680, D_SWAN  = 620, S_SWAN = 26;    // 4. the swan's spines
+  const T_FRAME = 0,    S_FRAME = 180;                 // 1. the frame
+  const T_RING  = 520,  S_RING  = 105;                 // 2. the trigram ring
+  const T_DISC  = 1420;                                // 3. the disc
+  // 4. the swan: a pen draws the spines at ONE speed, D_SWAN ms for the whole
+  // length of them, with GAP_SWAN between spines, and INK_LAG after the last.
+  const T_SWAN  = 1680, D_SWAN  = 1000, GAP_SWAN = 60, INK_LAG = 120;
   const D_MORPH = 420;                                 // ... then spines -> fill
-  const T_WORD  = 2760, D_WORD  = 420;                 // 5. the wordmark
+  // 5. the wordmark has no beat of its own: it arrives WITH the ink, at the
+  // ink's own speed - see play().  The R and the first A are part of the swan
+  // silhouette (compound() says why), so anything earlier would show "DH MA"
+  // and then, a moment later, the other two letters.
   const T_TEXT = 3200, D_CHAR = 38;
   const HOLD_MS = 380;      // the finished logo stands still before it goes
   const FADE_MS = 340;
@@ -76,31 +80,55 @@
 
   const r2 = (v) => Math.round(v * 100) / 100;
 
-  // --- the swan's variable-width spines ------------------------------------
-  // The art supplies each spine as a polyline plus a WIDTH PER VERTEX, because
-  // a swan drawn with a brush is not one weight throughout.  SVG cannot vary a
-  // stroke along a path, so each segment becomes its own short path carrying
-  // the mean of its two endpoint widths.  Round caps and joins make the joins
-  // between segments invisible, which is the whole trick.
-  function spineSegments(line) {
+  // --- the swan's spines: a PEN, not a brush ---------------------------------
+  // The art supplies each spine as a polyline plus a WIDTH PER VERTEX - the
+  // weight of a brush.  Drawn that way, one capsule per segment at that
+  // segment's width, the "drawing" was 23 round-capped blobs, 14 of them wider
+  // than they were long, all inflating at once: you saw blobs appear, never a
+  // line grow (qa.js K-1: "draws as filled blobs, not as inked strokes").
+  //
+  // So the draw stage is a pen: each spine as ONE path at one thin weight,
+  // grown at one speed along its length - the body first, then the neck, which
+  // starts where the body stops - and then the existing crossfade inks it into
+  // the real silhouette.  The widths stay in the art (and test_logo.js still
+  // checks them) but are not used here; the FILL is what carries the swan's
+  // weight.
+  //
+  // One vertex is dropped.  The neck's centreline doubles back on itself around
+  // its eighth and ninth vertices - a spur about seven units long, whose far end
+  // carries a width of 17.1 on a neck that is about 5 wide.  As a brush stroke
+  // that was lost in the weight; as a thin line it is a visible hook.  A vertex
+  // where the line turns back more than ~134 degrees is a spur in this sense,
+  // and dropping it leaves a smooth path.  This edits the pen's path only,
+  // never the silhouette.
+  function spineStroke(line) {
     const nums = String(line.d).match(/-?\d+(?:\.\d+)?/g) || [];
     const pts = [];
     for (let i = 0; i + 1 < nums.length; i += 2) {
       pts.push([parseFloat(nums[i]), parseFloat(nums[i + 1])]);
     }
-    const w = line.widths || [];
-    const segs = [];
-    for (let i = 0; i + 1 < pts.length; i++) {
-      const a = pts[i], b = pts[i + 1];
-      const wa = typeof w[i] === "number" ? w[i] : 6;
-      const wb = typeof w[i + 1] === "number" ? w[i + 1] : wa;
-      segs.push({
-        d: "M" + r2(a[0]) + " " + r2(a[1]) + "L" + r2(b[0]) + " " + r2(b[1]),
-        width: r2((wa + wb) / 2),
-        len: Math.hypot(b[0] - a[0], b[1] - a[1]),
-      });
+    for (let pass = 0; pass < 6; pass++) {
+      let dropped = false;
+      for (let i = 1; i + 1 < pts.length; i++) {
+        const ax = pts[i][0] - pts[i - 1][0], ay = pts[i][1] - pts[i - 1][1];
+        const bx = pts[i + 1][0] - pts[i][0], by = pts[i + 1][1] - pts[i][1];
+        const la = Math.hypot(ax, ay), lb = Math.hypot(bx, by);
+        if (la > 0 && lb > 0 && (ax * bx + ay * by) / (la * lb) < -0.7) {
+          pts.splice(i, 1);
+          dropped = true;
+          break;
+        }
+      }
+      if (!dropped) break;
     }
-    return segs;
+    if (pts.length < 2) return null;
+    let len = 0;
+    let d = "M" + r2(pts[0][0]) + " " + r2(pts[0][1]);
+    for (let i = 1; i < pts.length; i++) {
+      len += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+      d += "L" + r2(pts[i][0]) + " " + r2(pts[i][1]);
+    }
+    return { d: d, len: len };
   }
 
   // --- the ring check ------------------------------------------------------
@@ -155,20 +183,100 @@
     return out;
   }
 
+  // --- compound shapes -------------------------------------------------------
+  // fill-rule EVENODD punches a hole only between subpaths of ONE <path>
+  // element.  The art lists its outlines and the holes in them as separate
+  // entries - the frame is an outer octagon plus an inner one, a letter is an
+  // outline plus its counter - so drawing one element per entry fills every
+  // hole back in.  That is what shipped on 2026-08-25: the frame was a solid
+  // stop sign, the trigram ring and the disc were the same colour as the slab
+  // behind them and so were simply not there, and DHARMA's counters were solid.
+  // No test could see it, because every test read the DATA and none drew it.
+  //
+  // So the entries are regrouped: a piece lying inside another piece goes in
+  // that piece's element.  Two pieces are counters whose OUTLINES are not in the
+  // wordmark at all - the swan's neck crosses the first A and the R, and the art
+  // folds those two letters into the swan silhouette - so those two counters are
+  // punched out of the swan fill instead.
+  //
+  // Only plain polylines (M, numbers, Z) can be reasoned about this way.  Art
+  // with anything else in it is passed through as supplied rather than guessed
+  // at, which is the old behaviour and at least not a new way to be wrong.
+  function isPolyline(d) { return /^[MZ0-9\s.,\-]+$/i.test(String(d)); }
+
+  function polygons(d) {
+    const out = [];
+    const subs = String(d).split(/(?=M)/);
+    for (let s = 0; s < subs.length; s++) {
+      const nums = subs[s].match(/-?\d+(?:\.\d+)?/g) || [];
+      const pts = [];
+      for (let i = 0; i + 1 < nums.length; i += 2) pts.push([parseFloat(nums[i]), parseFloat(nums[i + 1])]);
+      if (pts.length >= 3) out.push(pts);
+    }
+    return out;
+  }
+
+  function pointInPolygon(p, poly) {
+    let inside = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const a = poly[i], b = poly[j];
+      if ((a[1] > p[1]) !== (b[1] > p[1]) &&
+          p[0] < (b[0] - a[0]) * (p[1] - a[1]) / (b[1] - a[1]) + a[0]) inside = !inside;
+    }
+    return inside;
+  }
+
+  // { frame: [d], swan: d, letters: [d, ...] } - the filled shapes, one entry per
+  // element to draw.  Letters run left to right.
+  function compound() {
+    const L = logo();
+    const framePaths = (L && L.frame && L.frame.paths) || [];
+    const wordPaths = (L && L.wordmark && L.wordmark.paths) || [];
+    const swanFill = (L && L.swan && L.swan.fill) || "";
+    if (!framePaths.concat(wordPaths, [swanFill]).every(isPolyline)) {
+      return { frame: framePaths, swan: swanFill, letters: wordPaths };
+    }
+
+    const swanPolys = polygons(swanFill);
+    const pieces = wordPaths.map((d) => ({ d: d, p: polygons(d)[0] })).filter((pc) => pc.p);
+    const inSwan = (pc) => swanPolys.some((s) => pointInPolygon(pc.p[0], s));
+    const orphans = pieces.filter(inSwan);
+    const rest = pieces.filter((pc) => !inSwan(pc));
+    const holeOf = (pc) => rest.find((o) => o !== pc && pointInPolygon(pc.p[0], o.p));
+    const rootOf = (pc) => {
+      let r = pc, o, guard = 8;
+      while (guard-- > 0 && (o = holeOf(r))) r = o;
+      return r;
+    };
+    const groups = new Map();
+    rest.forEach((pc) => { if (!holeOf(pc)) groups.set(pc, [pc]); });
+    rest.forEach((pc) => { if (holeOf(pc)) { const g = groups.get(rootOf(pc)); if (g) g.push(pc); } });
+    const minX = (g) => Math.min.apply(null, g[0].p.map((pt) => pt[0]));
+
+    return {
+      frame: [framePaths.join(" ")],
+      swan: [swanFill].concat(orphans.map((pc) => pc.d)).join(" "),
+      letters: Array.from(groups.values())
+        .sort((a, b) => minX(a) - minX(b))
+        .map((g) => g.map((pc) => pc.d).join(" ")),
+    };
+  }
+
   // --- the markup ----------------------------------------------------------
   // Draw order is the art's own: frame, ring, disc, swan, wordmark.
   function svgMarkup() {
     const L = logo();
     if (!L) return "";
+    const C = compound();
     const out = [];
     out.push('<svg viewBox="' + (L.viewBox || "0 0 200 200") + '" xmlns="http://www.w3.org/2000/svg"');
     out.push(' fill="currentColor" role="img"');
     out.push(' aria-label="Dharma Initiative Station 3, the Swan">');
 
+    // One element: the frame is a RING (outer octagon minus inner), and only a
+    // single path lets evenodd cut the window.
     out.push('<g class="beat-frame">');
-    for (const d of (L.frame && L.frame.paths) || []) {
-      out.push('<path class="part" fill-rule="evenodd" d="' + d + '"/>');
-    }
+    for (const d of C.frame) out.push('<path class="part" fill-rule="evenodd" d="' + d + '"/>');
     out.push('</g>');
 
     out.push('<g class="beat-ring">');
@@ -185,27 +293,24 @@
                '" r="' + L.disc.r + '"/>');
     }
 
-    // The swan: spines first (stroked, drawn), then the fill crossfaded over.
+    // The swan: spines first (a pen, drawn), then the fill crossfaded over.
     out.push('<g class="beat-swan">');
     out.push('<g class="spines">');
     for (const line of (L.swan && L.swan.centerlines) || []) {
-      for (const seg of spineSegments(line)) {
-        out.push('<path class="spine" data-len="' + r2(seg.len) +
-                 '" style="stroke-width:' + seg.width + '" d="' + seg.d + '"/>');
-      }
+      const s = spineStroke(line);
+      if (s) out.push('<path class="spine" data-len="' + s.len.toFixed(3) + '" d="' + s.d + '"/>');
     }
     out.push('</g>');
     if (L.swan && L.swan.fill) {
-      out.push('<path class="swan-fill" fill-rule="evenodd" d="' + L.swan.fill + '"/>');
+      out.push('<path class="swan-fill" fill-rule="evenodd" d="' + C.swan + '"/>');
     }
     out.push('</g>');
 
     // The wordmark is part of the mark - the Swan patch carries DHARMA across
-    // the centre - not a caption under it.
+    // the centre - not a caption under it.  One element per letter, so each
+    // counter is punched out of its own letter.
     out.push('<g class="beat-word">');
-    for (const d of (L.wordmark && L.wordmark.paths) || []) {
-      out.push('<path class="part" fill-rule="evenodd" d="' + d + '"/>');
-    }
+    for (const d of C.letters) out.push('<path class="part" fill-rule="evenodd" d="' + d + '"/>');
     out.push('</g>');
 
     out.push('</svg>');
@@ -243,21 +348,34 @@
     s.push("#" + OVERLAY_ID + " svg{color:var(--p-hot,#7CFF9B)}");
     s.push("#" + OVERLAY_ID + " .part{opacity:0;transition:opacity 260ms linear}");
     s.push("#" + OVERLAY_ID + " .part.on{opacity:1}");
+    // The letters arrive at the ink's own speed (see play()).  Declared before
+    // the `still` rules, which have to win.
+    s.push("#" + OVERLAY_ID + " .beat-word .part{transition:opacity " + D_MORPH + "ms linear}");
     // The frame and the ring sit a shade back from the swan, which is the
-    // hierarchy the artwork has: the mark is the swan, in a frame.
+    // hierarchy the artwork has: the mark is the swan, in a frame.  The mid tone
+    // is #43c25e, not the page's --p: terminal.css defines no --p-mid, so the old
+    // `var(--p-mid, var(--p, ...))` always resolved to --p (#6ee06e) and the pale
+    // swan sat on a disc of nearly its own brightness (1.4:1) - the pen line the
+    // swan is drawn with was close to invisible against it.
     s.push("#" + OVERLAY_ID + " .beat-frame .part,#" + OVERLAY_ID +
-           " .beat-ring .part{color:var(--p-mid,var(--p,#43c25e))}");
-    s.push("#" + OVERLAY_ID + " .disc{color:var(--p-mid,var(--p,#43c25e));opacity:0;");
+           " .beat-ring .part{color:var(--p-mid,#43c25e)}");
+    s.push("#" + OVERLAY_ID + " .disc{color:var(--p-mid,#43c25e);opacity:0;");
     s.push("transform-box:fill-box;transform-origin:50% 50%;transform:scale(0.82);");
     s.push("transition:opacity 380ms linear,transform 380ms ease-out}");
     s.push("#" + OVERLAY_ID + " .disc.on{opacity:1;transform:scale(1)}");
 
-    // THE SWAN IS ACTUALLY DRAWN.  The art carries centreline spines with a
-    // width per vertex precisely so it can be: each segment is stroked with a
-    // dasharray, round-capped so the joins vanish, and then the whole spine
-    // group crossfades into the filled silhouette.  Drawn, then inked.
-    s.push("#" + OVERLAY_ID + " .spine{fill:none;stroke:currentColor;");
-    s.push("stroke-linecap:round;stroke-linejoin:round;opacity:0.92}");
+    // THE SWAN IS ACTUALLY DRAWN: a thin pen line grows along each spine
+    // (stroke-dashoffset, linear, so the pen moves at one speed), and then the
+    // whole spine group crossfades into the filled silhouette.  Drawn, then
+    // inked.  The weight is in the mark's own 200-unit space: ~5 px at the
+    // largest size, ~2 px on a phone.
+    // Hidden until its own turn.  An armed spine (dash gap = its whole length)
+    // still paints a round-capped dot at the pen's starting point, so without
+    // this the swan showed a stray dot from the first frame, ahead of the
+    // frame, the ring and the disc.  `.on` is added when the spine starts to draw.
+    s.push("#" + OVERLAY_ID + " .spine{fill:none;stroke:currentColor;stroke-width:2.6;");
+    s.push("stroke-linecap:round;stroke-linejoin:round;opacity:0}");
+    s.push("#" + OVERLAY_ID + " .spine.on{opacity:1}");
     s.push("#" + OVERLAY_ID + " .spines{transition:opacity " + D_MORPH + "ms linear}");
     s.push("#" + OVERLAY_ID + ".inked .spines{opacity:0}");
     s.push("#" + OVERLAY_ID + " .swan-fill{opacity:0;transition:opacity " + D_MORPH + "ms linear}");
@@ -339,27 +457,21 @@
         timers.push(setTimeout(() => { el.classList.add("on"); }, delay));
       }
 
-      // One spine segment, dash-drawn.  `data-len` is measured from the data
-      // rather than from getTotalLength, so a browser that will not measure an
-      // SVG path still draws it correctly - and these are straight segments, so
-      // the arithmetic is exact rather than an approximation.
+      // One spine, dash-drawn at one speed.  `data-len` is the polyline's own
+      // length, computed from the data - exact, because these are straight
+      // segments - so a browser that will not measure an SVG path still draws it.
+      //
+      // The dash is rounded UP to a whole unit plus a margin.  A dash shorter
+      // than the path, by even a thousandth, leaves the path's far end under the
+      // START of the pattern's next dash, which a round cap turns into a full
+      // width dot.  The longer dash would reach the end of the path early, so the
+      // transition is stretched by the same ratio: the pen arrives at `dur`.
       function armSpine(el, delay, dur) {
         const len = parseFloat(el.getAttribute("data-len")) || 8;
-        el.style.strokeDasharray = len + " " + len;
-        el.style.strokeDashoffset = String(len);
-        el.style.transition = "stroke-dashoffset " + dur + "ms ease-out " + delay + "ms";
-        drawn.push(el);
-      }
-
-      function arm(el, delay, dur) {
-        let len = 0;
-        try { len = el.getTotalLength ? el.getTotalLength() : 0; } catch (_) { len = 0; }
-        // A browser that will not measure still gets a reveal rather than a
-        // path stuck permanently in the dash gap.
-        if (!len) len = 400;
-        el.style.strokeDasharray = len + " " + len;
-        el.style.strokeDashoffset = String(len);
-        el.style.transition = "stroke-dashoffset " + dur + "ms ease-out " + delay + "ms";
+        const pad = Math.ceil(len) + 2;
+        el.style.strokeDasharray = pad + " " + pad;
+        el.style.strokeDashoffset = String(pad);
+        el.style.transition = "stroke-dashoffset " + Math.round(dur * pad / len) + "ms linear " + delay + "ms";
         drawn.push(el);
       }
 
@@ -443,24 +555,40 @@
         const disc = root.querySelector(".disc");
         if (disc) reveal(disc, T_DISC);
 
-        // 4. the swan, drawn along its spines and then inked.
+        // 4. the swan, drawn along its spines and then inked.  One pen speed
+        // for all of them (a spine's time is its share of the total length), in
+        // the order the art supplies them: the body, then the neck, which starts
+        // where the body stops.
         const spines = root.querySelectorAll(".spine");
-        for (let i = 0; i < spines.length; i++) armSpine(spines[i], T_SWAN + i * S_SWAN, D_SWAN);
-        const inkAt = T_SWAN + spines.length * S_SWAN + D_SWAN;
+        let total = 0;
+        for (let i = 0; i < spines.length; i++) total += parseFloat(spines[i].getAttribute("data-len")) || 0;
+        let at = T_SWAN;
+        for (let i = 0; i < spines.length; i++) {
+          const len = parseFloat(spines[i].getAttribute("data-len")) || 0;
+          const dur = total > 0 ? Math.max(1, Math.round(D_SWAN * len / total)) : D_SWAN;
+          armSpine(spines[i], at, dur);
+          reveal(spines[i], at);
+          at += dur + GAP_SWAN;
+        }
+        const inkAt = at - GAP_SWAN + INK_LAG;
         after(inkAt, () => { if (root) root.classList.add("inked"); });
 
-        // 5. the wordmark, last, as the ink settles.  It is part of the mark -
-        // the Swan patch carries DHARMA across the centre - so it belongs
-        // inside the frame rather than under it as a caption.
+        // 5. the wordmark, WITH the ink.  It is part of the mark - the Swan
+        // patch carries DHARMA across the centre - so it belongs inside the
+        // frame rather than under it as a caption.  The first A and the R are
+        // in the swan's silhouette and arrive when it inks, so the other four
+        // letters come in at the same moment and the same speed (D_MORPH,
+        // set in the stylesheet) and the word resolves as one.
         const word = root.querySelectorAll(".beat-word .part");
-        for (let i = 0; i < word.length; i++) reveal(word[i], T_WORD + i * 24);
+        for (let i = 0; i < word.length; i++) reveal(word[i], inkAt + i * 24);
 
-        // Two frames: one for the browser to take the armed values as the
-        // starting style, one to transition away from them.
-        requestAnimationFrame(() => requestAnimationFrame(() => {
-          if (finished) return;
-          for (let i = 0; i < drawn.length; i++) drawn[i].style.strokeDashoffset = "0";
-        }));
+        // Everything is armed; make the browser take the armed values as the
+        // starting style, then let the transitions run to their ends.  A forced
+        // layout does that.  The two requestAnimationFrame calls this replaced
+        // never fire in a hidden tab, so a logo opened in the background never
+        // started to draw at all.
+        void root.getBoundingClientRect();
+        for (let i = 0; i < drawn.length; i++) drawn[i].style.strokeDashoffset = "0";
 
         after(T_TEXT, () => {
           let i = 0;
@@ -492,6 +620,7 @@
   global.SwanBoot = {
     play,
     _logoSvg: svgMarkup,   // private: the logo without the performance
+    _style: styleTag,      // private: the overlay's stylesheet, for the suite
     // The ring, checked against docs/ref/swan_trigrams.md.  Public because the
     // JS suite asserts on it and because a wrong ring is invisible to everyone
     // who has not memorised the bagua: the four palindromic trigrams read the

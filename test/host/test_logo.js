@@ -155,6 +155,115 @@ for (const m of src.matchAll(/d:"([^"]+)",\s*widths:\[([^\]]*)\]/g)) {
   eq(widths, verts, "spine has one width per vertex");
 }
 
+// ---------------------------------------------------------------------------
+// THE MARK AS DRAWN.  Everything above reads the art's DATA; none of it draws
+// anything - which is how the mark shipped as a flat green stop sign, the
+// trigram ring and the disc invisible on it and the swan "drawn" as blobs
+// (qa.js K-1), with every suite green.  This loads the real bootanim_logo.js
+// and bootanim.js into a bare context (no DOM is needed to BUILD the markup)
+// and reads back what the animation would put on screen.
+// ---------------------------------------------------------------------------
+const vm = require("vm");
+const ctx = vm.createContext({});
+vm.runInContext("var window = this;", ctx);
+vm.runInContext(src, ctx, { filename: "bootanim_logo.js" });
+vm.runInContext(fs.readFileSync(path.join(ROOT, "web", "bootanim.js"), "utf8"), ctx,
+                { filename: "bootanim.js" });
+const Boot = ctx.window.SwanBoot;
+const svg = Boot._logoSvg();
+const css = typeof Boot._style === "function" ? Boot._style() : "";
+
+// The runtime ring check the module exposes (its own header says the suite
+// asserts on it; until now nothing did).  A second, independent read of the
+// same table from the DRAWN bars.
+const ringCheck = Boot.checkRing();
+eq(ringCheck.ok, true, "SwanBoot.checkRing() agrees with the table" +
+   (ringCheck.notes && ringCheck.notes.length ? " - " + ringCheck.notes.join("; ") : ""));
+
+function subpaths(d) {
+  return String(d).split(/(?=M)/).map((s) => {
+    const n = (s.match(/-?\d+(?:\.\d+)?/g) || []).map(Number);
+    const p = [];
+    for (let i = 0; i + 1 < n.length; i += 2) p.push([n[i], n[i + 1]]);
+    return p;
+  }).filter((p) => p.length >= 3);
+}
+function inside(pt, poly) {
+  let c = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[i], b = poly[j];
+    if ((a[1] > pt[1]) !== (b[1] > pt[1]) &&
+        pt[0] < (b[0] - a[0]) * (pt[1] - a[1]) / (b[1] - a[1]) + a[0]) c = !c;
+  }
+  return c;
+}
+function drawnPaths(group) {
+  const i = svg.indexOf('<g class="' + group + '">');
+  const j = svg.indexOf("</g>", i);
+  return [...svg.slice(i, j).matchAll(/<path\b([^>]*?)\/>/g)].map((m) => ({
+    rule: (m[1].match(/fill-rule="([^"]*)"/) || [])[1] || "",
+    d: (m[1].match(/\sd="([^"]*)"/) || [])[1] || "",
+  }));
+}
+
+// 1. The frame is a RING.  evenodd punches a hole only between subpaths of ONE
+// element; two elements is a solid octagon, and the ring and disc - drawn in the
+// same colour - vanish into it.
+const frameEls = drawnPaths("beat-frame");
+eq(frameEls.length, 1, "the frame is ONE element, so evenodd can cut its window");
+eq(frameEls.length ? subpaths(frameEls[0].d).length : 0, 2, "that element holds the outer and the inner octagon");
+eq(frameEls.length ? frameEls[0].rule : "", "evenodd", "the frame is filled evenodd");
+
+// 2. Every hole shares an element with the shape it punches.  Over the swan and
+// the wordmark (one colour, no islands): a subpath inside a subpath of ANOTHER
+// element is a counter that would be painted back in.
+const swanEls = [...svg.matchAll(/<path class="swan-fill"([^>]*?)\/>/g)].map((m) => ({
+  d: (m[1].match(/\sd="([^"]*)"/) || [])[1] || "",
+}));
+const wordEls = drawnPaths("beat-word");
+const hot = [];
+swanEls.forEach((e, k) => subpaths(e.d).forEach((p) => hot.push({ el: "swan" + k, p })));
+wordEls.forEach((e, k) => subpaths(e.d).forEach((p) => hot.push({ el: "word" + k, p })));
+const stray = [];
+for (const s of hot) for (const t of hot) {
+  if (s !== t && s.el !== t.el && inside(s.p[0], t.p)) stray.push(s.el + " inside " + t.el);
+}
+eq(stray.join(", "), "", "no counter is drawn as its own element on top of the shape it should punch");
+
+// 3. The shape of the result, which is a property of the delivered art: the R and
+// the first A have their OUTLINES in the swan silhouette (the swan's neck crosses
+// them), so their counters are punched out of the swan fill.
+eq(swanEls.length, 1, "one swan fill element");
+eq(swanEls.length ? subpaths(swanEls[0].d).length : 0, 3, "swan fill = the silhouette + the R's and the first A's counters");
+eq(wordEls.map((e) => subpaths(e.d).length).join(","), "2,1,1,2", "letters left to right: D(+counter) H M A(+counter)");
+eq(wordEls.every((e) => e.rule === "evenodd"), true, "every wordmark element is evenodd");
+
+// 4. The swan is drawn by a PEN.  One element per spine - 23 round-capped
+// capsules, 14 of them wider than they were long, is what read as blobs - at one
+// thin weight, and with no vertex where the line turns back on itself (the art's
+// neck centreline has a spur that is a visible hook as a thin line).
+const spineEls = [...svg.matchAll(/<path class="spine" data-len="([\d.]+)" d="([^"]+)"\/>/g)];
+eq(spineEls.length, (src.match(/\{\s*id:"(?:body|neck)"/g) || []).length, "one pen line per supplied centreline");
+for (const m of spineEls) {
+  const n = (m[2].match(/-?\d+(?:\.\d+)?/g) || []).map(Number);
+  let sharp = 0, len = 0;
+  for (let i = 2; i + 1 < n.length; i += 2) {
+    const ax = n[i] - n[i - 2], ay = n[i + 1] - n[i - 1];
+    len += Math.hypot(ax, ay);
+    if (i + 3 < n.length) {
+      const bx = n[i + 2] - n[i], by = n[i + 3] - n[i + 1];
+      const la = Math.hypot(ax, ay), lb = Math.hypot(bx, by);
+      if (la > 0 && lb > 0 && (ax * bx + ay * by) / (la * lb) < -0.7) sharp++;
+    }
+  }
+  eq(sharp, 0, "a pen line has no vertex that reverses on itself");
+  if (Math.abs(len - parseFloat(m[1])) > 0.05) fail("data-len " + m[1] + " is not the path's length " + len.toFixed(3));
+}
+const sw = css.match(/\.spine\{[^}]*stroke-width:([\d.]+)/);
+eq(!!sw && parseFloat(sw[1]) <= 4, true, "the pen is thin (stroke-width <= 4 of a 200-unit mark)");
+eq(/\.spine\{[^}]*opacity:0\}/.test(css), true, "spines start hidden (an armed round-capped dash is a visible dot)");
+eq(/\.spine\.on\{[^}]*opacity:(?:1|0?\.\d+)\}/.test(css), true, "a spine is shown when it starts to draw");
+
 if (failures) {
   console.log(failures + " failure(s)");
   process.exit(1);
