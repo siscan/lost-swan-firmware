@@ -274,9 +274,21 @@
   // Skip to the end rather than closing, on any key while it prints: somebody
   // who wants the whole log should not have to wait for the animation, and
   // somebody who wants out presses CLOSE or ESC.
-  document.addEventListener("keydown", (e) => {
+  //
+  // THE PRINTOUT OWNS THE KEYBOARD WHILE IT IS UP, as chess and chat do: window
+  // capture, so this runs before protocol.js's document-capture handler and
+  // terminal.js's bubble handler, and it STOPS the event.  It used to listen on
+  // `document` and stop nothing, so ESC closed the log and then protocol.js saw
+  // isOpen() === false on the same keystroke and left protocol mode too, and
+  // `c` and Enter went on to the friendly terminal's CANCEL and EXECUTE.  Tab
+  // is let through so focus can still reach CLOSE; Enter and Space on a focused
+  // button still activate it, because only propagation is stopped.
+  window.addEventListener("keydown", (e) => {
     if (!open) return;
-    if (e.key === "Escape") { close(); return; }
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.key === "Tab") return;
+    e.stopImmediatePropagation();
+    if (e.key === "Escape") { e.preventDefault(); close(); return; }
     if (typing !== null) {
       stopTyping();
       shown = full.length;
