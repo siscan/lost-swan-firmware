@@ -123,11 +123,12 @@ for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
         # The mirror widget's suite is JavaScript, because the bug it pins was
         # in JavaScript (web/flap.js) and a C++ port of the logic would test a
         # copy rather than the thing that ships.  It needs no npm - the DOM is
-        # faked in the test file - only a node.  There is not one on this
-        # machine, so say so plainly rather than passing silently; Linux CI
-        # runs it on every push.
+        # faked in the test file - only a node.  If there is not one, say so
+        # plainly rather than passing silently (this machine had none until a
+        # node arrived on PATH with another tool, which is not something to
+        # rely on); Linux CI runs every suite on every push.
         $node = Get-Command node -ErrorAction SilentlyContinue
-        $jsSuites = @('test_flap', 'test_countdown', 'test_logo', 'test_toggles')
+        $jsSuites = @('test_flap', 'test_countdown', 'test_logo', 'test_toggles', 'test_stations')
         foreach ($suite in $jsSuites) {
             $pad = ('.' * (33 - $suite.Length))
             if ($node) {
