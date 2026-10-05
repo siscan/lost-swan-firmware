@@ -4539,8 +4539,11 @@ numbered section — if you find one that disagrees, fix the section.
     positions to depth 4-5; castling, en passant, promotion, mate and stalemate verified)
     and **the UI was not**: NEW GAME / TAKE BACK did not cancel the previous game's timers,
     so the stale engine reply played a white move on the fresh board, the Flame menu
-    opened over a live game, and two menu codes interleaved.  Fixed.  The engine's
-    STRENGTH was not touched - see below.
+    opened over a live game, and two menu codes interleaved.  Fixed, and pinned by
+    `test_chess_ui.js` (eight of its checks fail against the previous file).  The engine
+    is pinned by `test_chess_engine.js`: perft against the published counts, and the
+    module's own `_selftest()`, which nothing had ever run.  The engine's STRENGTH was
+    not touched - see below.
   - **`hall_tol`: the dispatcher accepted 1..400, the boot path discarded anything over
     32.**  Probed on the real control core: at 400, slips of 1.6-4.7 flaps raised no
     fault and no re-home.  `motion.params` uses `hall_tol_plausible` now, and

@@ -37,7 +37,7 @@ Target: ESP32-C5-DevKitC-1-N8R8 (XIAO ESP32-C5 map behind a board define).
 | gate | status |
 |---|---|
 | `set-target esp32c5` + `build` clean | passes — zero warnings, both board maps |
-| host tests green | 20 C++ suites, six node-only web suites (the mirror widget, the countdown port, the logo and its drawn markup, the toggle matrix, the station screen's behaviour, the controls-vs-firmware bounds) and a parse gate over every `web/*.js` (CI) |
+| host tests green | 20 C++ suites, eight node-only web suites (the mirror widget, the countdown port, the logo and its drawn markup, the toggle matrix, the station screen's behaviour, the controls-vs-firmware bounds, the chess engine's rules and its UI) and a parse gate over every `web/*.js` (CI) |
 | release image cannot carry the simulator | `-DSWAN_RELEASE=1` with `SWAN_SIM_AXES=ON` is a configure-time `FATAL_ERROR`; CI builds both halves |
 | Phase 3 adversarial review | 22 findings confirmed, all fixed — see spec §17 |
 | `git diff` empty after `tools/ringgen.py` | clean — header and ring.json both regenerate byte-identically |

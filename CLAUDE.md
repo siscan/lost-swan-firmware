@@ -211,11 +211,14 @@ tools/wiringrender.ps1         SVG -> PNG + one PDF, via Edge headless
 tools/devserver/               host dev server: real /ws, real ModeManager, sim axes
 test/host/                     unit tests (build in build_host/, not build/).  C++ suites,
                                plus the node-only web suites - test_flap, test_countdown,
-                               test_logo, test_toggles, test_stations, test_ui_ranges -
-                               which need no npm.  web_harness.js is the fake DOM and
-                               virtual clock the station suite runs the real web/*.js in;
-                               it cannot lay anything out, so stacking, clipping and
-                               colour still need a browser
+                               test_logo, test_toggles, test_stations, test_ui_ranges,
+                               test_chess_engine, test_chess_ui - which need no npm.
+                               web_harness.js is the fake DOM and virtual clock the
+                               station suite runs the real web/*.js in; chess_world.js
+                               is the chess suites' own, with chess.js's internals
+                               reached through one export line added to an in-memory
+                               copy.  Neither can lay anything out, so stacking,
+                               clipping and colour still need a browser
 ```
 
 ## THE SERIAL CONSOLE BELONGS TO THE HUMAN

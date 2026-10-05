@@ -128,7 +128,7 @@ for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
         # node arrived on PATH with another tool, which is not something to
         # rely on); Linux CI runs every suite on every push.
         $node = Get-Command node -ErrorAction SilentlyContinue
-        $jsSuites = @('test_flap', 'test_countdown', 'test_logo', 'test_toggles', 'test_stations', 'test_ui_ranges')
+        $jsSuites = @('test_flap', 'test_countdown', 'test_logo', 'test_toggles', 'test_stations', 'test_ui_ranges', 'test_chess_engine', 'test_chess_ui')
         foreach ($suite in $jsSuites) {
             $pad = ('.' * (33 - $suite.Length))
             if ($node) {
