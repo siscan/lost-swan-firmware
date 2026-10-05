@@ -572,3 +572,16 @@ html, body {
   opacity: 0.92;
 }
 .protocol-on:not(.mirror-on) #dock { display: none; }
+
+/* ...but that z-index never got the dock anywhere.  #dock is a child of
+   .content, and .content is a z-index:1 stacking context: nothing inside it can
+   outrank a sibling of .content, however high its own z-index.  #protocol is
+   such a sibling - z-index:1 and later in the DOM, so it painted over the whole
+   of .content, the dock included, and MIRROR did nothing in protocol mode
+   (qa.js P-6: "the mirror stays visible in the station screen").
+   So in protocol mode .content itself goes ABOVE the station screen, becomes
+   inert, and shows nothing but the dock; everything else in it was already
+   hidden behind the opaque screen.  The CRT glass and scanlines (z-index:2,
+   earlier in the DOM) then sit under it, as the dock's own z-index:45 meant. */
+.protocol-on .content { z-index: 2; pointer-events: none; }
+.protocol-on .content > :not(#dock) { visibility: hidden; }
