@@ -317,6 +317,28 @@ void test_no_magnet_faults() {
 }
 
 // ---------------------------------------------------------------------------
+// A homing pass that finds NO edge on a column that HAS homed this boot is a
+// stopped drum, not a missing sensor: spec 5.8's second jam signature.  It
+// stops at once - one fault, no retries - where test_no_magnet_faults retries.
+// The two differ only in whether an edge was ever seen, and the flag that
+// says so used to be the one begin_home() clears, so this branch was dead.
+// ---------------------------------------------------------------------------
+void test_homing_timeout_after_edges_is_a_jam() {
+    SimAxis ax;
+    setup_axis(ax, 0, 0);
+    ax.post_home();
+    CHECK(ax.run_until_idle());  // homed: edges were seen
+    CHECK_EQ(ax.ctl.faults.load(RLX), 0u);
+
+    ax.drum.window_usteps = 0;  // the edges stop coming (drum stopped / sensor lost)
+    ax.post_home();
+    CHECK(ax.run_until(AxisState::Fault, 10'000'000));
+    CHECK_EQ(ax.gave_up_events, 1);
+    CHECK_EQ(ax.ctl.faults.load(RLX), 1u);  // one fault, no re-home attempts
+    CHECK_EQ(ax.ctl.fault_cause.load(RLX), static_cast<uint8_t>(FaultCause::Jam));
+}
+
+// ---------------------------------------------------------------------------
 // Mailbox semantics: back-to-back commands are never lost and never reordered.
 // The slot is replace-on-write: two posts inside one control period apply
 // exactly the NEWER one (spec 6 - a new frame replaces targets); a stale
@@ -544,6 +566,7 @@ void run_tests() {
     test_wrong_drum_faults_immediately();
     test_edge_jitter();
     test_no_magnet_faults();
+    test_homing_timeout_after_edges_is_a_jam();
     test_stop_during_homing_aborts_cleanly();
     test_mailbox_ordering();
     test_go_terminates_for_any_cal();

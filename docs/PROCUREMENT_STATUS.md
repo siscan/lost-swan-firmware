@@ -1,6 +1,7 @@
 # PROCUREMENT STATUS — LOST Swan split-flap
 
 Written to be read cold by any chat in this project. Snapshot as of **2026-08-25**.
+**Update 2026-10-05: Nico reports every order has ARRIVED** (reported in chat; not itemised against the lines below, which is what the §28c parts checklist in `BRINGUP.md` is for).
 **Status: procurement COMPLETE.** Nothing left to buy. What remains is verification
 before assembly — see §4.
 Full sourcing rationale lives in `claude/BOM.md`; design decisions in

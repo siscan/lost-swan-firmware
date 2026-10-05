@@ -75,6 +75,7 @@ void begin_home(TickCtx& c) {
 
 void on_hall_edge(TickCtx& c) {
     AxisCtl& a = c.a;
+    a.hall_seen = true;
 
     if (a.hall_valid.load(RLX)) {
         const int64_t err = edge_error(a.hall_prev, c.in.hall);
@@ -267,8 +268,8 @@ IsrWrite axis_control_tick(AxisCtl& a, const IsrSnap& in, const Request& req,
                     // now cannot -> something changed mechanically; treat it as
                     // a jam and stop rather than grind.
                     enter_fault(c, "no hall edge in 1.2 revolutions",
-                                a.hall_valid.load(RLX) ? FaultCause::Jam
-                                                       : FaultCause::NoHallEver);
+                                a.hall_seen ? FaultCause::Jam
+                                                : FaultCause::NoHallEver);
                 }
             } else if (a.home_phase == HomePhase::Settle) {
                 if (in.pos >= c.tgt) {
