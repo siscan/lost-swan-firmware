@@ -576,6 +576,33 @@ const char* params_refused_because(const MotionParams& p) {
     return nullptr;
 }
 
+// The ramp-power guard (limits_policy.h) on a whole parameter set: accel and each
+// of the three speeds it will be asked to ramp to.  Constant nullptr in a normal
+// image.  Returns the offending field, and says how fast the ramp would be and what
+// the guard allows - the log is where a person at the console reads why.
+const char* params_ramp_refused_because(const MotionParams& p) {
+    struct Field { const char* name; int32_t flaps_s; };
+    const Field fields[] = {
+        {"flaps_s_normal", p.flaps_s_normal},
+        {"flaps_s_alarm", p.flaps_s_alarm},
+        {"flaps_s_home", p.flaps_s_home},
+    };
+    for (const Field& f : fields) {
+        if (ramp_too_fast(p.accel, f.flaps_s)) {
+            ESP_LOGE(TAG,
+                     "%s refused: %d flaps/s at accel %d ramps in %d ms, and the ramp-power "
+                     "guard allows accel up to %lld at that speed (spec 17: the 2 s floor at "
+                     "show speed, scaled by speed). Lower the accel or the speed.",
+                     f.name, static_cast<int>(f.flaps_s), static_cast<int>(p.accel),
+                     static_cast<int>((static_cast<int64_t>(flaps_s_to_usteps_s(f.flaps_s)) * 1000) /
+                                      (p.accel > 0 ? p.accel : 1)),
+                     static_cast<long long>(ramp_accel_ceiling(f.flaps_s)));
+            return f.name;
+        }
+    }
+    return nullptr;
+}
+
 bool set_params(const MotionParams& p) {
     // THE BENCH CAP, at the place speeds are CONFIGURED - and it REFUSES.
     //
@@ -596,6 +623,12 @@ bool set_params(const MotionParams& p) {
                  which, static_cast<int>(BENCH_MAX_FLAPS_S));
         return false;
     }
+    // THE RAMP-POWER GUARD, at the same place and with the same rule: refused,
+    // never clamped, nothing applied.  Only the unlimited flavour can reach it
+    // (limits_policy.h) - the dispatcher says the same thing with the numbers
+    // for a browser, and this is the backstop for the callers that do not come
+    // through it: the console's `ramp` ladder, the OTA hold's read-modify-write.
+    if (params_ramp_refused_because(p) != nullptr) return false;
     portENTER_CRITICAL(&g_lock);
     g_params = p;
     // g_hall_invert is read by the step ISR, so it is published inside the
@@ -928,6 +961,13 @@ esp_err_t step_open_loop(int col, int64_t usteps, int32_t flaps_s) {
     // where it mattered most.  Refused rather than clamped: a spin asks for a
     // specific speed for a reason (2026-09-11).
     if (bench_speed_refused(flaps_s)) return ESP_ERR_NOT_SUPPORTED;
+    // THE RAMP-POWER GUARD (limits_policy.h).  An open-loop spin ramps at the LIVE
+    // accel whatever it was last set to, so the speed is judged against it here, at
+    // the place speeds are commanded - the same two-places rule as the bench cap
+    // above.  Constant false in a normal image, where `spin` is not changed by the
+    // unlimited flavour existing.  NOT_SUPPORTED, like the cap: "this image will not
+    // do that speed" - the console says which of the two it was.
+    if (ramp_too_fast(g_params.accel, flaps_s)) return ESP_ERR_NOT_SUPPORTED;
 
     // Remember that this was the alarm-speed whirl: a fault during it drops EN.
     g_fast_spin[col] = flaps_s >= g_params.flaps_s_alarm;
