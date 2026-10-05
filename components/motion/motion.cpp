@@ -967,7 +967,16 @@ esp_err_t step_open_loop(int col, int64_t usteps, int32_t flaps_s) {
     // above.  Constant false in a normal image, where `spin` is not changed by the
     // unlimited flavour existing.  NOT_SUPPORTED, like the cap: "this image will not
     // do that speed" - the console says which of the two it was.
-    if (ramp_too_fast(g_params.accel, flaps_s)) return ESP_ERR_NOT_SUPPORTED;
+    //
+    // The accel is read under g_lock, as docs/MOTION_SYNC.md says g_params is, and
+    // only in the flavour that can use it: UNLIMITED_BUILD is constexpr, so a normal
+    // image compiles this block out and gains no critical section.
+    if (UNLIMITED_BUILD) {
+        portENTER_CRITICAL(&g_lock);
+        const int32_t live_accel = g_params.accel;
+        portEXIT_CRITICAL(&g_lock);
+        if (ramp_too_fast(live_accel, flaps_s)) return ESP_ERR_NOT_SUPPORTED;
+    }
 
     // Remember that this was the alarm-speed whirl: a fault during it drops EN.
     g_fast_spin[col] = flaps_s >= g_params.flaps_s_alarm;
