@@ -493,7 +493,21 @@ std::string do_motion_params(Context& ctx, const json::Value& p) {
         mp.accel = v;
     }
     if (as_int_field(p, "hall_tol", v)) {
-        if (v < 1 || v > 400) return err_result("hall_tol out of range");
+        // The same shape as accel above, and for the same reason: the bound is a
+        // statement about the CURRENT flap (half of it) and lives in
+        // motion_types.h, so this check, the load path and the web slider cannot
+        // drift apart.  They HAD: this said 400 (six flaps) while config::load
+        // discarded anything over 32, so the slider could set a tolerance that
+        // blinded slip detection - slips of 1.6 to 4.7 flaps raised no fault and
+        // no re-home at hall_tol = 400, probed on the real core - and the next
+        // boot silently put it back to 16.  Spec 5.4 grades an edge error as
+        // silent (<= hall_tol), major (<= one flap) or fault (> one flap), so
+        // anything near a flap erases the middle band and past half a flap
+        // accepts most of every real slip without a word.
+        if (!hall_tol_plausible(static_cast<int32_t>(v))) {
+            return err_result("hall_tol out of range (" + std::to_string(HALL_TOL_MIN) + ".." +
+                              std::to_string(HALL_TOL_MAX) + " usteps: half a flap at most)");
+        }
         mp.hall_tol = v;
     }
     // `en_idle_off` is GONE (spec 5.7).  It is refused rather than ignored,

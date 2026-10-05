@@ -162,11 +162,12 @@
   <div class="row"><label for="p-accel">motion.accel <b id="v-accel"></b></label>
     <input id="p-accel" type="range" min="1000" max="60000" step="1000"></div>
   <div class="row"><label for="p-halltol">motion.hall_tol <b id="v-halltol"></b></label>
-    <input id="p-halltol" type="range" min="1" max="400" step="1"></div>
+    <input id="p-halltol" type="range" min="1" max="32" step="1"></div>
   <p class="hint">hall_tol is the edge error accepted in silence &mdash; a
      quarter of a flap by default (16&nbsp;µsteps at the 1:1 direct drive, where a
      flap is 64). Set it after measuring edge repeatability over twenty
-     revolutions (BRINGUP step 6), not before.</p>
+     revolutions (BRINGUP step 6), not before. It stops at half a flap (32):
+     above that a real slip is accepted without a word.</p>
   <div class="row">
     <label><input id="set-dirinv" type="checkbox"> invert direction
       (<code>motion.dir_invert</code>)</label>

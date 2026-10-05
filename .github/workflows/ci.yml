@@ -66,6 +66,8 @@ jobs:
         run: node test/host/test_toggles.js
       - name: Station screen behaviour (the real handlers, faked DOM, virtual clock)
         run: node test/host/test_stations.js
+      - name: Web controls agree with the firmware's own bounds
+        run: node test/host/test_ui_ranges.js
       - name: Simulator traces are current
         run: |
           ./build_host/gen_traces data/ring.json /tmp/traces.js

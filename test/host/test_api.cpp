@@ -361,6 +361,24 @@ void test_command_round_trip() {
     CHECK(!is_ok(r.cmd(R"({"cmd":"motion.params","payload":{"accel":10}})")));
     CHECK_EQ(r.motion.p.flaps_s_normal, 22);  // rejected leaves it alone
 
+    // hall_tol is bounded by the SAME rule the boot path applies (half a flap).
+    // The dispatcher used to accept 1..400 while config::load discarded anything
+    // over 32: the slider could set a tolerance that blinded slip detection, and
+    // the next boot quietly undid it.
+    CHECK(is_ok(r.cmd(R"({"cmd":"motion.params","payload":{"hall_tol":24}})")));
+    CHECK_EQ(r.motion.p.hall_tol, 24);
+    CHECK(is_ok(r.cmd(R"({"cmd":"motion.params","payload":{"hall_tol":32}})")));
+    CHECK_EQ(r.motion.p.hall_tol, HALL_TOL_MAX);   // the ceiling itself is allowed
+    CHECK(!is_ok(r.cmd(R"({"cmd":"motion.params","payload":{"hall_tol":33}})")));
+    CHECK(!is_ok(r.cmd(R"({"cmd":"motion.params","payload":{"hall_tol":400}})")));
+    CHECK(!is_ok(r.cmd(R"({"cmd":"motion.params","payload":{"hall_tol":0}})")));
+    CHECK_EQ(r.motion.p.hall_tol, HALL_TOL_MAX);   // every refusal applied nothing
+    // and a refusal names the bound, so a browser can say what to type
+    CHECK(r.cmd(R"({"cmd":"motion.params","payload":{"hall_tol":400}})").find("32") != std::string::npos);
+    // a refused hall_tol must not drag the accepted fields of the same request with it
+    CHECK(!is_ok(r.cmd(R"({"cmd":"motion.params","payload":{"flaps_s_normal":18,"hall_tol":400}})")));
+    CHECK_EQ(r.motion.p.flaps_s_normal, 22);
+
     // Config.
     CHECK(is_ok(r.cmd(R"({"cmd":"config.set","payload":{"granularity_min":5}})")));
     CHECK_EQ(r.mm.config().granularity_min, 5);
