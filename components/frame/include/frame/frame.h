@@ -52,8 +52,15 @@ int64_t move_duration_ms(int flips, int32_t flaps_s, int32_t accel);
 class FrameScheduler {
 public:
     struct Timing {
-        int32_t flaps_s = 15;   // motion.flaps_s_normal
-        int32_t accel = 82000;  // motion.accel
+        // The motion defaults BY NAME, not by number.  accel said 82000 here - the
+        // value that stalled the drum on 2026-09-12 - for as long as nothing
+        // called set_timing(): every test, and any future construction site.  A
+        // lead model that assumes a ramp ~7x faster than the motor can run starts
+        // every land-on-tick frame late.  app_main refreshes this from the live
+        // parameters on every modes tick; this is only what a scheduler that has
+        // not been told yet believes, and it cannot drift from motion's own.
+        int32_t flaps_s = MotionParams{}.flaps_s_normal;   // motion.flaps_s_normal
+        int32_t accel = MotionParams{}.accel;              // motion.accel
     };
 
     explicit FrameScheduler(MotionPort& port) : port_(port) { posted_.fill(kNotPosted); }

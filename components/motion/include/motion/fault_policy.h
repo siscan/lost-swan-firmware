@@ -55,8 +55,8 @@ constexpr bool fault_retry_allowed(FaultCause c) {
 // damage and least likely to be noticed.
 //
 // NOTE ON THE HARDWARE (spec 2.2): EN is ganged across all five drivers and
-// the pin map has exactly one spare non-strapping GPIO, so per-column
-// de-energize is not possible.  ParkColumn and StopColumn stop STEPPING a
+// the pin map has no spare non-strapping GPIO left (DIR took the last one), so
+// per-column de-energize is not possible.  ParkColumn and StopColumn stop STEPPING a
 // column; its coils still hold standstill current.  DropEnable is the only
 // true de-energize, and it necessarily takes the whole display with it.
 Escalation escalate_fault(FaultCause cause, int faulted_columns, bool during_spin);

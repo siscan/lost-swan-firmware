@@ -52,9 +52,10 @@ constexpr const char* NS = "swan";
 // countdown.zero_hold_s        cd_hold
 // countdown.spin_s             cd_spin
 // countdown.failure_timeout_s  cd_fail_to
+// countdown.failure_loop_s     cd_loop_s
 // countdown.reveal[5]          cd_reveal    (blob of 5 x int32)
 // (countdown deadline state)   cd_phase / cd_target / cd_seq / cd_setby
-// mqtt.enabled / .host / .user / .pass / .base
+// mqtt.enabled / .uri / .user / .pass / .base
 //                              mq_en / mq_uri / mq_user / mq_pass / mq_base
 // mqtt.ha_prefix               mq_hapfx
 // audio.volume / .mute / .quiet_start / .quiet_end
