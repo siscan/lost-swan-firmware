@@ -426,10 +426,16 @@
     if (!document.body) return Promise.resolve();
 
     const skipable = o.skipable !== false;
+    // `graceMs`: for this long after it starts, input is CONSUMED but does not
+    // skip.  A typed LOGO matches on its fourth letter, and the Enter that
+    // naturally follows is a keydown that would land on the skip handler and
+    // cut the very animation that was just asked for.
+    const grace = Math.max(0, parseInt(o.graceMs, 10) || 0);
     const reduced = !!(global.matchMedia &&
         global.matchMedia("(prefers-reduced-motion: reduce)").matches);
 
     running = new Promise((resolve) => {
+      const startedAt = Date.now();
       const root = document.createElement("div");
       root.id = OVERLAY_ID;
       root.setAttribute("aria-hidden", "true");   // decorative; the page below is the content
@@ -528,6 +534,7 @@
         // otherwise type the same key into the Numbers, and a tap meant to
         // dismiss the logo would land on whatever is under the overlay.
         if (ev && ev.stopPropagation) ev.stopPropagation();
+        if (Date.now() - startedAt < grace) return;   // eaten, not obeyed: see `grace`
         end(true);
       }
 
@@ -615,6 +622,45 @@
     });
 
     return running;
+  }
+
+  // TYPE LOGO - THE SWAN'S REPLAY COMMAND, IN THE FRIENDLY TERMINAL.
+  //
+  // The station screen handles this word itself while it is up (protocol.js);
+  // this sniffer is for the other content mode, so that selecting SWAN on the
+  // strip means the same thing in both - spec 10.2b: every station's command
+  // works in both content modes and in no other station.  It is the same shape
+  // as Pearl's LOG and the Flame's CHESS: a word typed at an idle prompt,
+  // scoped to its own station, off everywhere else.  Until it existed, LOGO
+  // typed in the friendly terminal did nothing at all (qa.js B-6 passed only
+  // in protocol mode).
+  const LOGO_WORD = "LOGO";
+  let logoTyped = "";
+  let logoAt = 0;
+
+  if (typeof document !== "undefined" && document.addEventListener) {
+    document.addEventListener("keydown", (e) => {
+      if (running || e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
+      const t = global.SwanTerm;
+      if (!t || !t.station || t.station() !== "swan") return;
+      const p = global.SwanProtocol;
+      if (p && p.isOn && p.isOn()) return;                 // the station screen owns the keys
+      const tag = (e.target && e.target.tagName) || "";
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      if (p && p.idle && !p.idle()) { logoTyped = ""; return; }   // a countdown owns the screen
+      if (!e.key || e.key.length !== 1) return;
+      const c = e.key.toUpperCase();
+      if (c < "A" || c > "Z") { logoTyped = ""; return; }
+      const now = Date.now();
+      if (now - logoAt > 2000) logoTyped = "";
+      logoAt = now;
+      const next = logoTyped + c;
+      logoTyped = LOGO_WORD.indexOf(next) === 0 ? next : (LOGO_WORD.indexOf(c) === 0 ? c : "");
+      if (logoTyped === LOGO_WORD) {
+        logoTyped = "";
+        play({ skipable: true, graceMs: 700 });
+      }
+    }, false);
   }
 
   global.SwanBoot = {
