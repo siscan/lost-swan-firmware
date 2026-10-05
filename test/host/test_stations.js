@@ -86,6 +86,8 @@ const journal = { "/api/journal": () => ({ ok: true, text: () => Promise.resolve
     env.flush(100);
     env.type("4 8 15 16 23 42", 0);
     check(env.entryText() === "4 8 15 16 23 42", "accepted input echoes (rule 3)", env.entryText());
+    env.key("9", { repeat: true });
+    check(env.entryText() === "4 8 15 16 23 42", "a held key (keydown repeat) does not flood the entry", env.entryText());
     const before = env.sent.length;
     env.key("Enter");
     check(env.sent.length === before + 1, "one Enter sends exactly one command (the double-execute defect)", env.sent.length - before);
@@ -97,6 +99,7 @@ const journal = { "/api/journal": () => ({ ok: true, text: () => Promise.resolve
     env.push(mkState(env, { mode: "countdown", phase: "running", target: Math.floor(env.clock.now / 1000) + 6480 }));
     env.flush(300);
     check(env.run("SwanProtocol.situation()") === "asleep", "a run above the 4:00 mark is the one inert state");
+    check(env.out().every((l) => l === ""), "asleep: the output area is blank too - no stale hint, no ACCEPTED (qa R3-4)", JSON.stringify(env.out()));
     env.key("7");
     check(env.entryText() === "", "asleep: typing is inert, with no echo");
     env.key("Escape");
@@ -276,6 +279,70 @@ const journal = { "/api/journal": () => ({ ok: true, text: () => Promise.resolve
     check(env.confirms.length === 0, "and raise no CANCEL confirm", env.confirms.length);
     env.key("Escape");
     check(env.run("SwanPearl.isOpen()") === false, "ESC closes it");
+  }
+
+  // ---- the Pearl printout itself: rate, footer, offline, a late reply --------
+  {
+    const env = await fresh();
+    const compose = (lines, why) => env.run("SwanPearl._compose(" + JSON.stringify(lines) + "," + JSON.stringify(why || null) + ")");
+    const good = '{"t":1787541319,"u":412,"e":"execute","seq":7,"by":"mqtt","d":"4 8 15 16 23 42"}';
+    const unsynced = '{"t":0,"u":1,"e":"boot","d":"poweron x"}';
+    const cut = '{"t":1787541400,"u":493,"e":"fau';             // a power cut mid-append
+    const two = compose([good, unsynced, cut]);
+    check(/\b2 ENTRIES\b/.test(two), "the footer counts the entries PRINTED (a truncated last line is dropped, not counted)", two.split("\n").slice(-3, -1).join(" | "));
+    check(/UPTIME/.test(two), "a t=0 line is stamped from uptime, never 1970");
+    check(/NO ENTRIES ON RECORD/.test(compose([])) && /\b0 ENTRIES\b/.test(compose([])), "an empty journal says so");
+    check(/NO ENTRIES ON RECORD/.test(compose(["{not json"])), "a journal of nothing but unparseable lines says so too");
+    const off = compose([], "offline: /api/journal");
+    check(/JOURNAL UNAVAILABLE: offline/.test(off), "an unreadable journal says it is unavailable");
+    check(!/NO ENTRIES/.test(off) && !/\b0 ENTRIES\b/.test(off),
+          "...and does NOT claim the display has no history (it could not be read, which is not the same)");
+  }
+  {
+    const lines = [];
+    for (let i = 0; i < 300; i++) lines.push('{"t":1787541319,"u":' + i + ',"e":"boot","d":"poweron"}');
+    const env = await fresh({ fetchRoutes: { "/api/journal": () => ({ ok: true, text: () => Promise.resolve(lines.join("\n")) }) } });
+    env.run("SwanPearl.open()");
+    await env.settle();
+    env.flush(1000);
+    const n = env.doc.getElementById("pearl-text").textContent.length;
+    check(n >= 212 && n <= 226, "the printer runs at 220 characters a second (spec 10.2b), not 250", n);
+  }
+  {
+    let deliver;
+    const env = await fresh({ fetchRoutes: { "/api/journal": () => ({ ok: true, text: () => new Promise((r) => { deliver = r; }) }) } });
+    env.run("SwanPearl.open()");
+    await env.settle();                           // the journal is now IN FLIGHT: text() has been asked for
+    env.run("SwanPearl.close()");
+    deliver('{"t":1,"u":2,"e":"boot","d":"x"}\n');
+    await env.settle();
+    env.flush(2000);
+    check(env.doc.getElementById("pearl-text").textContent.length === 0,
+          "a journal that arrives after the printout was closed prints nothing (no timer under a hidden page)");
+  }
+
+  // ---- the chat egg is the Swan's, and the finale is everybody's --------------
+  {
+    const env = await fresh();
+    env.run("SwanTerm.prefs.egg = true; SwanTerm.savePref('egg'); SwanTerm.applyPrefs();");
+    env.protocolOn(true); env.station("swan"); env.flush(1500);
+    for (const k of "qwertyuiopas") { env.key(k); env.flush(50); }
+    await env.settle();
+    check(env.run("SwanChat.isOpen()") === true, "protocol: a mash on the Swan opens the chat");
+    check(env.entryText() === "", "and the mash is not left typed into the Numbers behind it", env.entryText());
+    env.station("pearl");
+    check(env.run("SwanChat.isOpen()") === false, "switching station closes the chat - it is the Swan's");
+  }
+  {
+    const env = await fresh();
+    env.run("SwanTerm.prefs.egg = true; SwanTerm.savePref('egg'); SwanTerm.applyPrefs();");
+    env.flush(1500);
+    for (const k of "qwertyuiopas") { env.key(k); env.flush(50); }
+    await env.settle();
+    check(env.run("SwanChat.isOpen()") === true, "friendly: a mash on the Swan opens the chat");
+    env.push(mkState(env, { mode: "countdown", phase: "zero", target: Math.floor(env.clock.now / 1000) - 1 }));
+    env.flush(300);
+    check(env.run("SwanChat.isOpen()") === false, "a countdown reaching zero closes it - it must not sit over SYSTEM FAILURE");
   }
 
   // ---- the failure line follows the STATE DOCUMENT, not only the event ------

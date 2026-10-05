@@ -445,6 +445,17 @@
   // second copy that could drift.
   window.SwanChat = { armMasher, open, close, isOpen, feedKey: onKeyMash };
 
+  // THE CHAT IS THE SWAN'S, AND THE FINALE IS EVERYBODY'S.  It stayed open after
+  // a switch to another station - a station's features must not outlive the
+  // station - and over a countdown reaching zero, where its overlay covered the
+  // SYSTEM FAILURE the whole mode exists to show ("the finale must never fire
+  // invisibly", spec 7.4a).  terminal.js loads first, so SwanTerm is there.
+  if (window.SwanTerm && window.SwanTerm.on) {
+    window.SwanTerm
+      .on("station", () => close())
+      .on("phase", (ph) => { if (ph === "zero") close(); });
+  }
+
   // Armed on window at load, so the page needs nothing but the script tag.  It
   // is not "on": the detector reads prefs.egg at fire time, so the toggle takes
   // effect without a reload, and off means nothing happens at all.

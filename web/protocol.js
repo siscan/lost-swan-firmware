@@ -321,6 +321,12 @@
       // Nothing at all. Not a hint, not a countdown, not a "wait" - the screen
       // the show put on the wall gave you a cursor and no acknowledgement, and
       // reproducing that is the whole point of this mode.
+      //
+      // That includes the output area.  Only the status and the entry were
+      // blanked, so the hint and the ACCEPTED printed while the screen was idle
+      // sat there for the whole run - two lines of text on a screen the comment
+      // above says has none (qa.js R3-4: "no hint").
+      clearOut();
       parts.status.textContent = "";
       parts.entry.textContent = "";
       return;
@@ -365,6 +371,11 @@
     e.stopPropagation();
 
     if (!accepts()) { e.preventDefault(); return; }
+
+    // A held key repeats keydown, and a held digit filled the entry (terminal.js
+    // has always ignored repeats).  Backspace is the one key that is meant to
+    // auto-repeat.
+    if (e.repeat && k !== "Backspace") { e.preventDefault(); return; }
 
     const st = station();
 
@@ -439,6 +450,9 @@
       // second copy of the detector here.
       if (st === "swan" && window.SwanChat && window.SwanChat.feedKey) {
         window.SwanChat.feedKey(e);
+        // The mash that opened it was typed INTO the entry, because letters echo
+        // (rule 3).  Drop it, or the Numbers behind the chat read QWERTYUIOPAS.
+        if (window.SwanChat.isOpen && window.SwanChat.isOpen()) clearEntry();
       }
     }
   }
