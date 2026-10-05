@@ -166,8 +166,11 @@
   <p class="hint">hall_tol is the edge error accepted in silence &mdash; a
      quarter of a flap by default (16&nbsp;µsteps at the 1:1 direct drive, where a
      flap is 64). Set it after measuring edge repeatability over twenty
-     revolutions (BRINGUP step 6), not before. It stops at half a flap (32):
-     above that a real slip is accepted without a word.</p>
+     revolutions (BRINGUP step 6), not before. It stops <span id="halltol-stop">at
+     half a flap (32)</span>: above that a real slip is accepted without a word.</p>
+  <!-- Shown by app.js applyRanges() ONLY on an unlimited image, where the controls
+       above run further than the numbers printed here (motion/limits_policy.h). -->
+  <p id="unlimited-note" class="hint" style="display:none"></p>
   <div class="row">
     <label><input id="set-dirinv" type="checkbox"> invert direction
       (<code>motion.dir_invert</code>)</label>
@@ -509,12 +512,16 @@
   <div class="row">
     <label><input id="ota-force" type="checkbox"> force past a soft refusal</label>
   </div>
-  <p class="hint">Two refusals are soft, and both are worth reading before you
+  <p class="hint">Three refusals are soft, and all are worth reading before you
      override them. An image built for the <b>other board</b> passes every check
      the bootloader makes and then drives STEP on the wrong pins. A <b>release
      image</b> onto a display with simulated columns comes back with five columns
      it cannot honour, faults them all and drops EN &mdash; surviving state the
-     new image cannot honour is worse than state that did not survive. A moving
+     new image cannot honour is worse than state that did not survive. An
+     <b>unlimited image</b> (its version ends <code>.unlimited</code>) onto a
+     display that is not already running one lifts the speed, accel and hall_tol
+     ranges the dispatcher enforces &mdash; a different safety contract, and the
+     wrong file picked here must not be how that decision gets made. A moving
      drum is refused regardless, and that one cannot be forced.</p>
   <div class="row">
     <progress id="ota-progress" max="100" value="0" hidden style="width:320px"></progress>

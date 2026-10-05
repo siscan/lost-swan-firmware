@@ -2518,3 +2518,67 @@ line, because the next session reads it as a result.
 maintenance boots without homing and with EN released — which on the direct
 drive means five drums free to slew. Leaving it set is a decision; leaving it
 set by accident is how the next session starts confused.
+
+---
+
+## THE UNLIMITED IMAGE — optional, and what it exists to let you measure
+
+`-DSWAN_UNLIMITED=ON` (README, spec §17 2026-10-04, `limits_policy.h`). **Nothing in
+28b or 28c needs it** — those sessions are deliberately capped, and 28c builds at 20.
+It exists for the day somebody wants to run past the dispatcher's ranges on a
+mechanism that can take it, and it is built so that the day cannot arrive by
+accident. **Nothing in this section has been run.** It is a suggested order, written
+from the spec's own open questions, and every blank in it stays blank until measured.
+
+### Recognise it before you trust it
+
+It is not a bench image — `SWAN_BENCH` and `SWAN_UNLIMITED` refuse each other, so
+the bench cap is not there either. It says so on every surface; if you cannot see
+all of these you are not looking at it:
+
+- the version, `sys.version` / `GET /api/state` / the Diagnostics page, ends
+  **`.unlimited`** (`0.4.0+devkitc1.sim.unlimited`);
+- the boot log prints three `***` warning lines, the first beginning
+  `*** UNLIMITED IMAGE:`;
+- the control panel's strip reads **UNLIMITED IMAGE — ranges lifted to 400 flaps/s**,
+  and the presentation header carries an **UNLIMITED** chip;
+- the Calibrate sliders run to 400 / 250 000 / 64, with a note under them.
+
+Flash it with the procedure under *THE FLASH PROCEDURE* above, from its own build
+directory. The OTA gate refuses to put it on a board that is not already running
+one unless you send `{"force":true}` — on purpose: it is a different safety
+contract and the wrong file on the Update page must not make that decision.
+
+### What does not carry over
+
+It is **live only**. `save` refuses a value past the normal ranges and names the
+field, and a reboot returns to them. That is a feature of this procedure, not a
+nuisance: it means a power blip cannot bring the display up spinning at show speed.
+Re-apply the experiment after every boot.
+
+### What it does NOT protect — nothing here has ever been measured
+
+| question | why it matters | measured |
+|---|---|---|
+| **VM peak during the first deceleration** from a given speed | the PD rail is a source and cannot sink regen. The ramp-power guard (`accel × speed ≤ 12 800 × 25 600`) is a *proportional extension* of spec §17's 2 s floor, not a measurement. Put a scope (single shot, probe tip and ground spring right at the module's VM and GND pins) across the driver's VM and GND, and judge the peak against the 20 V the rail starts from and against the TMC2209's limits on VS: **operating 5.5–29 V; absolute maximum 32 V (VVS, inductive load) and 33 V (VVMAX, supply and bridge)**. Source: the datasheet's section 19 and 20.1, rev 1.08 (2022-MAY-25), read 2026-10-05; rev 1.03 has the same figures. The 29 V this line used to quote from memory is the *operating* ceiling, not the absolute maximum. The footnote to the maximum-ratings table says even small stray inductances can easily add a few volts of ringing on the supply while the driver switches a motor coil, so the figure to judge is that ringing *plus* whatever regen has pumped the rail to; a peak-hold meter catches the slow regen rise and is blind to the ringing, so it answers half of this | ____ V at ____ flaps/s, accel ____ |
+| **Step-ISR load** at the speed you run | 25 600 µsteps/s per column is 51 % of the 50 kHz budget *by arithmetic only*; five columns are 128 000/s on one timer. `sys.step_isr_alive` falling is the symptom | ____ |
+| **Card lift** | the pitch-80 module has no shroud and its cards lift somewhere above ~100 flaps/s (§28c); nothing stops one leaving | ____ |
+| **Whether the motor can follow** | 82 000 stalled the drum at 0.7 A on 2026-09-12; the sliders now reach 250 000 at low speed | ____ |
+
+### A suggested first run past 40 flaps/s
+
+1. **Maintenance on, then EN asserted** (§28c step 2a), one real column, **no cards
+   on the drum** for the first pass — the cards are what lifts, and a bare drum
+   answers the electrical questions without risking one.
+2. Meter or scope on VM. Raise `flaps_s_normal` **in steps** (60, 80, 100, 150, 200…)
+   at the shipped `accel` of 12 000, `ramp`-ing closed loop where there is a Hall
+   (§28c step 5) and `spin` where there is not. After each rung, `GET /api/state`
+   for `sys.step_isr_alive` and the column's `faults`/`major`; **write the VM peak
+   in the table above before the next rung.**
+3. **Stop at the first of:** a stall or a lost step, VM above the rail by more than
+   you are comfortable with, `step_isr_alive` false, a card moving. A rung that
+   looks clean and reports a major resync is still a finding.
+4. Only then raise `accel`, and only at the speeds the guard permits — it will refuse
+   the rest with the numbers in the message.
+5. **`maint off` before you pack up**, as always — and a reboot has already put the
+   ranges back.

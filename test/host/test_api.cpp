@@ -13,6 +13,7 @@
 #include "fake_port.h"
 #include "ring/json_lite.h"
 #include "audio/wav.h"
+#include "motion/limits_policy.h"
 #include "webapi/api.h"
 #include "webapi/mqtt_bridge.h"
 #include "webapi/ring_upload.h"
@@ -340,8 +341,11 @@ void test_command_round_trip() {
     CHECK_EQ(r.motion.spins, 1);
     CHECK_EQ(r.motion.last_spin_flaps, 25);
     CHECK(!is_ok(r.cmd(R"({"cmd":"motion.spin","payload":{"flaps_s":25}})")));
+    // One past THIS image's ceiling: 41 in a normal image, 401 in the unlimited
+    // flavour.  (It said 99, which an unlimited image rightly accepts.)
     CHECK(!is_ok(r.cmd(
-        R"({"cmd":"motion.spin","payload":{"column":0,"flaps_s":99,"seconds":3}})")));
+        R"({"cmd":"motion.spin","payload":{"column":0,"flaps_s":)" +
+        std::to_string(motion::FLAPS_S_MAX + 1) + R"(,"seconds":3}})")));
     CHECK(!is_ok(r.cmd(
         R"({"cmd":"motion.spin","payload":{"column":0,"flaps_s":20,"seconds":0}})")));
     CHECK_EQ(r.motion.spins, 1);
@@ -365,16 +369,24 @@ void test_command_round_trip() {
     // The dispatcher used to accept 1..400 while config::load discarded anything
     // over 32: the slider could set a tolerance that blinded slip detection, and
     // the next boot quietly undid it.
-    CHECK(is_ok(r.cmd(R"({"cmd":"motion.params","payload":{"hall_tol":24}})")));
+    //
+    // The ceiling is THIS IMAGE's live one (HALL_TOL_MAX): 32 normally, and one
+    // flap (64) in the unlimited flavour.  The boot path's rule never moves - it is
+    // asserted in test_limits_policy and below - so only the live range is
+    // flavour-aware here.
+    const auto hall_tol_cmd = [](long v) {
+        return R"({"cmd":"motion.params","payload":{"hall_tol":)" + std::to_string(v) + "}}";
+    };
+    CHECK(is_ok(r.cmd(hall_tol_cmd(24))));
     CHECK_EQ(r.motion.p.hall_tol, 24);
-    CHECK(is_ok(r.cmd(R"({"cmd":"motion.params","payload":{"hall_tol":32}})")));
+    CHECK(is_ok(r.cmd(hall_tol_cmd(HALL_TOL_MAX))));
     CHECK_EQ(r.motion.p.hall_tol, HALL_TOL_MAX);   // the ceiling itself is allowed
-    CHECK(!is_ok(r.cmd(R"({"cmd":"motion.params","payload":{"hall_tol":33}})")));
-    CHECK(!is_ok(r.cmd(R"({"cmd":"motion.params","payload":{"hall_tol":400}})")));
-    CHECK(!is_ok(r.cmd(R"({"cmd":"motion.params","payload":{"hall_tol":0}})")));
+    CHECK(!is_ok(r.cmd(hall_tol_cmd(HALL_TOL_MAX + 1))));
+    CHECK(!is_ok(r.cmd(hall_tol_cmd(400))));
+    CHECK(!is_ok(r.cmd(hall_tol_cmd(0))));
     CHECK_EQ(r.motion.p.hall_tol, HALL_TOL_MAX);   // every refusal applied nothing
     // and a refusal names the bound, so a browser can say what to type
-    CHECK(r.cmd(R"({"cmd":"motion.params","payload":{"hall_tol":400}})").find("32") != std::string::npos);
+    CHECK(r.cmd(hall_tol_cmd(400)).find(std::to_string(HALL_TOL_MAX)) != std::string::npos);
     // a refused hall_tol must not drag the accepted fields of the same request with it
     CHECK(!is_ok(r.cmd(R"({"cmd":"motion.params","payload":{"flaps_s_normal":18,"hall_tol":400}})")));
     CHECK_EQ(r.motion.p.flaps_s_normal, 22);
@@ -1434,8 +1446,211 @@ void test_disabled_columns_are_refused_not_pretended() {
     CHECK(err_of(all).find("every column") != std::string::npos);
 }
 
+// ---------------------------------------------------------------------------
+// THE RANGES ARE THIS IMAGE'S (motion/limits_policy.h), and the unlimited flavour
+// widens exactly those.  This file is compiled TWICE - once as a normal image and
+// once with -DSWAN_UNLIMITED=1 (test_api_unlimited) - so every expectation here is
+// spelt in the image's own constants and both flavours are held to the same shape:
+// a step at the ceiling, a refusal that names the range, and nothing applied.
+// ---------------------------------------------------------------------------
+std::string params_cmd(const std::string& body) {
+    return R"({"cmd":"motion.params","payload":{)" + body + "}}";
+}
+
+void test_the_dispatcher_ranges_are_this_images_ranges() {
+    Rig r;
+    // A low accel makes every speed legal, so what is tested here is the RANGE and
+    // not the ramp-power guard, which has its own test below.
+    CHECK(is_ok(r.cmd(params_cmd(R"("accel":1000)"))));
+
+    for (const char* f : {"flaps_s_normal", "flaps_s_alarm", "flaps_s_home"}) {
+        const std::string field = std::string("\"") + f + "\":";
+        CHECK(is_ok(r.cmd(params_cmd(field + std::to_string(motion::FLAPS_S_MAX)))));
+        const std::string why =
+            err_of(r.cmd(params_cmd(field + std::to_string(motion::FLAPS_S_MAX + 1))));
+        CHECK(!why.empty());
+        // The refusal names THIS image's range, so a browser can say what to type.
+        CHECK(why.find("1.." + std::to_string(motion::FLAPS_S_MAX)) != std::string::npos);
+        CHECK(!is_ok(r.cmd(params_cmd(field + "0"))));
+    }
+    CHECK_EQ(r.motion.p.flaps_s_normal, motion::FLAPS_S_MAX);   // every refusal applied nothing
+    CHECK_EQ(r.motion.p.flaps_s_alarm, motion::FLAPS_S_MAX);
+    CHECK_EQ(r.motion.p.flaps_s_home, motion::FLAPS_S_MAX);
+
+    // An open-loop spin has the same ceiling, with the same message.
+    const auto spin = [](long flaps) {
+        return R"({"cmd":"motion.spin","payload":{"column":1,"seconds":1,"flaps_s":)" +
+               std::to_string(flaps) + "}}";
+    };
+    CHECK(is_ok(r.cmd(spin(motion::FLAPS_S_MAX))));
+    CHECK_EQ(r.motion.last_spin_flaps, motion::FLAPS_S_MAX);
+    const int spins = r.motion.spins;
+    const std::string spin_why = err_of(r.cmd(spin(motion::FLAPS_S_MAX + 1)));
+    CHECK(spin_why.find("1.." + std::to_string(motion::FLAPS_S_MAX)) != std::string::npos);
+    CHECK_EQ(r.motion.spins, spins);
+
+    // accel: the ceiling itself is allowed (at speeds the guard permits), one past is not.
+    CHECK(is_ok(r.cmd(params_cmd(
+        R"("flaps_s_normal":1,"flaps_s_alarm":1,"flaps_s_home":1,"accel":)" +
+        std::to_string(ACCEL_MAX)))));
+    CHECK_EQ(r.motion.p.accel, ACCEL_MAX);
+    const std::string accel_why = err_of(r.cmd(params_cmd(
+        R"("accel":)" + std::to_string(ACCEL_MAX + 1))));
+    CHECK(accel_why.find(std::to_string(ACCEL_MIN) + ".." + std::to_string(ACCEL_MAX)) !=
+          std::string::npos);
+    CHECK(!is_ok(r.cmd(params_cmd(R"("accel":)" + std::to_string(ACCEL_MIN - 1)))));
+    CHECK_EQ(r.motion.p.accel, ACCEL_MAX);
+}
+
+// THE UNLIMITED FLAVOUR (and only it): what it widens, the one protection it
+// must keep, and the rule that none of the extra range is ever saved.
+void test_the_unlimited_flavour_widens_ranges_and_keeps_the_guard() {
+    if (!motion::UNLIMITED_BUILD) return;   // the normal half is the test above
+    Rig r;
+
+    // The show spin, at the shipped accel: allowed, because it sits under the
+    // guard (12000 x 25600 against 12800 x 25600).
+    CHECK_EQ(r.motion.p.accel, 12000);
+    CHECK(is_ok(r.cmd(params_cmd(R"("flaps_s_alarm":400)"))));
+    CHECK_EQ(r.motion.p.flaps_s_alarm, 400);
+
+    // ...and ONE MORE `motion.params` away from a ramp five times under the 2 s
+    // floor, which is what the guard exists for.  Refused with the numbers.
+    const std::string why = err_of(r.cmd(params_cmd(R"("accel":20000)")));
+    CHECK(why.find("ramp-power guard") != std::string::npos);
+    CHECK(why.find("12800") != std::string::npos);     // the most it allows at 400 flaps/s
+    CHECK(why.find("flaps_s_alarm 400") != std::string::npos);
+    CHECK_EQ(r.motion.p.accel, 12000);                 // nothing applied
+    // The boundary itself is allowed.
+    CHECK(is_ok(r.cmd(params_cmd(R"("accel":12800)"))));
+    CHECK_EQ(r.motion.p.accel, 12800);
+    CHECK(!is_ok(r.cmd(params_cmd(R"("accel":12801)"))));
+
+    // Judged on the FINAL set: lowering the speeds and raising the accel in one
+    // request is legal, and it is how "accel past 60 000" is actually reached.
+    CHECK(is_ok(r.cmd(params_cmd(
+        R"("flaps_s_normal":15,"flaps_s_alarm":25,"flaps_s_home":8,"accel":200000)"))));
+    CHECK_EQ(r.motion.p.accel, 200000);
+    CHECK(200000 > motion::ACCEL_MAX_NORMAL);
+    // ...while raising a speed against that accel is refused, all-or-nothing: the
+    // accepted half of a request must not ride in with the refused half.
+    CHECK(!is_ok(r.cmd(params_cmd(R"("flaps_s_alarm":400,"flaps_s_normal":16)"))));
+    CHECK_EQ(r.motion.p.flaps_s_alarm, 25);
+    CHECK_EQ(r.motion.p.flaps_s_normal, 15);
+
+    // An open-loop spin ramps at the LIVE accel, so it is judged against it.
+    const int spins0 = r.motion.spins;
+    CHECK(is_ok(r.cmd(R"({"cmd":"motion.spin","payload":{"column":2,"seconds":1,"flaps_s":25}})")));
+    CHECK_EQ(r.motion.spins, spins0 + 1);
+    const std::string spin_why =
+        err_of(r.cmd(R"({"cmd":"motion.spin","payload":{"column":2,"seconds":1,"flaps_s":400}})"));
+    CHECK(spin_why.find("ramp-power guard") != std::string::npos);
+    CHECK_EQ(r.motion.spins, spins0 + 1);              // refused, not clamped, nothing ran
+    CHECK(!is_ok(r.cmd(R"({"cmd":"motion.spin","payload":{"column":2,"seconds":1,"flaps_s":401}})")));
+    // At the shipped accel the same spin is fine.
+    CHECK(is_ok(r.cmd(params_cmd(R"("accel":12000)"))));
+    CHECK(is_ok(r.cmd(R"({"cmd":"motion.spin","payload":{"column":2,"seconds":1,"flaps_s":400}})")));
+    CHECK_EQ(r.motion.last_spin_flaps, 400);
+
+    // hall_tol: one flap, and not one unit more - past it the silent band would
+    // swallow slips that spec 5.4 says must fault.
+    CHECK(is_ok(r.cmd(params_cmd(R"("hall_tol":64)"))));
+    CHECK(!is_ok(r.cmd(params_cmd(R"("hall_tol":65)"))));
+}
+
+// NONE OF THE EXTRA RANGE IS EVER SAVED.  NVS holds only what a normal image
+// would accept, in every flavour, so an unlimited image can neither leave state a
+// normal one cannot honour nor boot into its own experiment.  The dispatcher says
+// so by NAME before the write; config::save refuses the same values itself.
+void test_live_only_values_are_not_saved() {
+    Rig r;
+    const int saves0 = r.cfg.motion_saves;
+
+    // A normal image can only reach this with a value its own dispatcher would
+    // have refused, so the loop below is the unlimited half; the normal half is
+    // that the defaults always save.
+    CHECK(is_ok(r.cmd(R"({"cmd":"motion.save"})")));
+    CHECK_EQ(r.cfg.motion_saves, saves0 + 1);
+    if (!motion::UNLIMITED_BUILD) return;
+
+    struct Case { const char* set; const char* field; };
+    const Case cases[] = {
+        {R"("flaps_s_alarm":400)", "flaps_s_alarm"},
+        {R"("flaps_s_normal":41)", "flaps_s_normal"},
+        {R"("flaps_s_home":100)", "flaps_s_home"},
+        {R"("flaps_s_normal":1,"flaps_s_alarm":1,"flaps_s_home":1,"accel":100000)", "accel"},
+        {R"("hall_tol":64)", "hall_tol"},
+    };
+    for (const Case& c : cases) {
+        Rig q;
+        CHECK(is_ok(q.cmd(params_cmd(c.set))));
+        const int before = q.cfg.motion_saves;
+        const std::string a = err_of(q.cmd(R"({"cmd":"motion.save"})"));
+        CHECK(a.find(std::string("not saved: ") + c.field) != std::string::npos);
+        CHECK(a.find("live-only") != std::string::npos);
+        // the calibration page's save persists the SAME record, so it is refused too
+        const std::string b = err_of(q.cmd(R"({"cmd":"motion.cal","payload":{"column":1,"save":true}})"));
+        CHECK(b.find(std::string("not saved: ") + c.field) != std::string::npos);
+        CHECK_EQ(q.cfg.motion_saves, before);          // nothing reached the sink
+        // Set it back and the same record saves: it is the VALUE that is refused.
+        CHECK(is_ok(q.cmd(params_cmd(
+            R"("flaps_s_normal":15,"flaps_s_alarm":25,"flaps_s_home":8,"accel":12000,"hall_tol":16)"))));
+        CHECK(is_ok(q.cmd(R"({"cmd":"motion.save"})")));
+        CHECK_EQ(q.cfg.motion_saves, before + 1);
+    }
+}
+
+// What an image says it IS, on the one document every surface reads.  A normal
+// image publishes `unlimited:false` and NO `ranges`: web/index.html's control
+// bounds are the normal image's, so the markup is the truth and the document
+// stays as small as it was.  An unlimited image publishes both, and the numbers
+// are the same constants the dispatcher enforces - there is no second copy.
+void test_the_state_document_says_what_the_image_is() {
+    Rig r;
+    json::Value v;
+    CHECK(json::parse(r.state(), v, nullptr, 4000));
+    const json::Value* m = v.get("motion");
+    CHECK(m != nullptr);
+    if (m == nullptr) return;
+    const json::Value* u = m->get("unlimited");
+    CHECK(u != nullptr);
+    if (u != nullptr) {
+        CHECK(u->type == json::Type::Bool);
+        CHECK_EQ(u->boolean, motion::UNLIMITED_BUILD);
+    }
+    const json::Value* ranges = m->get("ranges");
+    if (!motion::UNLIMITED_BUILD) {
+        CHECK(ranges == nullptr);
+        return;
+    }
+    CHECK(ranges != nullptr);
+    if (ranges == nullptr) return;
+    const struct { const char* key; int64_t want; } expect[] = {
+        {"flaps_s_min", motion::FLAPS_S_MIN},
+        {"flaps_s_max", motion::FLAPS_S_MAX_UNLIMITED},
+        {"accel_min", ACCEL_MIN},
+        {"accel_max", motion::ACCEL_MAX_UNLIMITED},
+        {"hall_tol_min", HALL_TOL_MIN},
+        {"hall_tol_max", motion::HALL_TOL_MAX_UNLIMITED},
+        // what NVS will hold - the page tells the person everything past it is live-only
+        {"persist_flaps_s_max", motion::FLAPS_S_MAX_NORMAL},
+        {"persist_accel_max", motion::ACCEL_MAX_NORMAL},
+        {"persist_hall_tol_max", motion::HALL_TOL_MAX_NORMAL},
+    };
+    for (const auto& e : expect) {
+        const json::Value* got = ranges->get(e.key);
+        if (got == nullptr) std::printf("  MISSING: motion.ranges.%s\n", e.key);
+        CHECK(got != nullptr);
+        if (got != nullptr) CHECK_EQ(got->as_int(-1), e.want);
+    }
+}
+
 void run_tests() {
     test_command_round_trip();
+    test_the_dispatcher_ranges_are_this_images_ranges();
+    test_the_unlimited_flavour_widens_ranges_and_keeps_the_guard();
+    test_live_only_values_are_not_saved();
+    test_the_state_document_says_what_the_image_is();
     test_reveal_by_name();
     test_state_payload();
     test_state_document_contract();

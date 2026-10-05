@@ -36,8 +36,8 @@ Target: ESP32-C5-DevKitC-1-N8R8 (XIAO ESP32-C5 map behind a board define).
 
 | gate | status |
 |---|---|
-| `set-target esp32c5` + `build` clean | passes — zero warnings, both board maps |
-| host tests green | 20 C++ suites, eight node-only web suites (the mirror widget, the countdown port, the logo and its drawn markup, the toggle matrix, the station screen's behaviour, the controls-vs-firmware bounds, the chess engine's rules and its UI) and a parse gate over every `web/*.js` (CI) |
+| `set-target esp32c5` + `build` clean | passes on both board maps. A *fresh* build prints three pre-existing warnings — a deprecated IDF call in `ring_store.cpp`, a `volatile` increment in `motion.cpp`, a missing initializer in `httpd.cpp` — and none from anything else (measured 2026-10-04 on the DevKitC-1; this row used to say "zero warnings", which a fresh build does not bear out) |
+| host tests green | 25 ctest entries — 21 pure-logic suites, the limits-policy and API suites compiled a second time as the unlimited flavour, and two negative-compile proofs — eight node-only web suites (the mirror widget, the countdown port, the logo and its drawn markup, the toggle matrix, the station screen's behaviour, the controls-vs-firmware bounds, the chess engine's rules and its UI) and a parse gate over every `web/*.js` (CI) |
 | release image cannot carry the simulator | `-DSWAN_RELEASE=1` with `SWAN_SIM_AXES=ON` is a configure-time `FATAL_ERROR`; CI builds both halves |
 | Phase 3 adversarial review | 22 findings confirmed, all fixed — see spec §17 |
 | `git diff` empty after `tools/ringgen.py` | clean — header and ring.json both regenerate byte-identically |
@@ -61,8 +61,11 @@ none of the Windows dev machine's constraints exist:
 | job | what |
 |---|---|
 | `ring-table` | `python3 tools/ringgen.py --check` — the committed header AND `data/ring.json` must match the two manifests |
-| `host-tests` | native CMake build + ctest of all twenty pure-logic suites, then a freshness diff of the committed simulator traces against a live `gen_traces` run |
+| `host-tests` | native CMake build + ctest of all 25 entries (the pure-logic suites, the unlimited-flavour compiles, the two negative-compile proofs), the eight web suites, then a freshness diff of the committed simulator traces against a live `gen_traces` run |
 | `firmware` | both board maps (`devkitc1`, `xiao`) built inside Espressif's official `espressif/idf:v5.5.5` Docker image |
+| `release-gate` | a release image cannot carry the simulator: the gate fires, and a real release build is clean |
+| `bench-build` | the stand-in bench image builds and carries its cap in the version; the cap may only go down |
+| `unlimited-build` | the unlimited image builds and says so in its version, a plain build does not, and it refuses to share an image with a bench or a release build — each refusal checked for its own message |
 
 **Linux CI is the source of truth for reliability.** The Smart-App-Control
 retry in `test-host.ps1` is local convenience only — a suite that needs the
@@ -211,12 +214,13 @@ in `docs/BENCH_WIRING.md`, and the three copies had drifted; there is now one.
 never passes `-DSWAN_BENCH=ON`, and the one release that exists predates the
 flavour entirely. You build it.
 
-It reports itself as `0.4.0+devkitc1.bench` everywhere a version is read, so you
+It reports itself as `0.4.0+devkitc1.bench<cap>` everywhere a version is read, so you
 can always see which image is running. That is **visibility, not an interlock** —
-`components/webapi/ota_policy.cpp` refuses exactly two things, a wrong-board
-image and a release image onto a board with simulated columns, and neither of
-them is "a capped image onto the wall" or "an uncapped image over a capped one".
-This sentence used to claim the tag prevented that; it does not.
+`components/webapi/ota_policy.cpp` refuses exactly three things, a wrong-board
+image, a release image onto a board with simulated columns, and an *unlimited*
+image onto a board that is not one (next section), and none of them is "a capped
+image onto the wall" or "an uncapped image over a capped one". This sentence
+used to claim the tag prevented that; it does not.
 
 **The show spin is absent from this image, and cannot be turned back on.** Every
 commanded speed is clamped to **50 flaps/s — one drum revolution per second**
@@ -245,6 +249,63 @@ Console commands in this build:
 2026-08-23 has run against modelled drums; this session exists to put current
 through a real coil, and a modelled drum would produce a beautiful hour of logs
 and answer nothing.
+
+## The unlimited flavour
+
+`-DSWAN_UNLIMITED=ON`, reported as `0.4.0+<board>.sim.unlimited` (or `.nosim.`).
+The dispatcher refuses things the hardware may well be able to do, and a bench
+session eventually wants to find out where the edge is. This widens the
+dispatcher's **live ranges and nothing else**:
+
+| | a normal image | unlimited |
+|---|---:|---:|
+| speed — `motion.params`, `motion.spin` | 1..40 flaps/s | 1..400 (the show spin) |
+| `motion.accel` | 1000..60 000 | 1000..250 000 |
+| `motion.hall_tol` | 1..32 (half a flap) | 1..64 (one flap) |
+
+The 250 000 is a number picked, not derived (you asked for "past 60 000" and named
+no ceiling); it is one constant in `limits_policy.h`. `hall_tol` stops at one flap
+because past it a slip that spec §5.4 says must fault is accepted in silence —
+that is the slip detector switched off, not a wider range.
+
+Build it in its own directory, as the bench image is (the `app` target, because a
+fresh build directory cannot make the LittleFS image on this machine):
+
+```powershell
+.\build.ps1 -B build_unl -DSWAN_BOARD=devkitc1 -DSWAN_UNLIMITED=ON set-target esp32c5
+.\build.ps1 -B build_unl -DSWAN_BOARD=devkitc1 -DSWAN_UNLIMITED=ON app
+```
+
+Look at its web UI with no hardware and no flash:
+
+```powershell
+build_host\devserver_unlimited.exe --port 8081 --root web --ring data/ring.json
+```
+
+What it does **not** do — each of these is a decision, not an omission (spec §17,
+2026-10-04; `CLAUDE.md` has the rules later work must keep):
+
+- **It is a build flavour and never a switch.** There is no Settings toggle, MQTT
+  command or NVS key for it, and there will not be. `SWAN_UNLIMITED` with
+  `SWAN_BENCH` or `SWAN_RELEASE` fails at configure time, and the same pair fails
+  a `static_assert` — both proven to fire in CI. A bench image's cap is untouched.
+- **Nothing it accepts is ever saved.** NVS holds only what a *normal* image
+  accepts, in every flavour: `save` refuses a wider value and names the field,
+  boot substitutes one that got in anyway. A reboot returns to the normal
+  ranges, so it can never come up spinning at show speed in an empty room.
+- **The protections stay**: jam stop, EN drop, the maintenance / EN / OTA
+  refusals. And a **ramp-power guard** keeps spec §17's 2 s ramp floor in force at
+  the speeds this flavour now allows: `accel × speed ≤ 12 800 × 25 600` in µsteps,
+  refused never clamped, with the numbers in the message. So "accel past 60 000"
+  is real at low speed (204 800 at 25 flaps/s) and not at 400 flaps/s (12 800).
+  That guard is a proportional extension of a rule that was written for one speed;
+  **nothing has measured it**, and nothing has measured PSU regen, step-ISR load at
+  25 600 µsteps/s per column, or card lift above 25 flaps/s on this rig either.
+- **It cannot be mistaken for a normal image**: the version tag, a boot banner, the
+  state document, a strip on the control panel and a chip on the presentation
+  header, and the OTA gate refuses to put one onto a board that is not already one
+  unless you send `{"force":true}`. The reverse — a normal image onto an unlimited
+  board — is never refused.
 
 ## Restoring a released build — no toolchain needed
 
@@ -504,6 +565,8 @@ build_host\devserver.exe --port 8080 --root web --ring data/ring.json
 
 then open **http://localhost:8080/**. It homes all five columns first (about
 six seconds, visible), then the clock runs. `--tz` overrides the timezone.
+`build_host\devserver_unlimited.exe` is the same server compiled as the unlimited
+flavour, for looking at that image's widened controls, strip and chip.
 
 Routes, identical on the host and on the device:
 

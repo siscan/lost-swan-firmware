@@ -566,10 +566,25 @@ int cmd_spin(int argc, char** argv) {
                            USTEPS_PER_FLAP_DEN;
     const esp_err_t err = motion::step_open_loop(col, usteps, static_cast<int32_t>(fs));
     if (err == ESP_ERR_NOT_SUPPORTED) {
-        std::printf("REFUSED: %ld flaps/s is over this image's cap of %d flaps/s.\n",
-                    fs, static_cast<int>(motion::BENCH_MAX_FLAPS_S));
-        std::printf("  This is a bench image. The cap is compiled in: rebuild with\n");
-        std::printf("  -DSWAN_BENCH_CAP=<n> if the mechanism on the vise has changed.\n");
+        // NOT_SUPPORTED is "this image will not run that speed", and there are two
+        // reasons it can say so - the bench cap, and the unlimited flavour's
+        // ramp-power guard.  They are told apart by asking the same predicates
+        // step_open_loop asked, so a message can never name the wrong one.
+        if (motion::bench_speed_refused(static_cast<int32_t>(fs))) {
+            std::printf("REFUSED: %ld flaps/s is over this image's cap of %d flaps/s.\n",
+                        fs, static_cast<int>(motion::BENCH_MAX_FLAPS_S));
+            std::printf("  This is a bench image. The cap is compiled in: rebuild with\n");
+            std::printf("  -DSWAN_BENCH_CAP=<n> if the mechanism on the vise has changed.\n");
+        } else {
+            const int32_t accel = motion::params().accel;
+            std::printf("REFUSED: %ld flaps/s at accel %d ramps in %d ms, and the ramp-power guard\n",
+                        fs, static_cast<int>(accel),
+                        static_cast<int>((static_cast<int64_t>(flaps_s_to_usteps_s(static_cast<int32_t>(fs))) *
+                                          1000) / (accel > 0 ? accel : 1)));
+            std::printf("  allows accel up to %lld at that speed (spec 17: the 2 s floor at show\n",
+                        static_cast<long long>(motion::ramp_accel_ceiling(static_cast<int32_t>(fs))));
+            std::printf("  speed, scaled by speed). Spin slower, or lower the accel.\n");
+        }
         return 1;
     }
     std::printf("%s: %lld usteps at %ld flaps/s\n", err == ESP_OK ? "spinning" : "failed",
@@ -729,7 +744,11 @@ int cmd_revs(int argc, char** argv) {
         std::printf("  hall_tol: derived %ld (a quarter flap), measured candidate %ld\n",
                     static_cast<long>(derived), static_cast<long>(cand));
         std::printf("  currently %ld in this image.\n", static_cast<long>(cur.hall_tol));
-        if (!hall_tol_plausible(cand)) {
+        // The PERSISTABLE rule, not this image's live one: the advice is about the
+        // mechanism ("past half a flap a tolerance swallows more than half of every
+        // real slip"), and it must read the same on an unlimited image, whose
+        // dispatcher would accept a wider number that the next boot discards.
+        if (!hall_tol_persistable(cand)) {
             std::printf("  THE SPREAD IS TOO WIDE TO ABSORB. %ld usteps is over half a\n",
                         static_cast<long>(cand));
             std::printf("  flap (%ld), and a tolerance there swallows more than half of\n",
@@ -821,7 +840,9 @@ int cmd_ramp(int argc, char** argv) {
             std::printf("at most %d rungs\n", MAX_RUNGS);
             return 1;
         }
-        if (v < 1 || v > 400) {
+        // 400 is the show spin - the ceiling of every rate this machine has been
+        // designed to run (limits_policy.h), not a number typed here.
+        if (v < 1 || v > motion::SHOW_SPIN_FLAPS_S) {
             std::printf("%ld flaps/s is not a sensible rate\n", v);
             return 1;
         }
@@ -981,7 +1002,22 @@ int cmd_cal(int argc, char** argv) {
 }
 
 int cmd_save(int, char**) {
-    esp_err_t err = config::save(motion::params());
+    // Said BEFORE the write, with the field, because config::save's refusal is only
+    // a log line and "invalid arg" on a console is not an answer.  NVS holds only
+    // what a NORMAL image accepts, in every flavour (limits_policy.h): the unlimited
+    // image's extra range is live-only, and so is a rung of the `ramp` ladder.
+    const MotionParams live = motion::params();
+    if (const char* field = persist_refusal(live)) {
+        std::printf("NOT SAVED: %s is outside the range an image may boot with\n", field);
+        std::printf("  (flaps/s %d..%d, accel %d..%d, hall_tol %d..%d).\n",
+                    static_cast<int>(motion::FLAPS_S_MIN),
+                    static_cast<int>(motion::FLAPS_S_MAX_NORMAL), static_cast<int>(ACCEL_MIN),
+                    static_cast<int>(motion::ACCEL_MAX_NORMAL), static_cast<int>(HALL_TOL_MIN),
+                    static_cast<int>(motion::HALL_TOL_MAX_NORMAL));
+        std::printf("  Set it back to save, or reboot to discard it. Nothing was written.\n");
+        return 1;
+    }
+    esp_err_t err = config::save(live);
     // Column modes and maintenance persist too: a repair left half-finished
     // must still be a repair after a power cut.
     if (err == ESP_OK) err = config::save_columns(motion::columns());

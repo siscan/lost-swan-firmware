@@ -54,7 +54,10 @@ ImageInfo sniff_image(const uint8_t* data, std::size_t len) {
 
     // The board map and the sim/release flavour live in the version tag,
     // because esp_app_desc_t has nowhere else to put them:
-    //     0.4.0+devkitc1.sim
+    //     0.4.0+devkitc1.sim            0.4.0+devkitc1.sim.unlimited
+    // The flavour is the FIRST segment after the board; anything after it is a
+    // modifier, and "unlimited" is the one that exists - the image lifts the
+    // dispatcher's ranges (motion/limits_policy.h).
     const std::size_t plus = info.version.find('+');
     if (plus != std::string::npos) {
         const std::string tag = info.version.substr(plus + 1);
@@ -63,7 +66,20 @@ ImageInfo sniff_image(const uint8_t* data, std::size_t len) {
             info.board = tag;
         } else {
             info.board = tag.substr(0, dot);
-            info.flavour = tag.substr(dot + 1);
+            const std::string rest = tag.substr(dot + 1);
+            const std::size_t next = rest.find('.');
+            info.flavour = rest.substr(0, next);
+            // Whole segments only: "unlimited" must not be found inside some
+            // future word that merely contains it.
+            for (std::size_t at = next; at != std::string::npos;) {
+                const std::size_t from = at + 1;
+                const std::size_t end = rest.find('.', from);
+                if (rest.compare(from, end == std::string::npos ? std::string::npos : end - from,
+                                 "unlimited") == 0) {
+                    info.unlimited = true;
+                }
+                at = end;
+            }
         }
     }
     return info;
@@ -77,6 +93,7 @@ const char* ota_verdict_name(OtaVerdict v) {
         case OtaVerdict::WrongProject:    return "wrong_project";
         case OtaVerdict::WrongBoard:      return "wrong_board";
         case OtaVerdict::LosesSimulation: return "loses_simulation";
+        case OtaVerdict::GainsUnlimited:  return "gains_unlimited";
         case OtaVerdict::Moving:          return "moving";
         case OtaVerdict::PendingVerify:   return "pending_verify";
         case OtaVerdict::NoRoom:          return "no_room";
@@ -101,6 +118,11 @@ const char* ota_verdict_reason(OtaVerdict v) {
             return "a release image cannot simulate, and this board has simulated columns "
                    "saved: they would come back as real, fault unwired, and drop EN, with no "
                    "way to set them back. Send {\"force\":true} if you mean it";
+        case OtaVerdict::GainsUnlimited:
+            return "this image lifts the speed, accel and hall_tol ranges, and the one "
+                   "running does not: it is a different safety contract, and nothing on "
+                   "the wall would say so afterwards but the version tag. Send "
+                   "{\"force\":true} if you mean it";
         case OtaVerdict::Moving:
             return "a column is still moving; wait for it to settle or enter maintenance";
         case OtaVerdict::PendingVerify:
@@ -144,6 +166,17 @@ OtaVerdict ota_gate(const OtaPrecheck& p) {
         // motion.column then refuses to set sim back, so the UI cannot fix it.
         if (p.any_simulated_column && p.image.flavour == "rel") {
             return OtaVerdict::LosesSimulation;
+        }
+        // THE OTHER DIRECTION OF THE SAME IDEA.  An unlimited image is a different
+        // SAFETY CONTRACT (motion/limits_policy.h): its dispatcher accepts speeds,
+        // accel and a hall_tol that a normal one refuses, so putting one onto a
+        // board that is running a normal image is a decision, and the wrong file
+        // picked on the Update page must not make it.  Same reason the bench cap is
+        // in the version tag.  The REVERSE - a normal image onto an unlimited one -
+        // is the safe direction and is never refused: NVS holds only normal-range
+        // values in every flavour, so there is nothing the new image cannot honour.
+        if (p.image.unlimited && !p.running_unlimited) {
+            return OtaVerdict::GainsUnlimited;
         }
     }
     return OtaVerdict::Allow;

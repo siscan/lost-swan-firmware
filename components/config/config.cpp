@@ -5,6 +5,8 @@
 #include "esp_log.h"
 #include "hal/boot_health.h"
 #include "motion/bench_policy.h"
+#include "motion/limits_policy.h"  // what NVS may hold: the NORMAL image's ranges, always
+#include "motion/motion_types.h"
 #include "nvs.h"
 #include "nvs_flash.h"
 
@@ -181,6 +183,37 @@ void enforce_bench_cap(MotionParams& p) {
     }
 }
 
+// THE SPEEDS NVS HOLDS ARE VALIDATED AGAINST THE NORMAL RANGE, IN EVERY FLAVOUR.
+//
+// Until the unlimited flavour existed nothing validated a stored speed outside a
+// bench build: the dispatcher refused anything over 40 flaps/s, so NVS could only
+// ever hold what the dispatcher had accepted, and nobody looked.  That was an
+// assumption about every OTHER writer.  A record from another build, or a corrupted
+// page, handed the display a 300 flaps/s alarm spin - and an unlimited image's
+// dispatcher accepts exactly that, so "NVS only holds what the dispatcher took" is
+// no longer a fact about the world.  It is made a rule instead: config::save
+// refuses anything outside the normal range (persist_refusal) and this substitutes
+// it, announced, the same shape as accel and hall_tol below.  Runs BEFORE the bench
+// cap, because the default it falls back to can itself be over a cap of 20.
+void enforce_persistable_speeds(MotionParams& p) {
+    const MotionParams def;   // the spec defaults
+    struct Field { const char* name; int32_t* f; int32_t dflt; };
+    const Field fields[] = {
+        {"flaps_s_normal", &p.flaps_s_normal, def.flaps_s_normal},
+        {"flaps_s_alarm", &p.flaps_s_alarm, def.flaps_s_alarm},
+        {"flaps_s_home", &p.flaps_s_home, def.flaps_s_home},
+    };
+    for (const Field& fl : fields) {
+        if (motion::flaps_s_persistable(*fl.f)) continue;
+        ESP_LOGW(TAG,
+                 "%s of %d flaps/s in NVS is outside %d..%d; using the default %d. "
+                 "`save` to make it permanent.",
+                 fl.name, static_cast<int>(*fl.f), static_cast<int>(motion::FLAPS_S_MIN),
+                 static_cast<int>(motion::FLAPS_S_MAX_NORMAL), static_cast<int>(fl.dflt));
+        *fl.f = fl.dflt;
+    }
+}
+
 }  // namespace
 
 esp_err_t load(MotionParams& p) {
@@ -199,19 +232,22 @@ esp_err_t load(MotionParams& p) {
     get_i32(h, K_FS_NORM, &p.flaps_s_normal);
     get_i32(h, K_FS_ALRM, &p.flaps_s_alarm);
     get_i32(h, K_FS_HOME, &p.flaps_s_home);
+    enforce_persistable_speeds(p);
     enforce_bench_cap(p);
     // Validated, not trusted - same reason as hall_tol below.  accel == 0
     // divides by zero in the ramp, and a value from the rim-gear era commands
-    // 2.58x the drum angular acceleration it used to.
+    // 2.58x the drum angular acceleration it used to.  THE PERSISTABLE RULE, not
+    // this image's live one: an unlimited image accepts more accel LIVE, and must
+    // still not boot into it.
     int32_t stored_accel = p.accel;
     get_i32(h, K_ACCEL, &stored_accel);
-    if (accel_plausible(stored_accel)) {
+    if (accel_persistable(stored_accel)) {
         p.accel = stored_accel;
     } else {
         ESP_LOGW(TAG, "accel %d in NVS is outside %d..%d; using the default %d. "
                       "`save` to make it permanent.",
                  static_cast<int>(stored_accel), static_cast<int>(ACCEL_MIN),
-                 static_cast<int>(ACCEL_MAX), static_cast<int>(p.accel));
+                 static_cast<int>(motion::ACCEL_MAX_NORMAL), static_cast<int>(p.accel));
     }
     // Validated, not trusted - see the block on hall_tol_migrated in
     // motion_types.h.  A board configured under the rim gear carries 41 here.
@@ -239,6 +275,28 @@ esp_err_t load(MotionParams& p) {
 }
 
 esp_err_t save(const MotionParams& p) {
+    // NVS HOLDS ONLY WHAT A NORMAL IMAGE WOULD ACCEPT, in every flavour
+    // (motion/limits_policy.h, LIVE ONLY).  The unlimited flavour's dispatcher
+    // takes values this refuses, by design: they apply live and a reboot returns
+    // to the normal ranges.  The dispatcher's two save commands check the same rule
+    // first so the refusal can name the field to a browser; this is the backstop for
+    // every other caller (the console's `save`), and the one place that can
+    // actually keep an out-of-range value out of flash.
+    //
+    // In a normal image it can only fire on a value the dispatcher would not have
+    // accepted either - except mid-way through the console's `ramp` ladder, where a
+    // rung (up to 400) sits in flaps_s_normal until the ladder restores it.
+    if (const char* field = persist_refusal(p)) {
+        ESP_LOGE(TAG,
+                 "motion params NOT saved: %s is outside the range an image may boot with "
+                 "(flaps/s %d..%d, accel %d..%d, hall_tol %d..%d). An unlimited image's "
+                 "extra range is live-only by design; set it back to save.",
+                 field, static_cast<int>(motion::FLAPS_S_MIN),
+                 static_cast<int>(motion::FLAPS_S_MAX_NORMAL), static_cast<int>(ACCEL_MIN),
+                 static_cast<int>(motion::ACCEL_MAX_NORMAL), static_cast<int>(HALL_TOL_MIN),
+                 static_cast<int>(motion::HALL_TOL_MAX_NORMAL));
+        return ESP_ERR_INVALID_ARG;
+    }
     nvs_handle_t h;
     esp_err_t err = nvs_open(NS, NVS_READWRITE, &h);
     if (err != ESP_OK) return err;

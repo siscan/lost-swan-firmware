@@ -12,6 +12,10 @@
 #                 axes compiled in.  Proves both halves: SWAN_RELEASE=1 with
 #                 the sim still on FAILS at configure time, and with it off
 #                 builds clean.
+#   bench-build - the stand-in bench image and its cap, which may only go down.
+#   unlimited-build - the unlimited flavour (spec 17, 2026-10-04): it builds, it
+#                 says so in its version, it is never the default, and it
+#                 REFUSES to share an image with a bench or a release build.
 name: ci
 
 on:
@@ -118,9 +122,11 @@ jobs:
         shell: bash
         run: |
           . $IDF_PATH/export.sh
-          # Over the ceiling.  CLAUDE.md: do not add a way to lift the cap - a
+          # Over the ceiling.  CLAUDE.md: the cap has no runtime key - a
           # parameter that can only lower a compiled-in ceiling is not one, and
-          # this is the check that keeps that true.
+          # this is the check that keeps that true.  (The one authorised way past
+          # the ranges is the separate unlimited FLAVOUR, below, which can never
+          # be a bench image.)
           if idf.py -B build_capbad -DSWAN_BOARD=devkitc1 -DSWAN_BENCH=ON \
                     -DSWAN_BENCH_CAP=60 reconfigure; then
             echo "FAIL: SWAN_BENCH_CAP=60 configured cleanly"
@@ -142,6 +148,63 @@ jobs:
             exit 1
           fi
           echo "gate fired as expected"
+
+  # The unlimited flavour (spec 17, 2026-10-04; motion/limits_policy.h): the
+  # dispatcher's speed, accel and hall_tol ranges lifted, live only.  Built in CI
+  # for the bench cap's reason - its whole value is that it is a BUILD FLAVOUR
+  # which cannot be switched on by accident, and a gate that stops firing is a
+  # gate that is not there.
+  unlimited-build:
+    runs-on: ubuntu-latest
+    container:
+      image: espressif/idf:v5.5.5
+    steps:
+      - uses: actions/checkout@v5
+      - name: An unlimited image builds, and says it is one
+        shell: bash
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          . $IDF_PATH/export.sh
+          idf.py -B build_unl -DSWAN_BOARD=devkitc1 -DSWAN_UNLIMITED=ON set-target esp32c5
+          idf.py -B build_unl -DSWAN_BOARD=devkitc1 -DSWAN_UNLIMITED=ON build
+          # Assert on the ARTIFACT, as the bench job does: project_description.json
+          # is what the image was actually stamped with.  `.unlimited` is a
+          # modifier on the base flavour, so the simulated axes still show.
+          v=$(python -c "import json;print(json.load(open('build_unl/project_description.json'))['project_version'])")
+          echo "built version: $v"
+          test "$v" = "0.4.0+devkitc1.sim.unlimited"
+      - name: It is never the default
+        shell: bash
+        run: |
+          . $IDF_PATH/export.sh
+          idf.py -B build_plain -DSWAN_BOARD=devkitc1 set-target esp32c5
+          idf.py -B build_plain -DSWAN_BOARD=devkitc1 reconfigure
+          v=$(python -c "import json;print(json.load(open('build_plain/project_description.json'))['project_version'])")
+          echo "plain version: $v"
+          test "$v" = "0.4.0+devkitc1.sim"
+      - name: It refuses to share an image with a bench or a release build
+        shell: bash
+        run: |
+          . $IDF_PATH/export.sh
+          # Each refusal must fire FOR ITS OWN REASON.  A bare `if idf.py ...` is
+          # satisfied by a configure that fails for any cause at all, so the
+          # message is checked.  The release case turns the simulation off so the
+          # older sim/release rule cannot be the one that fires.
+          if out=$(idf.py -B build_unl_bench -DSWAN_BOARD=devkitc1 -DSWAN_UNLIMITED=ON \
+                          -DSWAN_BENCH=ON reconfigure 2>&1); then
+            echo "FAIL: SWAN_UNLIMITED with SWAN_BENCH configured cleanly"
+            exit 1
+          fi
+          echo "$out" | grep -q "SWAN_UNLIMITED with SWAN_BENCH" || {
+            echo "FAIL: refused, but not by the unlimited/bench rule"; echo "$out"; exit 1; }
+          if out=$(idf.py -B build_unl_rel -DSWAN_BOARD=devkitc1 -DSWAN_UNLIMITED=ON \
+                          -DSWAN_RELEASE=1 -DSWAN_SIM_AXES=OFF reconfigure 2>&1); then
+            echo "FAIL: SWAN_UNLIMITED with SWAN_RELEASE configured cleanly"
+            exit 1
+          fi
+          echo "$out" | grep -q "SWAN_UNLIMITED with SWAN_RELEASE" || {
+            echo "FAIL: refused, but not by the unlimited/release rule"; echo "$out"; exit 1; }
+          echo "both gates fired, each for its own reason"
 
   firmware:
     runs-on: ubuntu-latest

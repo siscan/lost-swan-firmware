@@ -17,6 +17,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "hal/boot_health.h"
+#include "motion/limits_policy.h"
 #include "motion/motion.h"
 #include "net/mqtt.h"
 #include "ring/json_write.h"
@@ -93,7 +94,9 @@ std::string running_tag_part(int which) {
 //
 // It is a read-modify-write of the live params, so set_params can only refuse
 // if a live speed is already over a bench image's cap - which config::load
-// makes impossible at boot.  Checked anyway and logged at ERROR: a silently
+// makes impossible at boot - or if the live accel and speeds already violate the
+// unlimited flavour's ramp-power guard, which set_params would not have let them
+// reach.  Checked anyway and logged at ERROR: a silently
 // dropped hold means the core keeps homing through a flash write, and the
 // symptom would be dropped steps blamed on the ISR.
 void set_core_hold(bool on) {
@@ -237,6 +240,9 @@ esp_err_t ota_post(httpd_req_t* req) {
     pre.image = api::sniff_image(head.data(), head.size());
     pre.running_project = ota_running_project();
     pre.running_board = ota_running_board();
+    // What THIS firmware is, from its own compile-time flag rather than a parse of
+    // its tag: the gate refuses an unlimited image onto a board that is not one.
+    pre.running_unlimited = motion::UNLIMITED_BUILD;
     pre.running_pending_verify = g_pending_verify.load(std::memory_order_relaxed);
     pre.maintenance = motion::columns().maintenance;
     pre.any_simulated_column = motion::columns().any(ColumnMode::Sim);
