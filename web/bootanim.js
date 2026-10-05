@@ -4,11 +4,13 @@
 // flaps.  It owns a full-screen overlay and removes it before the promise
 // resolves, so a caller that awaits play() can trust the DOM is clean.
 //
-// The logo is an ORIGINAL vector built here from geometry - two concentric
-// regular octagons, the eight I Ching trigrams one per edge, a stylised swan -
-// for the same reason web/glyphs.svg is original artwork rather than a traced
-// screengrab.  Paths also mean it stroke-animates and stays sharp from a 195 px
-// phone to a 440 px kiosk; a bitmap would do neither.
+// The logo is SUPPLIED ART (web/bootanim_logo.js) - a frame, the eight-trigram
+// ring, a disc, a swan and the DHARMA wordmark in one 200x200 system; "THE
+// MARK" below says how it is used.  It is vector, so it stays sharp from a
+// 195 px phone to a 440 px kiosk, and it is DRAWN the way a vector CRT would
+// draw it: a beam goes vertex to vertex along every outline in the art and the
+// line stays lit behind it ("THE TRACE", in the constants).  The art's swan
+// centrelines and per-vertex widths describe a brush and are not used.
 //
 // It plays on every load of terminal.html while the station is SWAN, in both
 // content modes, and is always skippable - spec 10.2b says exactly when, in one
@@ -24,16 +26,33 @@
   const OVERLAY_ID = "swan-boot";
   const TITLE = "STATION 3: THE SWAN";
 
-  // Beats, ms from the first painted frame.  Three ordered draws then the
-  // type-in, ~4.4 s all in: this stands between a viewer and a countdown, so it
-  // is a flourish on a budget rather than a title sequence.
-  const T_FRAME = 0,    D_FRAME = 520, S_FRAME = 180;  // 1. the frame
-  const T_RING  = 520,  D_RING  = 260, S_RING  = 105;  // 2. the trigram ring
-  const T_DISC  = 1420, D_DISC  = 380;                 // 3. the disc
-  const T_SWAN  = 1680, D_SWAN  = 620, S_SWAN = 26;    // 4. the swan's spines
-  const D_MORPH = 420;                                 // ... then spines -> fill
-  const T_WORD  = 2760, D_WORD  = 420;                 // 5. the wordmark
-  const T_TEXT = 3200, D_CHAR = 38;
+  // THE TRACE.  A vector CRT draws a shape one way: the beam is deflected to the
+  // first vertex, then to the next, and the line it leaves stays lit behind it
+  // while a bright spot rides the head.  Every outline in the mark is a closed
+  // polygon in the art, so every outline is TRACED - one beam, one speed,
+  // blanked between outlines - in the art's own order: the frame, the ring
+  // (clockwise from the top, each trigram's bars inner to outer), the disc, the
+  // swan, the wordmark.  Nothing fades in as a filled shape while the beam is
+  // drawing (qa.js K-1: "blobs blobbing in" is the failure); the fills settle in
+  // behind the finished lines at the very end.
+  //
+  // The beam speed is a consequence, not a constant: TRACE_MS is the budget for
+  // the whole mark - this stands between a viewer and a countdown, so it is a
+  // flourish on a budget rather than a title sequence - and the speed is
+  // whatever fits the mark's total outline into it.
+  const T_TRACE = 120;      // the screen is black for a beat, then the beam lights
+  const TRACE_MS = 3000;    // the whole trace
+  const JUMP_MS = 6;        // the blanked beam repositioning between outlines
+  const MIN_SHAPE_MS = 24;  // the shortest outline still takes a visible moment
+  const BEAM_LEN = 5;       // the bright head, in the mark's own 200-unit space
+  const COOL_MS = 700;      // a just-drawn line falls from hot to normal
+  const SETTLE_MS = 420;    // the phosphor fills settle in behind the finished lines
+  // ...to this strong.  The LINES are the mark: at 0 it stays pure line art, at
+  // 1 it is the filled logo again and the outlines vanish into it.  A quarter
+  // keeps the vector look at rest and still reads on a phone, where the lines
+  // alone are ~1 px.
+  const FILL_A = 0.25;
+  const D_CHAR = 38;
   const HOLD_MS = 380;      // the finished logo stands still before it goes
   const FADE_MS = 340;
   const REDUCED_MS = 600;
@@ -75,33 +94,6 @@
   }
 
   const r2 = (v) => Math.round(v * 100) / 100;
-
-  // --- the swan's variable-width spines ------------------------------------
-  // The art supplies each spine as a polyline plus a WIDTH PER VERTEX, because
-  // a swan drawn with a brush is not one weight throughout.  SVG cannot vary a
-  // stroke along a path, so each segment becomes its own short path carrying
-  // the mean of its two endpoint widths.  Round caps and joins make the joins
-  // between segments invisible, which is the whole trick.
-  function spineSegments(line) {
-    const nums = String(line.d).match(/-?\d+(?:\.\d+)?/g) || [];
-    const pts = [];
-    for (let i = 0; i + 1 < nums.length; i += 2) {
-      pts.push([parseFloat(nums[i]), parseFloat(nums[i + 1])]);
-    }
-    const w = line.widths || [];
-    const segs = [];
-    for (let i = 0; i + 1 < pts.length; i++) {
-      const a = pts[i], b = pts[i + 1];
-      const wa = typeof w[i] === "number" ? w[i] : 6;
-      const wb = typeof w[i + 1] === "number" ? w[i + 1] : wa;
-      segs.push({
-        d: "M" + r2(a[0]) + " " + r2(a[1]) + "L" + r2(b[0]) + " " + r2(b[1]),
-        width: r2((wa + wb) / 2),
-        len: Math.hypot(b[0] - a[0], b[1] - a[1]),
-      });
-    }
-    return segs;
-  }
 
   // --- the ring check ------------------------------------------------------
   // Reads the DRAWN bars back out of the data and compares them to
@@ -155,20 +147,139 @@
     return out;
   }
 
+  // --- compound shapes -------------------------------------------------------
+  // fill-rule EVENODD punches a hole only between subpaths of ONE <path>
+  // element.  The art lists its outlines and the holes in them as separate
+  // entries - the frame is an outer octagon plus an inner one, a letter is an
+  // outline plus its counter - so drawing one element per entry fills every
+  // hole back in.  That is what shipped on 2026-08-25: the frame was a solid
+  // stop sign, the trigram ring and the disc were the same colour as the slab
+  // behind them and so were simply not there, and DHARMA's counters were solid.
+  // No test could see it, because every test read the DATA and none drew it.
+  //
+  // So the entries are regrouped: a piece lying inside another piece goes in
+  // that piece's element.  Two pieces are counters whose OUTLINES are not in the
+  // wordmark at all - the swan's neck crosses the first A and the R, and the art
+  // folds those two letters into the swan silhouette - so those two counters are
+  // punched out of the swan fill instead.
+  //
+  // Only plain polylines (M, numbers, Z) can be reasoned about this way.  Art
+  // with anything else in it is passed through as supplied rather than guessed
+  // at, which is the old behaviour and at least not a new way to be wrong.
+  function isPolyline(d) { return /^[MZ0-9\s.,\-]+$/i.test(String(d)); }
+
+  function polygons(d) {
+    const out = [];
+    const subs = String(d).split(/(?=M)/);
+    for (let s = 0; s < subs.length; s++) {
+      const nums = subs[s].match(/-?\d+(?:\.\d+)?/g) || [];
+      const pts = [];
+      for (let i = 0; i + 1 < nums.length; i += 2) pts.push([parseFloat(nums[i]), parseFloat(nums[i + 1])]);
+      if (pts.length >= 3) out.push(pts);
+    }
+    return out;
+  }
+
+  function pointInPolygon(p, poly) {
+    let inside = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const a = poly[i], b = poly[j];
+      if ((a[1] > p[1]) !== (b[1] > p[1]) &&
+          p[0] < (b[0] - a[0]) * (p[1] - a[1]) / (b[1] - a[1]) + a[0]) inside = !inside;
+    }
+    return inside;
+  }
+
+  // { frame: [d], swan: d, letters: [d, ...] } - the filled shapes, one entry per
+  // element to draw.  Letters run left to right.
+  function compound() {
+    const L = logo();
+    const framePaths = (L && L.frame && L.frame.paths) || [];
+    const wordPaths = (L && L.wordmark && L.wordmark.paths) || [];
+    const swanFill = (L && L.swan && L.swan.fill) || "";
+    if (!framePaths.concat(wordPaths, [swanFill]).every(isPolyline)) {
+      return { frame: framePaths, swan: swanFill, letters: wordPaths };
+    }
+
+    const swanPolys = polygons(swanFill);
+    const pieces = wordPaths.map((d) => ({ d: d, p: polygons(d)[0] })).filter((pc) => pc.p);
+    const inSwan = (pc) => swanPolys.some((s) => pointInPolygon(pc.p[0], s));
+    const orphans = pieces.filter(inSwan);
+    const rest = pieces.filter((pc) => !inSwan(pc));
+    const holeOf = (pc) => rest.find((o) => o !== pc && pointInPolygon(pc.p[0], o.p));
+    const rootOf = (pc) => {
+      let r = pc, o, guard = 8;
+      while (guard-- > 0 && (o = holeOf(r))) r = o;
+      return r;
+    };
+    const groups = new Map();
+    rest.forEach((pc) => { if (!holeOf(pc)) groups.set(pc, [pc]); });
+    rest.forEach((pc) => { if (holeOf(pc)) { const g = groups.get(rootOf(pc)); if (g) g.push(pc); } });
+    const minX = (g) => Math.min.apply(null, g[0].p.map((pt) => pt[0]));
+
+    return {
+      frame: [framePaths.join(" ")],
+      swan: [swanFill].concat(orphans.map((pc) => pc.d)).join(" "),
+      letters: Array.from(groups.values())
+        .sort((a, b) => minX(a) - minX(b))
+        .map((g) => g.map((pc) => pc.d).join(" ")),
+    };
+  }
+
+  // --- the outlines to trace -------------------------------------------------
+  // [{ d, len }] in draw order, one per CLOSED polygon in the art - the vertices
+  // the beam visits are the art's own, not a re-drawing of them.  The disc is
+  // { circle: [cx, cy, r], len }.  `len` is the perimeter of the points AS
+  // WRITTEN into `d` (they are rounded), so it is the path's length rather than
+  // an estimate, and the dash arithmetic in play() lands exactly.
+  //
+  // Art that is not plain polylines is not traced (an empty list) for the reason
+  // compound() gives: the fills still settle in, and nothing is guessed at.
+  function outlines() {
+    const L = logo();
+    const out = [];
+    if (!L) return out;
+    const C = compound();
+    const bars = [];
+    (L.trigrams || []).forEach((t) => (t.bars || []).forEach((d) => bars.push(d)));
+    const sources = ((L.frame && L.frame.paths) || []).concat(
+        (L.wordmark && L.wordmark.paths) || [], bars, [(L.swan && L.swan.fill) || ""]);
+    if (!sources.every(isPolyline)) return out;
+
+    const push = (pts) => {
+      const q = pts.map((p) => [r2(p[0]), r2(p[1])]);
+      let len = 0;
+      let d = "M" + q[0][0] + " " + q[0][1];
+      for (let i = 1; i <= q.length; i++) {
+        const a = q[i - 1], b = q[i % q.length];
+        len += Math.hypot(b[0] - a[0], b[1] - a[1]);
+        if (i < q.length) d += "L" + b[0] + " " + b[1];
+      }
+      out.push({ d: d + "Z", len: len });
+    };
+    C.frame.forEach((d) => polygons(d).forEach(push));        // outer octagon, then inner
+    bars.forEach((d) => polygons(d).forEach(push));           // clockwise from the top, inner to outer
+    if (L.disc) out.push({ circle: [L.disc.cx, L.disc.cy, L.disc.r], len: 2 * Math.PI * L.disc.r });
+    polygons(C.swan).forEach(push);                           // the silhouette, then its two counters
+    C.letters.forEach((d) => polygons(d).forEach(push));      // left to right, each letter's counter after it
+    return out;
+  }
+
   // --- the markup ----------------------------------------------------------
   // Draw order is the art's own: frame, ring, disc, swan, wordmark.
   function svgMarkup() {
     const L = logo();
     if (!L) return "";
+    const C = compound();
     const out = [];
     out.push('<svg viewBox="' + (L.viewBox || "0 0 200 200") + '" xmlns="http://www.w3.org/2000/svg"');
     out.push(' fill="currentColor" role="img"');
     out.push(' aria-label="Dharma Initiative Station 3, the Swan">');
 
+    // One element: the frame is a RING (outer octagon minus inner), and only a
+    // single path lets evenodd cut the window.
     out.push('<g class="beat-frame">');
-    for (const d of (L.frame && L.frame.paths) || []) {
-      out.push('<path class="part" fill-rule="evenodd" d="' + d + '"/>');
-    }
+    for (const d of C.frame) out.push('<path class="part" fill-rule="evenodd" d="' + d + '"/>');
     out.push('</g>');
 
     out.push('<g class="beat-ring">');
@@ -185,27 +296,30 @@
                '" r="' + L.disc.r + '"/>');
     }
 
-    // The swan: spines first (stroked, drawn), then the fill crossfaded over.
-    out.push('<g class="beat-swan">');
-    out.push('<g class="spines">');
-    for (const line of (L.swan && L.swan.centerlines) || []) {
-      for (const seg of spineSegments(line)) {
-        out.push('<path class="spine" data-len="' + r2(seg.len) +
-                 '" style="stroke-width:' + seg.width + '" d="' + seg.d + '"/>');
-      }
-    }
-    out.push('</g>');
     if (L.swan && L.swan.fill) {
-      out.push('<path class="swan-fill" fill-rule="evenodd" d="' + L.swan.fill + '"/>');
+      out.push('<path class="swan-fill" fill-rule="evenodd" d="' + C.swan + '"/>');
     }
-    out.push('</g>');
 
     // The wordmark is part of the mark - the Swan patch carries DHARMA across
-    // the centre - not a caption under it.
+    // the centre - not a caption under it.  One element per letter, so each
+    // counter is punched out of its own letter.
     out.push('<g class="beat-word">');
-    for (const d of (L.wordmark && L.wordmark.paths) || []) {
-      out.push('<path class="part" fill-rule="evenodd" d="' + d + '"/>');
-    }
+    for (const d of C.letters) out.push('<path class="part" fill-rule="evenodd" d="' + d + '"/>');
+    out.push('</g>');
+
+    // THE TRACE, over the fills: for every outline, the line the beam leaves
+    // behind it (.trace) and the bright spot that rides its head (.beam).  The
+    // lines come first and the beams after, so a beam is never under a line.
+    const T = outlines();
+    const shape = (cls, o) => o.circle
+        ? '<circle class="' + cls + '" data-len="' + o.len.toFixed(3) + '" cx="' + o.circle[0] +
+          '" cy="' + o.circle[1] + '" r="' + o.circle[2] + '" transform="rotate(-90 ' +
+          o.circle[0] + ' ' + o.circle[1] + ')"/>'      // so the beam starts at twelve o'clock
+        : '<path class="' + cls + '" data-len="' + o.len.toFixed(3) + '" d="' + o.d + '"/>';
+    out.push('<g class="traces">');
+    for (const o of T) out.push(shape("trace", o));
+    out.push('</g><g class="beams">');
+    for (const o of T) out.push(shape("beam", o));
     out.push('</g>');
 
     out.push('</svg>');
@@ -233,35 +347,45 @@
     // vmin, not px: the same overlay has to read on a 375x812 phone and on a
     // 1080p kiosk, and the logo is the only thing on screen in both.
     s.push("#" + OVERLAY_ID + " svg{width:clamp(168px,52vmin,440px);height:auto;display:block}");
-    // Hidden by default rather than by script: getTotalLength needs the element
-    // in the document, so without this the whole logo flashes complete for one
-    // frame before the reveal starts.  1000 is comfortably past the longest
-    // path here (the outer octagon, ~563).
-    // THE MARK IS FILLED, not stroked - it is artwork, not a diagram - so the
-    // parts arrive by revealing rather than by dasharray.  `currentColor` on
-    // the <svg> means one colour declaration drives the whole thing.
-    s.push("#" + OVERLAY_ID + " svg{color:var(--p-hot,#7CFF9B)}");
-    s.push("#" + OVERLAY_ID + " .part{opacity:0;transition:opacity 260ms linear}");
-    s.push("#" + OVERLAY_ID + " .part.on{opacity:1}");
-    // The frame and the ring sit a shade back from the swan, which is the
-    // hierarchy the artwork has: the mark is the swan, in a frame.
-    s.push("#" + OVERLAY_ID + " .beat-frame .part,#" + OVERLAY_ID +
-           " .beat-ring .part{color:var(--p-mid,var(--p,#43c25e))}");
-    s.push("#" + OVERLAY_ID + " .disc{color:var(--p-mid,var(--p,#43c25e));opacity:0;");
-    s.push("transform-box:fill-box;transform-origin:50% 50%;transform:scale(0.82);");
-    s.push("transition:opacity 380ms linear,transform 380ms ease-out}");
-    s.push("#" + OVERLAY_ID + " .disc.on{opacity:1;transform:scale(1)}");
+    // `currentColor` on the <svg> means one colour declaration drives the whole
+    // mark.  The glow is the phosphor: a tight halo and a wide one, on the <svg>
+    // element itself - CSS filter on an SVG child is not portable, on the
+    // replaced element it is.
+    s.push("#" + OVERLAY_ID + " svg{color:var(--p-hot,#7CFF9B);");
+    s.push("filter:drop-shadow(0 0 1.5px rgba(110,224,110,.8)) drop-shadow(0 0 6px rgba(110,224,110,.38))}");
 
-    // THE SWAN IS ACTUALLY DRAWN.  The art carries centreline spines with a
-    // width per vertex precisely so it can be: each segment is stroked with a
-    // dasharray, round-capped so the joins vanish, and then the whole spine
-    // group crossfades into the filled silhouette.  Drawn, then inked.
-    s.push("#" + OVERLAY_ID + " .spine{fill:none;stroke:currentColor;");
-    s.push("stroke-linecap:round;stroke-linejoin:round;opacity:0.92}");
-    s.push("#" + OVERLAY_ID + " .spines{transition:opacity " + D_MORPH + "ms linear}");
-    s.push("#" + OVERLAY_ID + ".inked .spines{opacity:0}");
-    s.push("#" + OVERLAY_ID + " .swan-fill{opacity:0;transition:opacity " + D_MORPH + "ms linear}");
-    s.push("#" + OVERLAY_ID + ".inked .swan-fill{opacity:1}");
+    // THE FILLS WAIT.  While the beam is drawing, nothing may fade in as a filled
+    // shape - that is "blobs blobbing in" - so every fill is invisible until the
+    // trace is done, and then they settle in behind the finished lines (class
+    // `settled`, set by play()).
+    s.push("#" + OVERLAY_ID + " .part,#" + OVERLAY_ID + " .swan-fill{opacity:0;");
+    s.push("transition:opacity " + SETTLE_MS + "ms linear}");
+    s.push("#" + OVERLAY_ID + ".settled .part,#" + OVERLAY_ID + ".settled .swan-fill{opacity:" + FILL_A + "}");
+    // The frame, the ring and the disc sit a shade back from the swan, which is
+    // the hierarchy the artwork has: the mark is the swan, in a frame.  The mid
+    // tone is #43c25e, not the page's --p: terminal.css defines no --p-mid, so a
+    // `var(--p-mid, var(--p, ...))` always resolved to --p (#6ee06e), and the
+    // pale swan sat on a disc of nearly its own brightness (1.4:1).
+    s.push("#" + OVERLAY_ID + " .beat-frame .part,#" + OVERLAY_ID +
+           " .beat-ring .part,#" + OVERLAY_ID + " .disc{color:var(--p-mid,#43c25e)}");
+
+    // THE LINES.  A traced outline is hot while the beam is on it and falls to
+    // the normal phosphor once the beam has gone (`cool`, added by play()); the
+    // weight is in the mark's own 200-unit space - ~3 px at the largest size,
+    // ~1.2 px on a phone, which is what a beam does when the screen is smaller.
+    // Both start invisible and are shown when the beam reaches them: an armed
+    // dash (gap = its whole length) still paints a round-capped dot at the
+    // start of its path, and a stray dot per outline, from the first frame, is
+    // what this stylesheet used to show.
+    s.push("#" + OVERLAY_ID + " .trace{fill:none;stroke:var(--p-hot,#b9ffb9);stroke-width:1.4;");
+    s.push("stroke-linecap:round;stroke-linejoin:round;opacity:0}");
+    s.push("#" + OVERLAY_ID + " .trace.on{opacity:1}");
+    s.push("#" + OVERLAY_ID + " .trace.cool{stroke:var(--p,#6ee06e)}");
+    // THE BEAM: a short bright dash riding the head of the line, brighter and
+    // wider than anything else on the screen.
+    s.push("#" + OVERLAY_ID + " .beam{fill:none;stroke:#f2fff3;stroke-width:3.4;");
+    s.push("stroke-linecap:round;opacity:0}");
+    s.push("#" + OVERLAY_ID + " .beam.on{opacity:1}");
     // The title is typed over a hidden full-length copy of itself, so the line
     // does not re-centre on every character.
     s.push("#" + OVERLAY_ID + " .cap{position:relative;display:inline-block;");
@@ -277,11 +401,12 @@
     s.push("background:var(--p-hot,#7CFF9B);animation:swanboot-blink 1.06s steps(1,end) infinite}");
     // Namespaced: terminal.css already owns a keyframe called "blink".
     s.push("@keyframes swanboot-blink{0%,49%{opacity:1}50%,100%{opacity:0}}");
-    // `still` is the reduced-motion and skip state: the finished mark, at once.
-    s.push("#" + OVERLAY_ID + ".still .part{opacity:1;transition:none}");
-    s.push("#" + OVERLAY_ID + ".still .disc{opacity:1;transform:none;transition:none}");
-    s.push("#" + OVERLAY_ID + ".still .spines{opacity:0;transition:none}");
-    s.push("#" + OVERLAY_ID + ".still .swan-fill{opacity:1;transition:none}");
+    // `still` is the reduced-motion and skip state: the finished mark, at once -
+    // every line traced and cooled, every fill settled, no beam.
+    s.push("#" + OVERLAY_ID + ".still .part,#" + OVERLAY_ID + ".still .swan-fill{opacity:" + FILL_A + ";");
+    s.push("transition:none}");
+    s.push("#" + OVERLAY_ID + ".still .trace{opacity:1;stroke:var(--p,#6ee06e);transition:none}");
+    s.push("#" + OVERLAY_ID + ".still .beam{opacity:0}");
     s.push("@media (prefers-reduced-motion:reduce){#" + OVERLAY_ID +
            "{transition:none}#" + OVERLAY_ID + " .cur{animation:none}}");
     s.push("</style>");
@@ -308,14 +433,20 @@
     if (!document.body) return Promise.resolve();
 
     const skipable = o.skipable !== false;
+    // `graceMs`: for this long after it starts, input is CONSUMED but does not
+    // skip.  A typed LOGO matches on its fourth letter, and the Enter that
+    // naturally follows is a keydown that would land on the skip handler and
+    // cut the very animation that was just asked for.
+    const grace = Math.max(0, parseInt(o.graceMs, 10) || 0);
     const reduced = !!(global.matchMedia &&
         global.matchMedia("(prefers-reduced-motion: reduce)").matches);
 
     running = new Promise((resolve) => {
+      const startedAt = Date.now();
       const root = document.createElement("div");
       root.id = OVERLAY_ID;
       root.setAttribute("aria-hidden", "true");   // decorative; the page below is the content
-      if (reduced) root.className = "still inked";
+      if (reduced) root.className = "still settled";
       root.innerHTML = styleTag() + svgMarkup() +
           '<div class="cap"><span class="ghost">' + TITLE +
           '</span><span class="typed"></span></div>' +
@@ -331,36 +462,44 @@
       const typed = root.querySelector(".typed");
       const prompt = root.querySelector(".prompt");
 
-      // A FILLED part: it arrives by opacity, on a timer.  The mark is artwork
-      // rather than a diagram, so most of it cannot be dash-drawn - only the
-      // swan's spines can, and they have their own helper below.
+      // Show a line or a beam when the beam reaches it (class `on`).  Until then
+      // it is invisible: see the stylesheet for why they must start that way.
       function reveal(el, delay) {
         if (!el) return;
         timers.push(setTimeout(() => { el.classList.add("on"); }, delay));
       }
 
-      // One spine segment, dash-drawn.  `data-len` is measured from the data
-      // rather than from getTotalLength, so a browser that will not measure an
-      // SVG path still draws it correctly - and these are straight segments, so
-      // the arithmetic is exact rather than an approximation.
-      function armSpine(el, delay, dur) {
-        const len = parseFloat(el.getAttribute("data-len")) || 8;
-        el.style.strokeDasharray = len + " " + len;
-        el.style.strokeDashoffset = String(len);
-        el.style.transition = "stroke-dashoffset " + dur + "ms ease-out " + delay + "ms";
-        drawn.push(el);
-      }
-
-      function arm(el, delay, dur) {
-        let len = 0;
-        try { len = el.getTotalLength ? el.getTotalLength() : 0; } catch (_) { len = 0; }
-        // A browser that will not measure still gets a reveal rather than a
-        // path stuck permanently in the dash gap.
-        if (!len) len = 400;
-        el.style.strokeDasharray = len + " " + len;
-        el.style.strokeDashoffset = String(len);
-        el.style.transition = "stroke-dashoffset " + dur + "ms ease-out " + delay + "ms";
-        drawn.push(el);
+      // Arm one outline: its line grows along the path and its beam rides the
+      // head of it, both at the same speed, both starting `delay` ms from now and
+      // taking `dur` ms.  `len` is the path's own length from the data - exact,
+      // because the paths are straight segments (and a circle) - so a browser
+      // that will not measure an SVG path still draws it correctly.
+      //
+      // THE LINE is a dash as long as the path, offset by its whole length and
+      // slid to zero.  The dash is rounded UP to a whole unit plus a margin: a
+      // dash shorter than the path, by even a thousandth, leaves the path's far
+      // end under the START of the pattern's next dash, which a round cap turns
+      // into a full-width dot.  The longer dash would reach the end of the path
+      // early, so the transition is stretched by the same ratio: the head
+      // arrives at `dur`.
+      //
+      // THE BEAM is a short dash with a gap longer than the whole path, so there
+      // is exactly one of it, slid from just before the start to just past the
+      // end: offset BEAM_LEN puts it in [-BEAM_LEN, 0], and BEAM_LEN - len puts
+      // it in [len - BEAM_LEN, len].  Its leading edge is the line's head.
+      //
+      // Both go into `drawn` as a [line, beam] pair, so play() can set the end
+      // states in one pass after a forced layout.
+      function armTrace(line, beam, len, delay, dur) {
+        const pad = Math.ceil(len) + 2;
+        line.style.strokeDasharray = pad + " " + pad;
+        line.style.strokeDashoffset = String(pad);
+        line.style.transition = "stroke-dashoffset " + Math.round(dur * pad / len) +
+            "ms linear " + delay + "ms,stroke " + COOL_MS + "ms linear";
+        beam.style.strokeDasharray = BEAM_LEN + " " + (len + 2 * BEAM_LEN + 4);
+        beam.style.strokeDashoffset = String(BEAM_LEN);
+        beam.style.transition = "stroke-dashoffset " + dur + "ms linear " + delay + "ms";
+        drawn.push(line, beam);
       }
 
       function snap() {
@@ -369,9 +508,10 @@
           drawn[i].style.strokeDasharray = "none";
           drawn[i].style.strokeDashoffset = "0";
         }
-        // `still` finishes every filled part and puts the swan straight to ink;
-        // one class rather than a walk over a few hundred elements.
-        root.classList.add("still", "inked");
+        // `still` finishes everything - every line traced and cooled, every fill
+        // settled, the beams gone - with one class rather than a walk over a few
+        // hundred elements; `settled` is the state the trace ends in.
+        root.classList.add("still", "settled");
         if (typed) typed.textContent = TITLE;
         if (prompt) prompt.classList.add("on");
       }
@@ -416,6 +556,7 @@
         // otherwise type the same key into the Numbers, and a tap meant to
         // dismiss the logo would land on whatever is under the overlay.
         if (ev && ev.stopPropagation) ev.stopPropagation();
+        if (Date.now() - startedAt < grace) return;   // eaten, not obeyed: see `grace`
         end(true);
       }
 
@@ -423,46 +564,56 @@
         snap();
         after(REDUCED_MS, () => end(false));
       } else {
-        // 1. the frame, outer then inner.
-        const frame = root.querySelectorAll(".beat-frame .part");
-        for (let i = 0; i < frame.length; i++) reveal(frame[i], T_FRAME + i * S_FRAME);
-
-        // 2. the ring, clockwise from the top, and INNER TO OUTER within each
-        // trigram - the order the bars are supplied in, and the order a hand
-        // draws them.  Staggered per trigram rather than per bar: thirty-six
-        // individually timed reveals reads as static, not as a ring arriving.
-        const tris = root.querySelectorAll(".tri");
-        for (let i = 0; i < tris.length; i++) {
-          const bars = tris[i].children;
-          for (let j = 0; j < bars.length; j++) {
-            reveal(bars[j], T_RING + i * S_RING + j * 26);
-          }
+        // THE TRACE: one beam, one speed, in the art's own order (see the
+        // constants).  Each outline's share of the time is its share of the
+        // total length, with a floor so the smallest still takes a visible moment.
+        const tr = root.querySelectorAll(".trace");
+        const bm = root.querySelectorAll(".beam");
+        const lens = [];
+        let total = 0;
+        for (let i = 0; i < tr.length; i++) {
+          // Never zero: a [line, beam] pair that is skipped would put every
+          // later pair one slot out, and the dash arithmetic divides by this.
+          const len = Math.max(parseFloat(tr[i].getAttribute("data-len")) || 0, 0.01);
+          lens.push(len);
+          total += len;
+        }
+        // Units per ms: what fits the whole mark into TRACE_MS once the blanked
+        // jumps between outlines are paid for.
+        const speed = total / Math.max(1, TRACE_MS - tr.length * JUMP_MS);
+        let at = T_TRACE;
+        for (let i = 0; i < tr.length; i++) {
+          const len = lens[i];
+          const dur = Math.max(MIN_SHAPE_MS, Math.round(len / speed));
+          armTrace(tr[i], bm[i], len, at, dur);
+          reveal(tr[i], at);
+          reveal(bm[i], at);
+          const line = tr[i], beam = bm[i];
+          after(at + dur, () => {
+            beam.classList.remove("on");             // the beam leaves this outline...
+            line.classList.add("cool");              // ...and the line it drew starts to cool
+            line.style.strokeDasharray = "none";     // and closes with a proper join where it began
+          });
+          at += dur + JUMP_MS;
         }
 
-        // 3. the disc.
-        const disc = root.querySelector(".disc");
-        if (disc) reveal(disc, T_DISC);
+        // The beam has gone; the phosphor fills settle in behind the lines, and
+        // the title types as they do.
+        const settleAt = at + 40;
+        after(settleAt, () => { root.classList.add("settled"); });
 
-        // 4. the swan, drawn along its spines and then inked.
-        const spines = root.querySelectorAll(".spine");
-        for (let i = 0; i < spines.length; i++) armSpine(spines[i], T_SWAN + i * S_SWAN, D_SWAN);
-        const inkAt = T_SWAN + spines.length * S_SWAN + D_SWAN;
-        after(inkAt, () => { if (root) root.classList.add("inked"); });
+        // Everything is armed; make the browser take the armed values as the
+        // starting style, then let the transitions run to their ends.  A forced
+        // layout does that.  The two requestAnimationFrame calls this replaced
+        // never fire in a hidden tab, so a logo opened in the background never
+        // started to draw at all.
+        void root.getBoundingClientRect();
+        for (let i = 0; i + 1 < drawn.length; i += 2) {        // [line, beam] pairs
+          drawn[i].style.strokeDashoffset = "0";
+          drawn[i + 1].style.strokeDashoffset = String(BEAM_LEN - lens[i / 2]);
+        }
 
-        // 5. the wordmark, last, as the ink settles.  It is part of the mark -
-        // the Swan patch carries DHARMA across the centre - so it belongs
-        // inside the frame rather than under it as a caption.
-        const word = root.querySelectorAll(".beat-word .part");
-        for (let i = 0; i < word.length; i++) reveal(word[i], T_WORD + i * 24);
-
-        // Two frames: one for the browser to take the armed values as the
-        // starting style, one to transition away from them.
-        requestAnimationFrame(() => requestAnimationFrame(() => {
-          if (finished) return;
-          for (let i = 0; i < drawn.length; i++) drawn[i].style.strokeDashoffset = "0";
-        }));
-
-        after(T_TEXT, () => {
+        after(settleAt, () => {
           let i = 0;
           // No key click under the type-in.  It would be the page's first sound
           // and nobody asked for it, and on load there has been no gesture, so
@@ -473,7 +624,7 @@
           }, D_CHAR);
         });
 
-        after(T_TEXT + TITLE.length * D_CHAR + 80, () => {
+        after(settleAt + TITLE.length * D_CHAR + 80, () => {
           prompt.classList.add("on");
           end(false);          // end() supplies the hold beat
         });
@@ -489,9 +640,49 @@
     return running;
   }
 
+  // TYPE LOGO - THE SWAN'S REPLAY COMMAND, IN THE FRIENDLY TERMINAL.
+  //
+  // The station screen handles this word itself while it is up (protocol.js);
+  // this sniffer is for the other content mode, so that selecting SWAN on the
+  // strip means the same thing in both - spec 10.2b: every station's command
+  // works in both content modes and in no other station.  It is the same shape
+  // as Pearl's LOG and the Flame's CHESS: a word typed at an idle prompt,
+  // scoped to its own station, off everywhere else.  Until it existed, LOGO
+  // typed in the friendly terminal did nothing at all (qa.js B-6 passed only
+  // in protocol mode).
+  const LOGO_WORD = "LOGO";
+  let logoTyped = "";
+  let logoAt = 0;
+
+  if (typeof document !== "undefined" && document.addEventListener) {
+    document.addEventListener("keydown", (e) => {
+      if (running || e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
+      const t = global.SwanTerm;
+      if (!t || !t.station || t.station() !== "swan") return;
+      const p = global.SwanProtocol;
+      if (p && p.isOn && p.isOn()) return;                 // the station screen owns the keys
+      const tag = (e.target && e.target.tagName) || "";
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      if (p && p.idle && !p.idle()) { logoTyped = ""; return; }   // a countdown owns the screen
+      if (!e.key || e.key.length !== 1) return;
+      const c = e.key.toUpperCase();
+      if (c < "A" || c > "Z") { logoTyped = ""; return; }
+      const now = Date.now();
+      if (now - logoAt > 2000) logoTyped = "";
+      logoAt = now;
+      const next = logoTyped + c;
+      logoTyped = LOGO_WORD.indexOf(next) === 0 ? next : (LOGO_WORD.indexOf(c) === 0 ? c : "");
+      if (logoTyped === LOGO_WORD) {
+        logoTyped = "";
+        play({ skipable: true, graceMs: 700 });
+      }
+    }, false);
+  }
+
   global.SwanBoot = {
     play,
     _logoSvg: svgMarkup,   // private: the logo without the performance
+    _style: styleTag,      // private: the overlay's stylesheet, for the suite
     // The ring, checked against docs/ref/swan_trigrams.md.  Public because the
     // JS suite asserts on it and because a wrong ring is invisible to everyone
     // who has not memorised the bagua: the four palindromic trigrams read the

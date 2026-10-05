@@ -151,26 +151,37 @@
     }
   }
 
-  function compose(lines) {
-    const now = new Date();
+  // `unavailable` is the reason the journal could not be read, or absent.  A
+  // journal that could not be READ is not an EMPTY one: this used to print "NO
+  // ENTRIES ON RECORD" and "0 ENTRIES" above the error, which says the display
+  // has no history when what is true is that this page could not fetch it.
+  function compose(lines, unavailable) {
     const out = [];
     out.push("=".repeat(58));
     out.push("  DHARMA INITIATIVE  ·  STATION 3  ·  THE SWAN");
     out.push("  INCIDENT AND OPERATIONS LOG — AUTOMATED TRANSCRIPT");
     out.push("=".repeat(58));
     out.push("");
-    if (!lines.length) {
-      out.push("  NO ENTRIES ON RECORD.");
+    if (unavailable) {
+      out.push("  JOURNAL UNAVAILABLE: " + unavailable);
+      out.push("");
+      return out.join("\n");
     }
+    // Entries are counted as PRINTED.  The footer counted raw lines, so a
+    // truncated final line (a power cut mid-append - which the contract says to
+    // drop) was dropped from the printout and still counted: 13 against 12.
+    const printed = [];
     for (const raw of lines) {
       let ev;
       try { ev = JSON.parse(raw); } catch (_) { continue; }
       if (!ev || typeof ev !== "object" || !ev.e) continue;
-      out.push(stamp(ev) + "   " + body(ev));
+      printed.push(stamp(ev) + "   " + body(ev));
     }
+    if (!printed.length) out.push("  NO ENTRIES ON RECORD.");
+    for (const l of printed) out.push(l);
     out.push("");
     out.push("-".repeat(58));
-    out.push("  END OF TRANSCRIPT  ·  " + lines.length + " ENTRIES");
+    out.push("  END OF TRANSCRIPT  ·  " + printed.length + " ENTRIES");
     out.push("");
     return out.join("\n");
   }
@@ -218,14 +229,18 @@
       parts.hint.textContent = "PRINTED";
       return;
     }
-    const per = Math.max(1, Math.round((CPS * CHUNK_MS) / 1000));
+    // By elapsed time, not by a fixed chunk per tick.  A chunk of
+    // round(220 * 16 / 1000) = 4 characters every 16 ms is 250 characters a
+    // second, not the 220 that spec 10.2b's cadence table names for this printer.
+    const startedAt = Date.now();
     typing = setInterval(() => {
       if (shown >= full.length) {
         stopTyping();
         parts.hint.textContent = "PRINTED";
         return;
       }
-      shown = Math.min(full.length, shown + per);
+      const due = Math.floor((Date.now() - startedAt) * CPS / 1000);
+      shown = Math.max(shown, Math.min(full.length, due));
       parts.text.textContent = full.slice(0, shown);
       // Paper feed: the platen always shows the line being struck.
       parts.text.parentNode.scrollTop = parts.text.parentNode.scrollHeight;
@@ -238,9 +253,12 @@
     typing = null;
   }
 
+  let openToken = 0;               // which open() a late reply belongs to
+
   function openLog() {
     if (open) return Promise.resolve();
     open = true;
+    const mine = ++openToken;
     build();
     el.classList.add("on");
     parts.text.textContent = "";
@@ -252,13 +270,18 @@
     return fetch("/api/journal")
       .then((r) => (r.ok ? r.text() : Promise.reject(new Error(String(r.status)))))
       .then((txt) => {
+        // Closed (or closed and reopened) while the journal was in flight: this
+        // reply is nobody's.  Without the check it started a print timer under a
+        // hidden printout, and a second open ran two at once.
+        if (mine !== openToken || !open) return;
         const lines = txt.split("\n").map((l) => l.trim()).filter((l) => l.length > 1);
         full = compose(lines);
         parts.hint.textContent = "PRINTING…";
         startTyping();
       })
       .catch((e) => {
-        full = compose([]) + "\n  JOURNAL UNAVAILABLE: " + e.message + "\n";
+        if (mine !== openToken || !open) return;
+        full = compose([], e.message);
         parts.text.textContent = full;
         shown = full.length;
         parts.hint.textContent = "NO LINK";
@@ -274,9 +297,21 @@
   // Skip to the end rather than closing, on any key while it prints: somebody
   // who wants the whole log should not have to wait for the animation, and
   // somebody who wants out presses CLOSE or ESC.
-  document.addEventListener("keydown", (e) => {
+  //
+  // THE PRINTOUT OWNS THE KEYBOARD WHILE IT IS UP, as chess and chat do: window
+  // capture, so this runs before protocol.js's document-capture handler and
+  // terminal.js's bubble handler, and it STOPS the event.  It used to listen on
+  // `document` and stop nothing, so ESC closed the log and then protocol.js saw
+  // isOpen() === false on the same keystroke and left protocol mode too, and
+  // `c` and Enter went on to the friendly terminal's CANCEL and EXECUTE.  Tab
+  // is let through so focus can still reach CLOSE; Enter and Space on a focused
+  // button still activate it, because only propagation is stopped.
+  window.addEventListener("keydown", (e) => {
     if (!open) return;
-    if (e.key === "Escape") { close(); return; }
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.key === "Tab") return;
+    e.stopImmediatePropagation();
+    if (e.key === "Escape") { e.preventDefault(); close(); return; }
     if (typing !== null) {
       stopTyping();
       shown = full.length;

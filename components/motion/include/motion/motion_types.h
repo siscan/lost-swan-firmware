@@ -19,7 +19,7 @@ struct MotionParams {
     int32_t flaps_s_normal = 15;
     int32_t flaps_s_alarm = 25;
     int32_t flaps_s_home = 8;
-    // 14000 usteps/s^2, DERIVED FROM THE DRUM, 2026-09-12.  Was 82000, which was
+    // 12000 usteps/s^2, DERIVED FROM THE DRUM, 2026-09-12.  Was 82000, which was
     // never a free constant: spec 5.2 set it as "0 -> 4121 usteps/s in ~50 ms",
     // and 4121 is 25 flaps/s x the RIM GEAR's 5440/33 usteps per flap.  Every
     // term in it belongs to a drive that no longer exists, and on the bench it

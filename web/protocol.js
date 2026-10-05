@@ -261,8 +261,16 @@
     const spin = (s.cfg && s.cfg.spin_s) || 0;
     if (since < hold) return SYSTEM_FAILURE;
     if (since < hold + spin) return SYSTEM_FAILURE + " · DISCHARGE";
-    return revealLanded ? SYSTEM_FAILURE + " · SEALED"
-                        : SYSTEM_FAILURE + " · SEALING";
+    // `reveal` is an EVENT; cd.reveal_landed is the same fact in the state
+    // document, which repeats.  Either one says it landed: a page opened after
+    // the finale (a reload, a kiosk that rebooted) never sees the event, and
+    // before this it said SEALING for ever.  (The document is read HERE rather
+    // than copied into revealLanded on each push: the phase handler resets that
+    // flag when the phase becomes "zero", and on a page that loads late the
+    // first document IS that transition, so a copy made earlier is undone.)
+    const landed = revealLanded || !!(s.cd && s.cd.reveal_landed === true);
+    return landed ? SYSTEM_FAILURE + " · SEALED"
+                  : SYSTEM_FAILURE + " · SEALING";
   }
 
   // ---------------------------------------------------------------------
@@ -313,6 +321,12 @@
       // Nothing at all. Not a hint, not a countdown, not a "wait" - the screen
       // the show put on the wall gave you a cursor and no acknowledgement, and
       // reproducing that is the whole point of this mode.
+      //
+      // That includes the output area.  Only the status and the entry were
+      // blanked, so the hint and the ACCEPTED printed while the screen was idle
+      // sat there for the whole run - two lines of text on a screen the comment
+      // above says has none (qa.js R3-4: "no hint").
+      clearOut();
       parts.status.textContent = "";
       parts.entry.textContent = "";
       return;
@@ -358,10 +372,18 @@
 
     if (!accepts()) { e.preventDefault(); return; }
 
+    // A held key repeats keydown, and a held digit filled the entry (terminal.js
+    // has always ignored repeats).  Backspace is the one key that is meant to
+    // auto-repeat.
+    if (e.repeat && k !== "Backspace") { e.preventDefault(); return; }
+
     const st = station();
 
-    // A pending Y/N owns the next key.
-    if (asking) {
+    // A pending Y/N owns the next key - unless that key carries on a word this
+    // screen answers to.  Pearl and Flame open ON a question, so the N in PANEL
+    // (the rule-2 keyboard escape) and in SWAN used to be eaten as "no" and the
+    // word never completed: PANEL typed on a fresh Pearl screen left PAEL.
+    if (asking && !extendsCommand(k)) {
       if (k === "y" || k === "Y") {
         const what = asking;
         asking = null;
@@ -428,8 +450,39 @@
       // second copy of the detector here.
       if (st === "swan" && window.SwanChat && window.SwanChat.feedKey) {
         window.SwanChat.feedKey(e);
+        // The mash that opened it was typed INTO the entry, because letters echo
+        // (rule 3).  Drop it, or the Numbers behind the chat read QWERTYUIOPAS.
+        if (window.SwanChat.isOpen && window.SwanChat.isOpen()) clearEntry();
       }
     }
+  }
+
+  // The words the current station answers to, upper case.  One list, used by
+  // extendsCommand(); runWord() below is the authority on what each one DOES.
+  function vocabulary() {
+    const v = ["PANEL"].concat(STATION_NAMES.map((n) => n.toUpperCase()));
+    const st = station();
+    if (st === "pearl") v.push("LOG", "PRINT");
+    else if (st === "flame") v.push("CHESS");
+    else v.push("LOGO");
+    return v;
+  }
+
+  // Would typing this key carry on a word the station answers to?  True when the
+  // tail of what has been typed, plus this key, is the start (two letters or
+  // more) of one of them.  A single letter extends nothing, so a bare N is still
+  // an answer.
+  function extendsCommand(key) {
+    if (!/^[a-zA-Z]$/.test(key)) return false;
+    const typed = word + key.toUpperCase();
+    const words = vocabulary();
+    for (let i = 0; i < words.length; i++) {
+      const top = Math.min(typed.length, words[i].length);
+      for (let n = 2; n <= top; n++) {
+        if (typed.slice(-n) === words[i].slice(0, n)) return true;
+      }
+    }
+    return false;
   }
 
   // Commands at an idle prompt. `implicit` means it matched as a suffix while
@@ -452,7 +505,8 @@
     if (st === "swan") {
       if (hit("LOGO")) {
         clearEntry();
-        if (window.SwanBoot) window.SwanBoot.play({ skipable: true });
+        // graceMs: the Enter that follows a typed LOGO must not skip it.
+        if (window.SwanBoot) window.SwanBoot.play({ skipable: true, graceMs: 700 });
         return;
       }
       // LOG and CHESS are deliberately NOT here. They belong to Pearl and
@@ -544,7 +598,11 @@
     document.addEventListener("keydown", (e) => {
       if (!on()) return;
       const tag = (e.target && e.target.tagName) || "";
-      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "BUTTON" || tag === "A") return;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      // A focused button or link keeps ENTER and SPACE (its own activation) and
+      // nothing else - see terminal.js bindKeyboard.  Standing aside for EVERY
+      // key left the screen deaf, ESC included, after any click on the strip.
+      if ((tag === "BUTTON" || tag === "A") && (e.key === "Enter" || e.key === " ")) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       // A station feature that has taken the screen owns its own keys.
       if (window.SwanChess && window.SwanChess.isOpen && window.SwanChess.isOpen()) return;

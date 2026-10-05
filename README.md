@@ -17,22 +17,27 @@ Target: ESP32-C5-DevKitC-1-N8R8 (XIAO ESP32-C5 map behind a board define).
 - **Spec v1.0** — all questions answered (spec §16); resolutions in the §17 decision log
 - Hardware: **DevKitC-1 V1.2 on the bench, chip revision v1.2** (production
   silicon; the §2.0 risk is closed). Console on **COM3**, USB-Serial/JTAG.
-  Flashed and booting; nothing wired yet, so all five columns hunt for ~30 s
-  and then latch FAULT with cause `no_hall`, by design.  `sim all` runs the
-  whole stack against modelled drums instead, which is how Phases 4 and 5 get
-  exercised on real silicon while the mechanics are weeks out
-- Code: **Phases 1–6 complete.**  Phase 3 the web UI, 3.5 the presentation
-  terminal, 4 MQTT + HA discovery + OTA with rollback + captive-portal
-  provisioning, 5 audio, 6 hardening (soak, watchdog coverage, power loss, the
-  fault-path matrix, the streaming ring parser, the log ring and the event
-  journal).  All of it is running on the board against **simulated drums** —
-  the mechanism does not exist yet, so every figure below is the firmware
-  working, not the machine.  `docs/BRINGUP.md` marks what still needs a motor.
+  Since 2026-09-12 ONE column has been a real motor on a real TMC2209 (the
+  stand-in bench build, `-DSWAN_BENCH=ON`, reported as
+  `0.4.0+<board>.bench<cap>`): the one-hour thermal soak, BRINGUP §28b gate 3,
+  passed — with **no Hall fitted**, so that run was open loop and proved
+  nothing about registration.  The next session is §28c, the first with a Hall.
+  Everything else runs against modelled drums (`sim all`), which is how the
+  network, audio and presentation phases get exercised on real silicon
+- Code: **Phases 1–7 delivered, and phase 8, the stand-in bench build, is the
+  current work.**  Phase 3 the web UI, 3.5 the presentation terminal, 4 MQTT +
+  HA discovery + OTA with rollback + captive-portal provisioning, 5 audio, 6
+  hardening (soak, watchdog coverage, power loss, the fault-path matrix, the
+  streaming ring parser, the log ring and the event journal), 7 the show-accuracy
+  presentation pack (the station screen, the Swan boot mark, the Pearl printout,
+  the Flame's chess).  Apart from the one bench column, every figure below is
+  the firmware working against **simulated drums**, not the machine.
+  `docs/BRINGUP.md` marks what still needs a motor.
 
 | gate | status |
 |---|---|
 | `set-target esp32c5` + `build` clean | passes — zero warnings, both board maps |
-| host tests green | 18/18 C++ suites plus the mirror widget's JS suite and a parse gate over every `web/*.js` (CI) |
+| host tests green | 20 C++ suites, eight node-only web suites (the mirror widget, the countdown port, the logo and its drawn markup, the toggle matrix, the station screen's behaviour, the controls-vs-firmware bounds, the chess engine's rules and its UI) and a parse gate over every `web/*.js` (CI) |
 | release image cannot carry the simulator | `-DSWAN_RELEASE=1` with `SWAN_SIM_AXES=ON` is a configure-time `FATAL_ERROR`; CI builds both halves |
 | Phase 3 adversarial review | 22 findings confirmed, all fixed — see spec §17 |
 | `git diff` empty after `tools/ringgen.py` | clean — header and ring.json both regenerate byte-identically |
@@ -71,8 +76,10 @@ nothing on any platform.
 
 `test/host/test_axis_sim.cpp` drives the **real** control tick
 (`components/motion/axis_control.cpp` — the same code the firmware links) and
-the **real** step-ISR helpers against a modeled drum (272000/33 µsteps per
-revolution, configurable Hall window width and per-edge jitter). It asserts:
+the **real** step-ISR helpers against a modeled drum (3200 µsteps per
+revolution - the 1:1 direct drive - with a configurable Hall window width and
+per-edge jitter; the old 272000/33 rim-gear ratio survives in two tests that
+keep the rounding path exercised). It asserts:
 homing from any start angle including inside the magnet window; the full 50×50
 `go` matrix with mid-move re-basing across the edge, judged by the *drum's*
 mechanical angle rather than the firmware's own bookkeeping; slip of 30 µsteps
@@ -606,7 +613,7 @@ maint on                 # suspend everything and release EN
 A **simulated** column runs the *real* control core, the real 1 kHz tick and
 the real 50 kHz step ISR — only the Hall input comes from a modelled drum
 (`motion/sim_drum.h`, division-free so it is safe in the IRAM ISR, using the
-real 272000/33 µsteps/rev so a homing pass takes the real ~7.5 s).  Modes,
+real 3200 µsteps/rev so a homing pass takes the real ~7.5 s).  Modes,
 frames, ring, countdown, scheduler and the whole web UI are the same code on
 the same path.
 
@@ -636,8 +643,9 @@ printed gear teeth.  Escalation: one column on a sensor signature parks and the
 rest keep running; a jam stops that column immediately; **two or more columns
 faulted, or any fault during the alarm spin, drops EN for all five**.
 
-**EN is ganged.**  One GPIO drives all five drivers and the pin map has exactly
-one spare non-strapping GPIO, so per-column de-energize does not exist.
+**EN is ganged.**  One GPIO drives all five drivers and the pin map has no spare
+non-strapping GPIO left to split it with (DIR took the last), so per-column
+de-energize does not exist.
 Parking or stopping a column stops it *stepping* — its coils still hold
 standstill current.  `en 0`, or maintenance mode, is the only true de-energize
 and it takes the whole display.
@@ -919,7 +927,7 @@ build_host\gen_traces.exe data\ring.json web\sim\traces.js
 | I2S BCLK / LRCLK / DIN | 7, 25, 26 |
 | BUTTON | 28 (onboard BOOT, external in parallel) |
 | LED | 27 (WS2812) |
-| DIR | **tied at the drivers — no GPIO** |
+| DIR (ganged, all five drivers) | 24 — the last spare non-strapping pin; `motion.dir_invert` picks the level that turns the drum the descending way. **The XIAO has no pin for it** (`PIN_DIR = -1`): there it is tied at the drivers |
 
 Only I2S sits on strapping pins (2, 3, 7, 25, 26, 27, 28), and only because the
 amp inputs are high-Z. `components/swan_hal/include/hal/pins.h` `static_assert`s

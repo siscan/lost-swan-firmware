@@ -278,7 +278,10 @@ arrives. That is the correct behaviour, not a bug.
 ### 1. `pins`
 
 - [ ] Map matches the table in `README.md`.
-- [ ] `usteps/flap` prints `5440/33 = 164.8485`.
+- [ ] `usteps/flap` prints `64/1 = 64.0000` - the 1:1 direct drive, 3200 µsteps
+      a revolution, both exact.  (This said `5440/33 = 164.8485`, the rim gear's
+      figure; a drum that prints that is firmware built for a machine that was
+      never built.)
 
 ### 2. `hall` — polarity and active level
 
@@ -319,17 +322,24 @@ still correct on the XIAO — `PIN_DIR = -1` there.)*
 
 ### 4. `home 0`, then `revs 0 10` — which machine is this?
 
-This is the step that settles the 85T/33T vs 68T/26T conflict between
-`FIRMWARE_HANDOFF.md` §1 and `MECHANICAL_README.md:67`.
+This step says which machine was actually built.  Since 2026-09-06 the answer
+should be **3200**, and the 85T/33T vs 68T/26T conflict it was written to settle
+(`FIRMWARE_HANDOFF.md` §1 against `MECHANICAL_README.md:67`) is moot: the rim
+gear is dead.  The same table is in spec §14.1 step 4.
 
 | hall_to_hall | means |
 |---|---|
-| ~8242–8243 | 85/33 at 1/16 — the spec is right, nothing to change |
-| ~8369 | 68/26 drum — change the four constants at the top of `components/ring/include/ring/geometry.h`, rebuild, and correct spec §3 |
+| **3200, exactly, no spread** | the 1:1 direct drive - what is built; nothing to change.  Any spread at all is a finding: a slipping coupling, a marginal magnet, or a microstep setting that is not 1/16 |
+| ~8242–8243 | an 85T/33T rim-gear drum (the original design, dead since 2026-09-06).  **This firmware will FAULT on it** - a wrong-machine result, not a tolerance to widen |
+| ~7555 or ~8369 | an 85T/36T drum (designed, never built) or 68T/26T (stale prose) - the same |
 | anything else | microstep setting is not 1/16, or the motor is not 200 steps/rev |
 
-An 8369 drum shows up as a Major resync warning every revolution rather than a
-fault, so the measurement still completes.
+A rim-gear drum against this firmware is out by thousands of µsteps a
+revolution, so it runs past the missed-edge window and FAULTS instead of
+resyncing every revolution and carrying on: firmware built for the wrong
+machine now stops (spec §17, 2026-09-06).  It used to say an 8369 drum "shows
+up as a Major resync warning ... so the measurement still completes"; that was
+true of the old tolerances and is not true of this geometry.
 
 - Result: hall_to_hall = ______  → gearing = ______
 
@@ -356,7 +366,10 @@ ceiling is measured here, not assumed.
 
 `revs 0 20`, read the reported spread.
 
-- [ ] Set `motion.hall_tol` from it. The default 41 (¼ flap) is a placeholder.
+- [ ] Set `motion.hall_tol` from it. The default is **16** (a quarter of the
+      64-µstep flap), DERIVED rather than measured; §28c step 3c is the real
+      measurement, and `revs` proposes the number.  (This said 41, a quarter of
+      the rim gear's flap, which the firmware now discards at boot.)
 
 - Result: spread = ______ → hall_tol = ______
 
@@ -443,9 +456,10 @@ centre column shows the WiFi glyph after 15 s.  That is spec §7.1, not a fault.
       inverted colour scheme.
 - [ ] The connection chip reads **connected**; pull the AP and it goes red and
       reconnects on its own.
-- [ ] Diagnostics shows `h2h` in the 8242–8243 band for every column.  A
-      consistently different value means the gear teeth or the microstep
-      setting differ from spec §3 — the drum wins, the spec gets corrected.
+- [ ] Diagnostics shows `h2h` = **3200** for every column, with no spread (the
+      1:1 direct drive, spec §3).  A different value means the microstep
+      setting or the coupling differs from the spec — the drum wins, the spec
+      gets corrected.  (8242–8243 was the rim gear's band.)
 
 ### 11. Control paths agree
 
@@ -591,7 +605,7 @@ get exercised on real silicon, real WiFi, real LittleFS, real NVS and a real
       `stats` shows the mode per column.  **Four surfaces, all of them.**
 - [ ] `home all` → all five find their edge.  Time one: a pass is ~7.5 s at
       homing speed and a simulated drum must take the same ~7.5 s, because the
-      model uses the real 272000/33 µsteps/rev.
+      model uses the real 3200 µsteps/rev.
 - [ ] Watch the clock run for a few minutes on the web UI.  Every flip, every
       land-on-tick, every `go` event is the real scheduler against the real
       control core — only the Hall input is modelled.
@@ -630,9 +644,9 @@ your hands in the mechanism:
       drawing TMC2209 **standstill current** — stopping a column stops it
       *stepping*, not holding.
 - [ ] `en 0` → now it is actually released, **and so are the other four**, because
-      EN is one GPIO across all five drivers and the pin map has exactly one
-      spare non-strapping GPIO (24).  Per-column de-energize does not exist and
-      is not coming.
+      EN is one GPIO across all five drivers and the pin map has no spare
+      non-strapping GPIO to split it with (24 was the last, and DIR took it).
+      Per-column de-energize does not exist and is not coming.
 - [ ] Therefore: before touching a drum, `maint on` (which releases EN), not
       "wait for it to stop moving".
 
@@ -654,9 +668,9 @@ Three numbers are guesses until a real column exists:
 
 | constant | current value | what it assumes |
 |---|---|---|
-| `motion.hall_tol` | 41 µsteps (¼ flap) | edge repeatability, never measured (step 6) |
-| slip threshold | > 1 flap (165 µsteps) from expected | that a real card catching moves the edge by more than a flap |
-| `edge_overdue` (jam) | last edge + 1.5 revolutions | that a stopped drum is distinguishable from a slip within ~3.1 s at 15 flaps/s |
+| `motion.hall_tol` | 16 µsteps (¼ of a 64-µstep flap), derived | edge repeatability, never measured (§28c step 3c) |
+| slip threshold | > 1 flap (64 µsteps) from expected | that a real card catching moves the edge by more than a flap |
+| `edge_overdue` (jam) | last edge + 1.5 revolutions | that a stopped drum is distinguishable from a slip within ~1.7 s at 15 flaps/s (~3.1 s at the 8 flaps/s homing speed) |
 
 **The first real column must be provoked deliberately**, and the classifications
 recorded. Do these with the drum loaded, at `flaps_s_normal`, with `stats` open:
@@ -1208,8 +1222,9 @@ board at 375x812 and 1920x1080, with no horizontal overflow at either.
   retried: the drum stopped while the motor kept stepping, and another pass
   drives it straight back into whatever stopped it.  Clear the obstruction
   first.
-- **EN is ganged across all five drivers** and there is one spare
-  non-strapping GPIO, so per-column de-energize is impossible.  Parking or
+- **EN is ganged across all five drivers** and there is no spare
+  non-strapping GPIO left (DIR took the last), so per-column de-energize is
+  impossible.  Parking or
   stopping a column stops it *stepping*; its coils still hold standstill
   current.  `en 0` (or `maint on`) is the only true de-energize and it takes
   the whole display with it.

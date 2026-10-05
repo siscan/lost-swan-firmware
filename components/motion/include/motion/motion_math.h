@@ -116,10 +116,11 @@ constexpr EdgeVerdict classify_edge_error(int64_t err, const EdgeTolerances& tol
 // wide enough that a slip resolves as a LATE EDGE (handled by edge
 // verification, classified Slip, retried) and only a genuine absence trips it.
 //
-// The price is that a real jam is noticed up to half a revolution later:
-// ~3.1 s at 15 flaps/s.  That is much cheaper than the alternative, which was
-// to retry the missed edge and spend a full 7.5 s homing pass driving the
-// motor into whatever is resisting.
+// The price is that a real jam is noticed up to half a revolution later - 25
+// flaps: ~1.7 s at the 15 flaps/s normal speed, ~3.1 s at the 8 flaps/s homing
+// speed.  (This said "~3.1 s at 15 flaps/s"; 3.1 s is the homing figure.)  That
+// is much cheaper than the alternative, which was to retry the missed edge and
+// spend a full 7.5 s homing pass driving the motor into whatever is resisting.
 constexpr bool edge_overdue(int64_t pos_abs, int64_t hall_abs) {
     return (pos_abs - hall_abs) >
            USTEPS_PER_SPOOL_REV_NOMINAL + USTEPS_PER_SPOOL_REV_NOMINAL / 2;
@@ -133,7 +134,7 @@ constexpr bool edge_overdue(int64_t pos_abs, int64_t hall_abs) {
 
 struct RampParams {
     int32_t v_max;    // usteps/s
-    int32_t accel;    // usteps/s^2  (motion.accel, default 82000)
+    int32_t accel;    // usteps/s^2  (motion.accel; the default is MotionParams::accel)
     int32_t tick_hz;  // CONTROL_HZ
 };
 
