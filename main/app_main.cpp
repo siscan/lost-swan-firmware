@@ -308,6 +308,26 @@ extern "C" void app_main() {
                       "any setting. ***",
                  static_cast<int>(swan::motion::SHOW_SPIN_FLAPS_S));
     }
+    // THE UNLIMITED FLAVOUR SAYS SO, in words, on the boot log: the version tag
+    // carries `.unlimited`, but a suffix is easy to read past and this is the
+    // image whose dispatcher accepts what every other one refuses.  It states the
+    // three things a person must not assume: what is lifted, what is NOT
+    // protected here because nothing has ever measured it, and that none of it
+    // survives a reboot.
+    if (swan::motion::UNLIMITED_BUILD) {
+        ESP_LOGW(TAG, "*** UNLIMITED IMAGE: speed up to %d flaps/s, accel up to %d, hall_tol "
+                      "up to %d are ACCEPTED live (a normal image: %d, %d, %d). ***",
+                 static_cast<int>(swan::motion::FLAPS_S_MAX),
+                 static_cast<int>(swan::ACCEL_MAX), static_cast<int>(swan::HALL_TOL_MAX),
+                 static_cast<int>(swan::motion::FLAPS_S_MAX_NORMAL),
+                 static_cast<int>(swan::motion::ACCEL_MAX_NORMAL),
+                 static_cast<int>(swan::motion::HALL_TOL_MAX_NORMAL));
+        ESP_LOGW(TAG, "*** Nothing has measured PSU regen, step-ISR load or card lift above "
+                      "25 flaps/s on this rig. Jam stop, EN drop and the ramp-power guard "
+                      "still apply. ***");
+        ESP_LOGW(TAG, "*** LIVE ONLY: none of it is saved, and a reboot returns to the normal "
+                      "ranges. ***");
+    }
 
     // The OTA confirm watcher goes FIRST, before anything that could hang.
     //

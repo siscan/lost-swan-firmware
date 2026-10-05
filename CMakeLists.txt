@@ -42,6 +42,13 @@ option(SWAN_BENCH "Stand-in bench build: hard speed cap, no show spin" OFF)
 # pitch-80 module has no shroud and its cards lift somewhere above ~100 flaps/s,
 # so that session builds at 20.
 set(SWAN_BENCH_CAP "" CACHE STRING "Bench speed cap in flaps/s (<=50); empty = 50")
+# The UNLIMITED flavour (spec 17, 2026-10-04; components/motion/include/motion/
+# limits_policy.h).  It widens the dispatcher's LIVE ranges - speed to the 400
+# flaps/s show spin, accel, hall_tol to one flap - and nothing else: jam stop, EN
+# drop, the refusals and the ramp-power guard all stay, and none of the extra
+# range is ever saved.  A build flavour and NEVER a runtime switch, for the
+# bench cap's own reason: a value anyone can raise from a page is not a contract.
+option(SWAN_UNLIMITED "Unlimited flavour: lift the dispatcher's speed/accel/hall_tol ranges (live only)" OFF)
 
 if(SWAN_RELEASE AND SWAN_SIM_AXES)
     message(FATAL_ERROR
@@ -56,6 +63,23 @@ if(SWAN_BENCH AND SWAN_RELEASE)
     message(FATAL_ERROR
         "SWAN_BENCH=1 with SWAN_RELEASE=1: a capped bench image is not a "
         "release image. Pick one.")
+endif()
+
+# The unlimited flavour is refused with BOTH of the others, here by name and again
+# by a static_assert in limits_policy.h so a build that bypasses CMake is stopped
+# too.  A bench image IS a cap, and an image that is capped and uncapped at once
+# would answer a speed with whichever rule ran first; a release image must not be
+# able to exceed the mechanism.  The two messages below are what the CI gate
+# proofs and test/host's negative-compile tests look for - change them together.
+if(SWAN_UNLIMITED AND SWAN_BENCH)
+    message(FATAL_ERROR
+        "SWAN_UNLIMITED with SWAN_BENCH: a capped bench image and an image "
+        "that lifts the ranges are opposites. Pick one.")
+endif()
+if(SWAN_UNLIMITED AND SWAN_RELEASE)
+    message(FATAL_ERROR
+        "SWAN_UNLIMITED with SWAN_RELEASE: a release image must not lift "
+        "the ranges the dispatcher enforces.")
 endif()
 
 # The cap is checked HERE as well as by the static_assert in bench_policy.h,
@@ -88,10 +112,13 @@ idf_build_set_property(COMPILE_DEFINITIONS
                        "SWAN_SIM_AXES=$<BOOL:${SWAN_SIM_AXES}>" APPEND)
 idf_build_set_property(COMPILE_DEFINITIONS
                        "SWAN_BENCH=$<BOOL:${SWAN_BENCH}>" APPEND)
+idf_build_set_property(COMPILE_DEFINITIONS
+                       "SWAN_UNLIMITED=$<BOOL:${SWAN_UNLIMITED}>" APPEND)
 if(SWAN_RELEASE)
     idf_build_set_property(COMPILE_DEFINITIONS "SWAN_RELEASE=1" APPEND)
 endif()
-message(STATUS "LOST Swan simulated axes: ${SWAN_SIM_AXES}  release: ${SWAN_RELEASE}")
+message(STATUS "LOST Swan simulated axes: ${SWAN_SIM_AXES}  release: ${SWAN_RELEASE}  "
+               "unlimited: ${SWAN_UNLIMITED}")
 
 # Build identity, carried in esp_app_desc_t and reported as sys.version.
 #
@@ -124,6 +151,15 @@ elseif(SWAN_SIM_AXES)
     set(SWAN_FLAVOUR "sim")
 else()
     set(SWAN_FLAVOUR "nosim")
+endif()
+# A MODIFIER, not a flavour: `0.4.0+devkitc1.sim.unlimited`.  It is appended to
+# whichever base flavour was chosen above (never bench and never rel - both are
+# refused at the top of this file) so a version string still says whether the
+# simulated axes are compiled in, and the OTA gate and the journal's boot line can
+# both read it.  An unlimited image is a different SAFETY CONTRACT and
+# esp_app_desc_t has nowhere else to record that - the bench cap's argument again.
+if(SWAN_UNLIMITED)
+    set(SWAN_FLAVOUR "${SWAN_FLAVOUR}.unlimited")
 endif()
 set(PROJECT_VER "${SWAN_VERSION}+${SWAN_BOARD}.${SWAN_FLAVOUR}")
 message(STATUS "LOST Swan version: ${PROJECT_VER}")
