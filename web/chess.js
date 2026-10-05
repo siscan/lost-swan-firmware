@@ -6,8 +6,8 @@
 // 77 runs a screen-only incursion effect and hands off to the boot animation.
 //
 // SCREEN-SIDE ONLY.  No dispatcher command, no fetch, nothing that reaches the
-// flaps - the whole module is a picture on a CRT.  It is behind
-// SwanTerm.prefs.egg, which defaults off, and it draws nothing until opened.
+// flaps - the whole module is a picture on a CRT.  It is the Flame station's
+// and reachable only from there, and it draws nothing until opened.
 //
 // Where the care went: the MOVE GENERATOR, not the search.  Checkmate
 // detection is load-bearing - it is the only thing that opens the menu - and a
@@ -28,7 +28,7 @@
   // 64-entry array, index 0 = a8 through index 63 = h1, so the array reads in
   // the order the board is drawn and a FEN loads with no transform.  Pieces are
   // FEN characters: uppercase white, lowercase black, "" empty.  That is also
-  // what gets rendered - see renderBoard for why letters and not figurines.
+  // what gets rendered: letters (uppercase white, lowercase black), not figurines.
   // =========================================================================
   const WHITE_PIECES = "PNBRQK";
   const START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
@@ -593,6 +593,7 @@
   let game = null;        // { st, sel, legal, last, over, hist, log, promo }
   let entry = "";
   let timers = [];
+  let outToken = 0;       // bumped by every menu print; an older print stops appending
 
   function reduced() {
     return !!(root.matchMedia && root.matchMedia("(prefers-reduced-motion: reduce)").matches);
@@ -771,15 +772,32 @@
   // -------------------------------------------------------------------------
   // Game flow.  The player is white and moves first; the engine is black.
   // -------------------------------------------------------------------------
+  // Everything a finished or half-finished game can leave pending: the engine's
+  // think (280 ms), the menu's lead-in after mate (1.4 s), a code's auto-run
+  // (220 ms), the typewriter, the static and the flash.  NEW GAME and TAKE BACK
+  // must not inherit any of it.  Before this existed, NEW GAME during the think
+  // let the stale engineMove play a white move on the fresh board (status
+  // "YOUR MOVE", every click ignored), and either button inside the 1.4 s after
+  // mating the engine opened the menu over a live game.
+  function resetTransient() {
+    clearTimers();
+    outToken++;
+    menuOn = false;
+    entry = "";
+    el.menu.classList.remove("on");
+    el.out.textContent = "";
+    el.fx.classList.remove("on");
+    el.flash.style.display = "none";
+    el.promo.classList.remove("on");
+    el.promo.textContent = "";
+  }
+
   function newGame() {
+    resetTransient();
     game = {
       st: fromFen(START_FEN), sel: -1, dests: [], last: null,
       over: false, hist: [], log: [], promo: null, thinking: false
     };
-    menuOn = false;
-    el.menu.classList.remove("on");
-    el.out.textContent = "";
-    entry = "";
     render();
     setStatus("YOUR MOVE - WHITE", "");
   }
@@ -886,6 +904,7 @@
       b.textContent = cands[i].promo.toUpperCase();
       b.dataset.k = String(i);
       b.onclick = function (ev) {
+        if (!game || !game.promo) return;   // a leftover button from a game that has ended
         const m = game.promo[parseInt(ev.currentTarget.dataset.k, 10)];
         game.promo = null;
         el.promo.classList.remove("on");
@@ -914,6 +933,7 @@
   }
 
   function engineMove() {
+    if (!game || !game.thinking) return;   // a think that NEW GAME or close already superseded
     game.thinking = false;
     const m = pickMove(game.st);
     if (!m) { finished(); return; }
@@ -950,6 +970,7 @@
 
   function undo() {
     if (!game || game.thinking || !game.hist.length) return;
+    resetTransient();                      // see resetTransient: the menu's lead-in is a timer too
     const h = game.hist.pop();
     game.st = h.st;
     game.log = h.log;
@@ -985,7 +1006,15 @@
     entry += k;
     click("key");
     drawEntry();
-    if (entry.length === 2) later(function () { runCode(entry); }, 220);
+    // The code is captured NOW and run only if the entry is still exactly that.
+    // Reading `entry` when the timer fired meant Backspace inside the 220 ms ran
+    // the one-digit remainder (so 77 never ran), and Enter inside it ran the
+    // code immediately and then, 220 ms later, ran an empty one that overwrote
+    // the first line of the output with "COMMAND  NOT RECOGNISED".
+    if (entry.length === 2) {
+      const code = entry;
+      later(function () { if (entry === code) runCode(code); }, 220);
+    }
   }
 
   function runCode(code) {
@@ -1004,18 +1033,24 @@
 
   // One line at a time, because a terminal that answers instantly is a web page.
   function typeOut(lines, done) {
+    // A newer print supersedes this one: two chains appending to the same
+    // element interleave their lines, and the older one's `done` (code 77's
+    // handoff) must not fire for a print the player has already replaced.
+    const mine = ++outToken;
+    const finish = function () { if (mine === outToken && done) done(); };
     el.out.textContent = "";
     if (reduced()) {
       el.out.textContent = lines.join("\n");
-      if (done) later(done, 0);
+      if (done) later(finish, 0);
       return;
     }
     let i = 0;
     const step = function () {
+      if (mine !== outToken) return;
       el.out.textContent += (i ? "\n" : "") + lines[i];
       i++;
       if (i < lines.length) later(step, 420);
-      else if (done) later(done, 700);
+      else if (done) later(finish, 700);
     };
     step();
   }
