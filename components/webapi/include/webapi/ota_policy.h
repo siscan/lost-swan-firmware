@@ -48,7 +48,13 @@ struct ImageInfo {
     // Parsed out of the version tag, which is where the board map and the
     // sim/release flavour live (nothing in esp_app_desc_t distinguishes them).
     std::string board;         // "devkitc1" | "xiao" | "" if untagged
-    std::string flavour;       // "sim" | "rel" | "nosim" | ""
+    // "sim" | "rel" | "nosim" | "bench<cap>" | "".  The FIRST segment after the
+    // board only: a trailing ".unlimited" is its own fact, below, so every
+    // comparison that was written against the base flavour still means what it did.
+    std::string flavour;
+    // The image lifts the dispatcher's ranges (motion/limits_policy.h).  Parsed from
+    // a trailing ".unlimited" segment of the flavour, e.g. "0.4.0+devkitc1.sim.unlimited".
+    bool unlimited = false;
 };
 
 // Read what the first OTA_HEADER_BYTES of an image say about itself.
@@ -61,6 +67,7 @@ enum class OtaVerdict : uint8_t {
     WrongProject,    // a different firmware entirely
     WrongBoard,      // the other pin map: passes every check IDF makes
     LosesSimulation, // a release image onto a board saved all-simulated
+    GainsUnlimited,  // an image that lifts the ranges onto one that does not
     Moving,          // a drum is turning
     PendingVerify,   // the running image has not confirmed itself yet
     NoRoom,
@@ -73,6 +80,9 @@ struct OtaPrecheck {
     ImageInfo image;
     std::string running_project;
     std::string running_board;
+    // The RUNNING image's own compile-time flavour (motion::UNLIMITED_BUILD), not
+    // a parse of its tag: the running firmware knows what it is.
+    bool running_unlimited = false;
     bool all_axes_idle = true;
     bool maintenance = false;
     bool running_pending_verify = false;

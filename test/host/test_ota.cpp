@@ -185,12 +185,78 @@ void test_gate_refuses_the_rest() {
     // Every verdict has a sentence a human can act on.
     for (OtaVerdict v : {OtaVerdict::Allow, OtaVerdict::BadImage, OtaVerdict::WrongChip,
                          OtaVerdict::WrongProject, OtaVerdict::WrongBoard,
-                         OtaVerdict::LosesSimulation, OtaVerdict::Moving,
-                         OtaVerdict::PendingVerify, OtaVerdict::NoRoom}) {
+                         OtaVerdict::LosesSimulation, OtaVerdict::GainsUnlimited,
+                         OtaVerdict::Moving, OtaVerdict::PendingVerify, OtaVerdict::NoRoom}) {
         CHECK(std::strlen(ota_verdict_name(v)) > 0);
         // Every REFUSAL says what to do about it; "allow" needs no sentence.
         if (v != OtaVerdict::Allow) CHECK(std::strlen(ota_verdict_reason(v)) > 20);
     }
+}
+
+// THE UNLIMITED FLAVOUR IS A DIFFERENT SAFETY CONTRACT (motion/limits_policy.h),
+// and the version tag is the only place that says so, exactly as it is for the
+// bench cap.  The wrong file on the Update page must not put one on the wall.
+void test_an_unlimited_image_is_not_installed_by_accident() {
+    const auto image = [](const char* version) {
+        return sniff_image(make_image(OTA_CHIP_ID_ESP32C5, "lost_swan_firmware", version).data(),
+                           OTA_HEADER_BYTES);
+    };
+
+    // The tag parses as a base flavour PLUS a modifier, so every comparison that
+    // was written against the base flavour still means what it did.
+    const ImageInfo u = image("0.4.0+devkitc1.sim.unlimited");
+    CHECK_STREQ(u.board.c_str(), "devkitc1");
+    CHECK_STREQ(u.flavour.c_str(), "sim");
+    CHECK(u.unlimited);
+    const ImageInfo nu = image("0.4.0+xiao.nosim.unlimited");
+    CHECK_STREQ(nu.board.c_str(), "xiao");
+    CHECK_STREQ(nu.flavour.c_str(), "nosim");
+    CHECK(nu.unlimited);
+    // ... and the tags that exist today are untouched.
+    for (const char* v : {"0.4.0+devkitc1.sim", "0.4.0+devkitc1.rel", "0.4.0+xiao.nosim",
+                          "0.4.0+devkitc1.bench20", "0.4.0+devkitc1"}) {
+        CHECK(!image(v).unlimited);
+    }
+    CHECK_STREQ(image("0.4.0+devkitc1.bench20").flavour.c_str(), "bench20");
+    // Whole segments only: a word that merely contains it is not the flag.
+    CHECK(!image("0.4.0+devkitc1.sim.notunlimited").unlimited);
+    CHECK(!image("0.4.0+devkitc1.sim.unlimited2").unlimited);
+    CHECK(!image("0.4.0+devkitc1.unlimited").unlimited);   // that is the FLAVOUR slot, not a modifier
+    CHECK(image("0.4.0+devkitc1.sim.x.unlimited").unlimited);
+    // Rubbish after the dots must not crash the parser.
+    for (const char* v : {"0+a.", "0+a..", "0+a.b.", "0+.", "0+..unlimited"}) {
+        (void)image(v);
+    }
+
+    // The gate.  A board running a NORMAL image refuses it unless forced...
+    OtaPrecheck p = base_check();
+    p.image = u;
+    CHECK(ota_gate(p) == OtaVerdict::GainsUnlimited);
+    CHECK(std::string(ota_verdict_name(OtaVerdict::GainsUnlimited)) == "gains_unlimited");
+    CHECK(std::string(ota_verdict_reason(OtaVerdict::GainsUnlimited)).find("force") !=
+          std::string::npos);
+    p.force = true;
+    CHECK(ota_gate(p) == OtaVerdict::Allow);        // insisted on, and allowed
+    // ... a board ALREADY running an unlimited image is not asked again ...
+    p.force = false;
+    p.running_unlimited = true;
+    CHECK(ota_gate(p) == OtaVerdict::Allow);
+    // ... and the safe direction is never refused: a normal image onto an unlimited
+    // board.  NVS holds only normal-range values in every flavour, so there is
+    // nothing the new image cannot honour.
+    OtaPrecheck q = base_check();
+    q.running_unlimited = true;
+    CHECK(ota_gate(q) == OtaVerdict::Allow);
+
+    // It is a SOFT refusal, like the other two tag-based ones: a moving drum
+    // still outranks it, and it does not hide the board check.
+    OtaPrecheck m = base_check();
+    m.image = u;
+    m.all_axes_idle = false;
+    CHECK(ota_gate(m) == OtaVerdict::Moving);
+    OtaPrecheck w = base_check();
+    w.image = image("0.4.0+xiao.sim.unlimited");
+    CHECK(ota_gate(w) == OtaVerdict::WrongBoard);   // the board refusal runs first
 }
 
 // --------------------------------------------------------------------------
@@ -287,6 +353,7 @@ void run_tests() {
     test_gate_allows_the_ordinary_case();
     test_gate_refuses_what_idf_would_accept();
     test_gate_refuses_the_rest();
+    test_an_unlimited_image_is_not_installed_by_accident();
     test_boot_criterion();
     test_the_three_brick_loops_are_gone();
 }
