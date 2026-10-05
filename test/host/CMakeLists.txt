@@ -70,7 +70,7 @@ else()
 endif()
 
 # test name -> optional data-file argument (argv[1], g_argv1 in check.h)
-set(SWAN_TESTS test_ring test_motion_math test_axis_sim test_ring_json test_tz test_frame test_modes test_wear test_fault_policy test_fault_matrix test_mqtt_bridge test_ha_discovery test_ota test_portal test_audio test_journal test_ring_stream test_button test_api test_bench_policy)
+set(SWAN_TESTS test_ring test_motion_math test_axis_sim test_ring_json test_tz test_frame test_modes test_wear test_fault_policy test_fault_matrix test_mqtt_bridge test_ha_discovery test_ota test_portal test_audio test_journal test_ring_stream test_button test_api test_bench_policy test_limits_policy)
 set(test_ring_json_ARGS ${SWAN_ROOT}/data/ring.json)
 set(test_ring_stream_ARGS ${SWAN_ROOT}/data/ring.json)
 # Sniffed against the REAL built binary when there is one; the suite says so
@@ -83,6 +83,40 @@ foreach(t ${SWAN_TESTS})
     add_executable(${t} ${t}.cpp ${SWAN_PURE_SRC})
     target_link_libraries(${t} PRIVATE swan_test_cfg Threads::Threads)
     add_test(NAME ${t} COMMAND ${t} ${${t}_ARGS})
+endforeach()
+
+# THE UNLIMITED FLAVOUR (-DSWAN_UNLIMITED, motion/limits_policy.h), compiled from
+# the SAME test sources.  The define reaches api.cpp and every other pure source
+# inside the executable, which is why this is a second compile of the whole
+# suite's inputs and not a flag on the first.  One file, two builds: whatever
+# the flavour does not change is asserted identically in both, and the
+# expectations the flavour DOES change branch on the same macro the header reads.
+set(SWAN_UNLIMITED_TESTS test_limits_policy)
+foreach(t ${SWAN_UNLIMITED_TESTS})
+    add_executable(${t}_unlimited ${t}.cpp ${SWAN_PURE_SRC})
+    target_compile_definitions(${t}_unlimited PRIVATE SWAN_UNLIMITED=1)
+    target_link_libraries(${t}_unlimited PRIVATE swan_test_cfg Threads::Threads)
+    add_test(NAME ${t}_unlimited COMMAND ${t}_unlimited ${${t}_ARGS})
+endforeach()
+
+# THE PAIRS THAT MUST NOT COMPILE.  CMake refuses both at configure time in the
+# IDF build, with a message naming the flags; limits_policy.h refuses them again
+# with a static_assert, so a build that bypasses CMake is stopped too.  This
+# proves the static_assert is really there and FIRES FOR ITS OWN REASON:
+# PASS_REGULAR_EXPRESSION means a compile that fails for any other cause (a
+# typo, a missing include) does not satisfy the test.  OBJECT libraries, because
+# the suite must stay free of `ar`.
+foreach(pair bench release)
+    string(TOUPPER ${pair} PAIR_UC)
+    set(neg limits_unlimited_with_${pair})
+    add_library(${neg} OBJECT EXCLUDE_FROM_ALL
+                ${CMAKE_CURRENT_LIST_DIR}/negative/limits_flavours.cpp)
+    target_compile_definitions(${neg} PRIVATE SWAN_UNLIMITED=1 SWAN_${PAIR_UC}=1)
+    target_link_libraries(${neg} PRIVATE swan_test_cfg)
+    add_test(NAME ${neg}_is_refused
+             COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target ${neg})
+    set_tests_properties(${neg}_is_refused PROPERTIES
+        PASS_REGULAR_EXPRESSION "SWAN_UNLIMITED with SWAN_${PAIR_UC}")
 endforeach()
 
 # Not a test: the trace generator for the browser simulator (web/sim).

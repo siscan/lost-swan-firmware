@@ -8,6 +8,7 @@
 #include "ring/geometry.h"  // ring_target_usteps: the tolerances derive from a flap
 #include "motion/column_mode.h"
 #include "motion/fault_policy.h"
+#include "motion/limits_policy.h"  // the live ranges, and the one flavour that widens them
 
 namespace swan {
 
@@ -187,31 +188,77 @@ struct AxisInfo {
 // 1000 realises as dv = 1 whatever it claims.
 // The API, the web slider and the load path all use these two, so they cannot
 // drift apart.
+//
+// TWO CEILINGS, AND THE DIFFERENCE IS THE POINT (2026-10-04).  `ACCEL_MAX` is
+// what THIS IMAGE's dispatcher accepts LIVE: 60000 in a normal image, and wider
+// in the unlimited flavour (motion/limits_policy.h), by Nico's explicit decision
+// and behind the ramp-power guard.  What may be PERSISTED is always the normal
+// ceiling, in every flavour: `accel_persistable`.  So nothing the flavour
+// accepts is ever saved, and the paragraph above still describes every value an
+// image will boot with.  Raising the PERSISTED ceiling remains a decision that
+// needs a bench result behind it.
 inline constexpr int32_t ACCEL_MIN = 1000;
-inline constexpr int32_t ACCEL_MAX = 60000;
+inline constexpr int32_t ACCEL_MAX =
+    motion::UNLIMITED_BUILD ? motion::ACCEL_MAX_UNLIMITED : motion::ACCEL_MAX_NORMAL;
 
 constexpr bool accel_plausible(int32_t v) {
     return v >= ACCEL_MIN && v <= ACCEL_MAX;
+}
+// What NVS may hold, whatever flavour is running.
+constexpr bool accel_persistable(int32_t v) {
+    return v >= ACCEL_MIN && v <= motion::ACCEL_MAX_NORMAL;
 }
 
 static_assert(ACCEL_MIN > 0, "the ramp divides by accel; zero must be unreachable");
 
 inline constexpr int32_t HALL_TOL_MIN = 1;
+// This image's live ceiling: half a flap = 32 normally, one flap = 64 in the
+// unlimited flavour (limits_policy.h says why it stops at one flap).
 inline constexpr int32_t HALL_TOL_MAX =
-    static_cast<int32_t>(ring_target_usteps(1) / 2);   // half a flap = 32
+    motion::UNLIMITED_BUILD ? motion::HALL_TOL_MAX_UNLIMITED : motion::HALL_TOL_MAX_NORMAL;
 
 constexpr bool hall_tol_plausible(int32_t v) {
     return v >= HALL_TOL_MIN && v <= HALL_TOL_MAX;
 }
-
-// The value to use given what NVS holds: the stored one when it can mean what
-// its own comment says, otherwise the derived quarter flap.
-constexpr int32_t hall_tol_migrated(int32_t stored) {
-    return hall_tol_plausible(stored) ? stored
-                                      : static_cast<int32_t>(ring_target_usteps(1) / 4);
+// What NVS may hold, whatever flavour is running: half a flap at most.
+constexpr bool hall_tol_persistable(int32_t v) {
+    return v >= HALL_TOL_MIN && v <= motion::HALL_TOL_MAX_NORMAL;
 }
 
-static_assert(HALL_TOL_MAX == 32, "half a flap at 1:1");
+// The value to use given what NVS holds: the stored one when it can mean what
+// its own comment says, otherwise the derived quarter flap.  THE PERSISTABLE
+// RULE, not the live one: a 41 left by the rim-gear era is 64 % of a flap and
+// must not survive a boot of an unlimited image just because that image would
+// accept it live.
+constexpr int32_t hall_tol_migrated(int32_t stored) {
+    return hall_tol_persistable(stored) ? stored
+                                        : static_cast<int32_t>(ring_target_usteps(1) / 4);
+}
+
+// THE ONE RULE FOR WHAT MAY BE WRITTEN TO NVS, in every flavour: the NORMAL
+// image's ranges.  Returns the first field that is outside them, or nullptr.
+// config::save refuses on it, the dispatcher's two save commands check it first
+// so the refusal can name the field, and config::load substitutes anything that
+// gets past (an NVS record from another build, or a corrupted page).
+//
+// In a normal image this can only fire on a value the dispatcher would not have
+// accepted either - except during the console's `ramp` ladder, which sets
+// flaps_s_normal to each rung up to 400 and restores it afterwards: a `save`
+// typed mid-ladder used to persist a rung, and boot would then have discarded it.
+constexpr const char* persist_refusal(const MotionParams& p) {
+    if (!motion::flaps_s_persistable(p.flaps_s_normal)) return "flaps_s_normal";
+    if (!motion::flaps_s_persistable(p.flaps_s_alarm)) return "flaps_s_alarm";
+    if (!motion::flaps_s_persistable(p.flaps_s_home)) return "flaps_s_home";
+    if (!accel_persistable(p.accel)) return "accel";
+    if (!hall_tol_persistable(p.hall_tol)) return "hall_tol";
+    return nullptr;
+}
+
+static_assert(HALL_TOL_MAX == (motion::UNLIMITED_BUILD ? 64 : 32),
+              "hall_tol's live ceiling: one flap in the unlimited flavour, half a flap otherwise");
+static_assert(motion::HALL_TOL_MAX_NORMAL == 32, "half a flap at 1:1");
+static_assert(persist_refusal(MotionParams{}) == nullptr,
+              "the spec defaults must be persistable in every flavour");
 static_assert(hall_tol_migrated(16) == 16, "the derived quarter flap is kept");
 static_assert(hall_tol_migrated(41) == 16, "the rim-gear quarter flap is discarded");
 static_assert(hall_tol_migrated(0) == 16, "zero would make every edge a resync");
