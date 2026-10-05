@@ -154,6 +154,10 @@ components/motion/             axis_control.{h,cpp}: pure control core (host-tes
                                soak.{h,cpp}: overnight wrap test (spec 15 phase 6);
                                bench_policy.h + bench.{h,cpp}: the stand-in bench
                                session and its compiled-in speed cap (phase 8);
+                               limits_policy.h: this image's live speed / accel /
+                               hall_tol ranges, the unlimited flavour that widens
+                               them, the ranges NVS may hold, and the ramp-power
+                               guard (pure; tested once per flavour);
                                fault_policy.{h,cpp} + column_mode.h: fault causes,
                                escalation, per-column real/sim/disabled (pure);
                                sim_drum.h: modelled drum for simulated axes;
@@ -347,7 +351,10 @@ the magnet, and the first closed loop this project has ever run.
 second (50). It may only go DOWN — a `static_assert` and a CMake check both
 refuse more — because the mechanism on the vise changes between sessions while
 the firmware does not: §28c builds at **20**, since that module has no shroud and
-its cards lift above ~100 flaps/s. **Do not add a way to lift the cap.** The
+its cards lift above ~100 flaps/s. **The cap has no runtime key and never will;
+nothing in a bench build lifts it.** (Amended 2026-10-04 at Nico's explicit
+instruction: this said "Do not add a way to lift the cap", and the one exception
+he authorised is a different *image* — the unlimited flavour, below.) The
 number is in the version string and on the boot banner, because two caps are two
 different safety contracts.
 
@@ -358,6 +365,37 @@ WARN*, because the boot path cannot be refused without coming up with none of it
 stored config. A silent clamp made the image contradict itself — the Settings
 slider ran 50 while `spin` refused the same value. `bench soak` refuses a
 simulated column, for the same family of reasons.
+
+**THE UNLIMITED FLAVOUR (2026-10-04) is the one authorised way past a range, and
+it is narrow on purpose.** `-DSWAN_UNLIMITED=ON` widens the dispatcher's *live
+ranges and nothing else*: speed 1..40 → 1..400 flaps/s (the show spin), accel
+60 000 → 250 000, `hall_tol` 32 → 64 (one flap). Everything below is the contract
+later work must keep (`motion/limits_policy.h` carries the reasoning, spec §17
+2026-10-04 the decision):
+- **A build flavour, never a switch.** No runtime, NVS, MQTT or Settings toggle
+  will be added. `SWAN_UNLIMITED` with `SWAN_BENCH` or with `SWAN_RELEASE` is a
+  configure-time `FATAL_ERROR` *and* a `static_assert`, each proven to fire — in
+  CI, by message, and by a negative-compile test on the host. It is never the
+  default, and it never lifts the bench cap: a bench image cannot be unlimited.
+- **Live only.** NVS holds only what a *normal* image accepts, in every flavour
+  (`persist_refusal`, `motion_types.h`): `config::save` and both dispatcher save
+  commands refuse anything wider and name the field; `config::load` substitutes
+  anything wider. An unlimited image never boots into its own experiment, and
+  never leaves state a normal image cannot honour.
+- **Protections are not limits, and stay.** Jam stop, EN drop, the maintenance /
+  EN / OTA refusals, ISR liveness — untouched. The **ramp-power guard** keeps
+  spec §17's 2 s ramp floor in force at the speeds the lifted range now allows
+  (`accel × speed ≤ 12 800 × 25 600`, refused never clamped). It is a proportional
+  extension of a recorded rule and **nothing has measured it**; likewise nothing
+  has measured PSU regen, step-ISR load or card lift above 25 flaps/s.
+- **Impossible to mistake**, like the simulated axes: `.unlimited` in the version
+  tag, a boot banner, `motion.unlimited` and `motion.ranges` in the state
+  document, the control-panel strip and the presentation chip. OTA refuses an
+  unlimited image onto a board that is not one, unless forced.
+- **The page follows the firmware.** `web/index.html` carries the *normal*
+  bounds and `test_ui_ranges.js` pins them to the sources; an unlimited image
+  overrides them at runtime from `motion.ranges`. Do not restate a range as a
+  literal anywhere else.
 
 **Phases 4, 5 and 6 done and verified on the board.** Phase 4/5: MQTT with HA
 discovery, OTA with rollback (survival proven in both directions, BRINGUP §23),

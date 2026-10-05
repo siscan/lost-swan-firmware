@@ -1561,8 +1561,8 @@ set, which was implemented across Phases 3–5 and never written down here; the
 
 | command | payload | effect |
 |---|---|---|
-| `motion.params` | `{flaps_s_normal?, flaps_s_alarm?, flaps_s_home?, accel?, hall_tol?, hall_active_low?, dir_invert?}` | live motion tuning, no persistence (`motion.save` commits). `en_idle_off` is **refused** — the coils must stay energised (§5.7). `dir_invert` is refused on a board with no DIR pin and on a moving axis |
-| `motion.save` | — | persist calibration **and** speeds (one NVS record) |
+| `motion.params` | `{flaps_s_normal?, flaps_s_alarm?, flaps_s_home?, accel?, hall_tol?, hall_active_low?, dir_invert?}` | live motion tuning, no persistence (`motion.save` commits). **Ranges are this image's** (`motion/limits_policy.h`): a normal image takes speeds 1..40 flaps/s, accel 1000..60 000 and hall_tol 1..32; the **unlimited flavour** (§17, 2026-10-04) takes 1..400, 1000..250 000 and 1..64, live only, behind the ramp-power guard. A refusal names the range, applies nothing, and never clamps. `en_idle_off` is **refused** — the coils must stay energised (§5.7). `dir_invert` is refused on a board with no DIR pin and on a moving axis |
+| `motion.save` | — | persist calibration **and** speeds (one NVS record). **Refused, by field name, if any value is outside what a *normal* image accepts** — NVS holds only those, in every flavour, so the unlimited image's extra range is never saved |
 | `motion.ramp` / `ramp_stop` | `{column, from, to, step, dwell_s}` | the Calibrate index walk |
 | `config.set` | any of §11's mode keys, plus `tz`, `ntp`, `reveal` | live apply |
 | `config.save` | — | persist what `config.set` applied |
@@ -1738,18 +1738,27 @@ clock.granularity_min    default 15.  MUST divide 60: 1 2 3 4 5 6 10 12 15 20
                          30 60.  The displayed minute is floored to it; a
                          non-divisor does not tile the hour (§7.1)
 motion.cal[5]            int32 µsteps
-motion.flaps_s_normal    default 15
-motion.flaps_s_alarm     default 25
-motion.flaps_s_home      default 8
+motion.flaps_s_normal    default 15, range 1..40 (FLAPS_S_MAX_NORMAL in
+motion.flaps_s_alarm     default 25  limits_policy.h).  The three speeds share
+motion.flaps_s_home      default 8   one range.  Validated at BOOT too, in every
+                         flavour (it was not, outside a bench build, until the
+                         unlimited flavour made "NVS only holds what the
+                         dispatcher took" untrue); a bad stored value is replaced
+                         by the default, announced.  The unlimited flavour accepts
+                         1..400 LIVE and never saves past 40 (§17, 2026-10-04)
 motion.accel             default 12000, range 1000..60000 (ACCEL_MIN/MAX in
                          motion_types.h, shared by the load path, the API and the
                          web slider).  Derived from the drum at 1:1, not inherited
-                         from the rim gear - 82000 stalled it (5.2, 17)
+                         from the rim gear - 82000 stalled it (5.2, 17).  The
+                         unlimited flavour accepts ..250000 live, behind the
+                         ramp-power guard, and never saves past 60000
 motion.hall_tol          default 16 (a quarter flap; DERIVED from the flap, not
                          a literal - see 5.4).  The MEASURED value comes from
                          BRINGUP 28c step 3c: `revs <col> <n>` proposes twice
                          the worst |err| over n revolutions, and says to keep 16
-                         when the drum is more repeatable than that
+                         when the drum is more repeatable than that.  Range
+                         1..32 (half a flap); the unlimited flavour accepts ..64
+                         (one flap) live and never saves past 32
 motion.dir_invert        default false.  Which level on the ganged DIR pin turns
                          the drum in the DESCENDING sense (§4).  The motor sits
                          inside the drum facing the opposite way to the old gear
@@ -2035,6 +2044,14 @@ Each phase ends with a flashable build and a bench checklist.
    `config::load` is the one path that substitutes, **announced at WARN**,
    because a boot that applied none of its stored config is worse than a boot
    that says which value it could not honour.  BRINGUP §28c is the session.
+
+   **The cap has no runtime key, and the one authorised way past a speed range
+   is a different image** (2026-10-04): the **unlimited flavour**,
+   `-DSWAN_UNLIMITED=ON`, reported as `0.4.0+<board>.<sim|nosim>.unlimited`.  It
+   widens the dispatcher's LIVE ranges and nothing else, is never a bench image
+   (`SWAN_UNLIMITED` with `SWAN_BENCH` or `SWAN_RELEASE` is refused at configure
+   time and by a `static_assert`), and is live-only.  §17 has the decision, and
+   `motion/limits_policy.h` the reasoning.
 
 Toolchain `[Q1, default]`: ESP-IDF 5.5.x (latest patch), C++17, `idf.py`.
 Arduino-as-IDF-component is the fallback if a specific Arduino library is
@@ -4607,14 +4624,14 @@ numbered section — if you find one that disagrees, fix the section.
     Nothing above 25 flaps/s has ever run on this rig, and the cap's reasons are
     physical: a printed PLA axle, an unshrouded drum whose cards lift above ~100
     flaps/s, regen into a source-only PSU that has not been measured, and ISR CPU time
-    at 25 600 usteps/s per axis (51 % of the budget, by arithmetic only).  **Not built.**
-    If wanted, the shape that keeps CLAUDE.md's "do not add a way to lift the cap"
-    honest is a build-time flavour (`-DSWAN_UNLIMITED=ON`) that lifts item 2 only: never
-    the default, a configure-time FATAL with `SWAN_RELEASE` and with `SWAN_BENCH`, in the
-    version tag, the boot banner, the state document and both strips, refused by OTA
-    onto any other flavour, with no runtime, NVS or MQTT switch and item 4 untouched.
-    It needs three decisions from Nico first: the scope, an explicit amendment of that
-    CLAUDE.md rule, and the ceiling (400 or 781).
+    at 25 600 usteps/s per axis (51 % of the budget, by arithmetic only).  **Not built
+    at the time of the audit; built afterwards, on Nico's answers** — see the entry
+    "THE UNLIMITED FLAVOUR" at the end of this log.  The shape that keeps CLAUDE.md's
+    rule honest is a build-time flavour (`-DSWAN_UNLIMITED=ON`) that lifts item 2 only:
+    never the default, a configure-time FATAL with `SWAN_RELEASE` and with
+    `SWAN_BENCH`, in the version tag, the boot banner, the state document and both
+    strips, refused by OTA onto a board that is not one, with no runtime, NVS or MQTT
+    switch and item 4 untouched.
   - **Raised and deliberately NOT changed**, so none of it is rediscovered as a defect:
     the chess engine beats a random mover 119 games in 120 though its header says
     checkmate must be reachable by somebody who does not play chess; chess has no
@@ -4630,6 +4647,112 @@ numbered section — if you find one that disagrees, fix the section.
     maintenance" is masked by the shell's own gate; the console's display commands skip
     the dispatcher's maintenance / EN / OTA gates; `config::load_app` takes NVS values the
     API would refuse (granularity, dwell, hold, spin); the OTA `LosesSimulation` gate keys
-    on flavour `rel` only.  The "remove limits" mode was not built (see the limits bullet
-    above).  CI runs on pushes to `master` and on pull requests only, so a bare push of a
-    branch runs nothing.
+    on flavour `rel` only.  The "remove limits" mode was not built by the audit itself (see
+    the limits bullet above; it was built afterwards, as the next entry).  CI runs on
+    pushes to `master` and on pull requests only, so a bare push of a branch runs
+    nothing.
+
+- 2026-10-04 — **THE UNLIMITED FLAVOUR** (branch `feature/unlimited-flavour`, stacked
+  on the audit).  Nico had asked for "a mode to fw to remove limits" and to be told
+  first whether it could be done confidently.  The answer was: the narrow form yes,
+  "everything off" no, and four decisions needed his word.  His answers: **scope —
+  the dispatcher's ranges only**; **mechanism — a build flavour only, with
+  CLAUDE.md's "Do not add a way to lift the cap" amended to allow exactly that**;
+  **ceiling — 400 flaps/s**; and a draft PR so Linux CI runs.  `-DSWAN_UNLIMITED=ON`,
+  reported as `0.4.0+<board>.<sim|nosim>.unlimited`, widens the LIVE ranges:
+
+  | | a normal image | unlimited |
+  |---|---:|---:|
+  | speed (`motion.params`, `motion.spin`) | 1..40 flaps/s | 1..400 (the show spin) |
+  | `motion.accel` | 1000..60 000 | 1000..250 000 |
+  | `motion.hall_tol` | 1..32 (half a flap) | 1..64 (one flap) |
+
+  - **Decisions I made that he did not, said here because CLAUDE.md says to use the
+    default and say so.**  (1) **`accel` stops at 250 000.**  He said "past 60 000" and
+    named no ceiling.  The guard allows 204 800 at the shipped 25 flaps/s alarm speed,
+    250 000 is ~3x the 82 000 that stalled the drum, and a slider over a million
+    could not select anything near the shipped 12 000 (one pixel was ~5 000).  One
+    constant (`ACCEL_MAX_UNLIMITED`); raising it has no arithmetic consequence.
+    (2) **`hall_tol` stops at ONE FLAP, not unbounded.**  §5.4 grades an edge error as
+    silent / major resync (<= one flap) / fault (> one flap): one flap erases the major
+    band and keeps the fault band, and anything past it silently accepts errors §5.4
+    says must fault.  That is the slip detector switched off, which the dispatcher
+    used to allow at 400 (slips of 1.6-4.7 flaps raised nothing), and a protection is
+    not on the list of things this flavour lifts.  (3) **The extra range is LIVE ONLY.**
+    (4) **A ramp-power guard.**  (5) **An OTA refusal.**  Each is below.
+  - **Live only, in every flavour, by one rule.**  NVS holds only what a NORMAL image
+    accepts (`persist_refusal`, `motion_types.h`).  `config::save` refuses anything
+    wider and the dispatcher's two save commands check first so the refusal names the
+    field; `config::load` substitutes anything wider, announced.  Two reasons, the
+    second the one that matters: an unlimited image must not leave state a normal
+    image cannot honour (the §10.4 "surviving state the new image cannot honour"
+    rule), and it must not **boot into its own experiment** — a power blip during a
+    countdown would otherwise come up with the alarm spin at 400 flaps/s and nobody at
+    the bench.  A reboot returns to the normal ranges.
+  - **Found on the way: `config::load` never validated a stored SPEED outside a bench
+    build.**  The dispatcher refused anything over 40, so NVS could only hold what it
+    had accepted and nobody looked.  That was an assumption about every other writer
+    — a record from another build, or a corrupted page, handed the display a 300
+    flaps/s alarm spin — and an unlimited image makes it false by construction.  It
+    is checked in every flavour now (default substituted, WARN), the same shape as
+    `accel` and `hall_tol`.  One more consequence in NORMAL images: `save` now refuses
+    while a rung of the console's `ramp` ladder (which sets `flaps_s_normal` up to 400)
+    is live — it used to persist the rung, and the next boot would have discarded it.
+  - **The ramp-power guard — the one protection the old range supplied without
+    anybody writing it down.**  §17 keeps a 2 s ramp floor at show speed "until the
+    bench measures it", because a drum at 400 flaps/s holds ~2.1 J and a PD-sourced
+    rail can only source.  In a normal image that is IMPLIED: speeds stop at 40
+    flaps/s, where the same drum holds 1 % of that energy, so no accel in range can
+    hurt.  Lifting the speed range removes the implication — 60 000 accel at 400
+    flaps/s is a 0.43 s ramp, five times under the floor, one `motion.params` away —
+    so the flavour keeps it: **`accel x speed <= 12 800 x 25 600`**, the accel the
+    floor allows at the show spin times the show spin, refused never clamped, judged
+    on the FINAL parameter set, applied at `set_params`, `step_open_loop` and both
+    dispatcher paths, with the numbers in the message.  Peak regen power is
+    proportional to decel x speed, which is why the floor generalises by proportion;
+    **that is an extension of a rule written for one speed, and nothing has measured
+    it.**  Everything a normal image can hold sits inside it by a factor of two,
+    `static_assert`ed, so it is constant-false there and the console's `spin` in a
+    normal image is unchanged.  So "accel past 60 000" is real at low speed (204 800
+    at 25 flaps/s) and not at 400 (12 800).
+  - **It cannot be mistaken for a normal image**, as the simulated axes cannot be for
+    real: `.unlimited` in the version tag, three boot-banner lines, `motion.unlimited`
+    (always present) and `motion.ranges` (only when unlimited) in the state document,
+    the control-panel strip, and the presentation chip.  The sliders follow the
+    document instead of restating it: `web/index.html` carries the NORMAL bounds
+    (`test_ui_ranges.js` pins them to the sources) and `applyRanges` overrides them
+    from `ranges`, restoring them if the board is reflashed under an open page.
+  - **Never a switch, and never together with the two flavours it contradicts.**
+    `SWAN_UNLIMITED` with `SWAN_BENCH` or `SWAN_RELEASE` is a configure-time
+    `FATAL_ERROR`, a `static_assert`, a CI step that greps for the message so it
+    cannot pass for the wrong reason, and a negative-compile test on the host with
+    `PASS_REGULAR_EXPRESSION`.  A bench image's cap is untouched and a bench image
+    cannot be unlimited.  There is no Settings toggle, MQTT command or NVS key and
+    CLAUDE.md now says there will not be.
+  - **OTA**: an unlimited image onto a board that is not running one is refused
+    (`GainsUnlimited`) unless `{"force":true}` — a different safety contract, and the
+    wrong file on the Update page must not make that decision.  The reverse (normal
+    onto unlimited) is never refused: NVS holds only normal-range values, so there is
+    nothing the new image cannot honour.  The tag parses as base flavour plus a
+    modifier, so every comparison written against `sim`/`rel`/`nosim` still means
+    what it did.
+  - **Tested the way this project tests a safety contract**: the policy and the API
+    suites are compiled TWICE from one source each (once per flavour; every
+    expectation spelt in the image's own constants), the whole pure source set is
+    compiled both ways, and **every test was mutated and checked to fail**: 20
+    mutations of the web side and 15 of the C++ side (guard compiled out, boundary off
+    by one, boot rule following the live range, persist rule following the live range,
+    dispatcher skipping the guard at each of two sites, save skipping the check, state
+    forgetting the flavour, a normal image publishing ranges, OTA rule dropped, parser
+    matching inside words ...), all caught.  Checked in a real browser against the host
+    dev server compiled as the unlimited flavour (`devserver_unlimited`).
+  - **Not verified**: nothing here has run on a board.  The unlimited image builds and
+    links for the DevKitC-1 and carries `0.4.0+devkitc1.sim.unlimited`; the XIAO map
+    and a release build were not rebuilt locally (CI does both).  And, stated again
+    because it is the point: **PSU regen, step-ISR load at 25 600 usteps/s per column,
+    and card lift above 25 flaps/s have never been measured on this rig**, and neither
+    has the guard.  BRINGUP, "THE UNLIMITED IMAGE", has a suggested first run with the
+    blanks to fill in.
+  - **Deliberately not built**: a Home Assistant entity for it (the discovery set is
+    pinned at nineteen); the chip on the station screen (the simulated axes do not
+    have one either); and any way to lift the BENCH cap, which is untouched.
