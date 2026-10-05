@@ -238,31 +238,86 @@ eq(swanEls.length ? subpaths(swanEls[0].d).length : 0, 3, "swan fill = the silho
 eq(wordEls.map((e) => subpaths(e.d).length).join(","), "2,1,1,2", "letters left to right: D(+counter) H M A(+counter)");
 eq(wordEls.every((e) => e.rule === "evenodd"), true, "every wordmark element is evenodd");
 
-// 4. The swan is drawn by a PEN.  One element per spine - 23 round-capped
-// capsules, 14 of them wider than they were long, is what read as blobs - at one
-// thin weight, and with no vertex where the line turns back on itself (the art's
-// neck centreline has a spur that is a visible hook as a thin line).
-const spineEls = [...svg.matchAll(/<path class="spine" data-len="([\d.]+)" d="([^"]+)"\/>/g)];
-eq(spineEls.length, (src.match(/\{\s*id:"(?:body|neck)"/g) || []).length, "one pen line per supplied centreline");
-for (const m of spineEls) {
-  const n = (m[2].match(/-?\d+(?:\.\d+)?/g) || []).map(Number);
-  let sharp = 0, len = 0;
-  for (let i = 2; i + 1 < n.length; i += 2) {
-    const ax = n[i] - n[i - 2], ay = n[i + 1] - n[i - 1];
-    len += Math.hypot(ax, ay);
-    if (i + 3 < n.length) {
-      const bx = n[i + 2] - n[i], by = n[i + 3] - n[i + 1];
-      const la = Math.hypot(ax, ay), lb = Math.hypot(bx, by);
-      if (la > 0 && lb > 0 && (ax * bx + ay * by) / (la * lb) < -0.7) sharp++;
-    }
+// 4. THE TRACE.  The mark is drawn the way a vector CRT would draw it: a beam
+// goes vertex to vertex along every outline and the line stays lit behind it.
+// So EVERY outline in the art must have a traced line and a beam head, built
+// from the art's OWN vertices (not a re-drawing of them), in the art's order;
+// and while the beam is drawing nothing may fade in as a filled shape ("blobs
+// blobbing in", qa.js K-1) - the fills wait until the trace is done.
+const rounded = (pts) => pts.map((p) => p.map((v) => Math.round(v * 100) / 100).join(","));
+const perimeter = (pts) => {
+  let s = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i], b = pts[(i + 1) % pts.length];
+    s += Math.hypot(b[0] - a[0], b[1] - a[1]);
   }
-  eq(sharp, 0, "a pen line has no vertex that reverses on itself");
-  if (Math.abs(len - parseFloat(m[1])) > 0.05) fail("data-len " + m[1] + " is not the path's length " + len.toFixed(3));
+  return s;
+};
+const outlineEls = (cls) => [...svg.matchAll(new RegExp("<(path|circle) class=\"" + cls + "\" data-len=\"([\\d.]+)\"([^>]*?)/>", "g"))].map((m) => ({
+  kind: m[1],
+  len: parseFloat(m[2]),
+  d: (m[3].match(/\sd="([^"]*)"/) || [])[1] || "",
+  r: parseFloat((m[3].match(/\sr="([\d.]+)"/) || [])[1]),
+}));
+const traces = outlineEls("trace");
+const beams = outlineEls("beam");
+
+// every closed polygon in every filled element, in markup order, plus the disc
+const ringBars = [];
+{
+  const i = svg.indexOf('<g class="beat-ring">');
+  const j = svg.indexOf('<circle class="part disc"', i);
+  for (const m of svg.slice(i, j).matchAll(/<path class="part" d="([^"]*)"\/>/g)) ringBars.push(m[1]);
 }
-const sw = css.match(/\.spine\{[^}]*stroke-width:([\d.]+)/);
-eq(!!sw && parseFloat(sw[1]) <= 4, true, "the pen is thin (stroke-width <= 4 of a 200-unit mark)");
-eq(/\.spine\{[^}]*opacity:0\}/.test(css), true, "spines start hidden (an armed round-capped dash is a visible dot)");
-eq(/\.spine\.on\{[^}]*opacity:(?:1|0?\.\d+)\}/.test(css), true, "a spine is shown when it starts to draw");
+const wantPolys = [];
+frameEls.forEach((e) => subpaths(e.d).forEach((p) => wantPolys.push({ g: "frame", v: rounded(p) })));
+ringBars.forEach((d) => subpaths(d).forEach((p) => wantPolys.push({ g: "ring", v: rounded(p) })));
+swanEls.forEach((e) => subpaths(e.d).forEach((p) => wantPolys.push({ g: "swan", v: rounded(p) })));
+wordEls.forEach((e) => subpaths(e.d).forEach((p) => wantPolys.push({ g: "word", v: rounded(p) })));
+const discAt = wantPolys.filter((w) => w.g === "frame" || w.g === "ring").length;   // the disc is traced between the ring and the swan
+
+eq(traces.length, wantPolys.length + 1, "one traced line per outline in the art (every filled polygon, and the disc)");
+eq(beams.length, traces.length, "and one beam head for each");
+eq(/class="spine"|class="spines"/.test(svg), false, "the swan's brush spines are not drawn (the trace is the outline)");
+
+// the vertices the beam visits are the art's own, and in the art's order:
+// frame, ring clockwise from the top, disc, swan, wordmark
+const polyTraces = traces.filter((t) => t.kind === "path");
+let k = 0;
+let order = 0;
+for (let n = 0; n < traces.length; n++) {
+  if (n === discAt) {
+    eq(traces[n].kind, "circle", "the disc is traced between the ring and the swan");
+    if (traces[n].kind === "circle") {
+      eq(Math.abs(traces[n].len - 2 * Math.PI * traces[n].r) < 0.01, true, "the disc's data-len is its circumference");
+    }
+    continue;
+  }
+  const want = wantPolys[k++];
+  if (!want) break;
+  const got = traces[n].kind === "path" ? rounded(subpaths(traces[n].d)[0] || []) : [];
+  if (JSON.stringify(got) !== JSON.stringify(want.v)) { order++; fail("outline " + n + " (" + want.g + ") is not drawn from the art's own vertices, in order"); }
+}
+eq(order, 0, "every outline is drawn from the art's own vertices, in the art's order");
+
+// data-len IS the path's length, or the dash arithmetic cannot land
+for (const t of polyTraces) {
+  const pts = subpaths(t.d)[0] || [];
+  if (Math.abs(perimeter(pts) - t.len) > 0.05) fail("a trace's data-len " + t.len + " is not its perimeter " + perimeter(pts).toFixed(3));
+  if (!/Z$/.test(t.d)) fail("a trace is not a closed outline: " + t.d.slice(-20));
+}
+// the beam is the same path as its line
+eq(beams.every((b, n) => b.d === traces[n].d && b.len === traces[n].len), true, "each beam rides the same path as its line");
+
+// nothing fades in as a filled shape while the beam draws
+eq(/\.part,#swan-boot \.swan-fill\{opacity:0;/.test(css), true, "every fill is invisible until the trace is done");
+eq(/#swan-boot\.settled \.part,#swan-boot\.settled \.swan-fill\{opacity:[\d.]+\}/.test(css), true, "and settles in behind the finished lines");
+eq(/\.trace\{[^}]*opacity:0\}/.test(css) && /\.beam\{[^}]*opacity:0\}/.test(css), true, "lines and beams start hidden (an armed round-capped dash is a visible dot)");
+eq(/\.trace\.on\{[^}]*opacity:1\}/.test(css) && /\.beam\.on\{[^}]*opacity:1\}/.test(css), true, "and are shown when the beam reaches them");
+const tw = css.match(/\.trace\{[^}]*stroke-width:([\d.]+)/);
+eq(!!tw && parseFloat(tw[1]) <= 3, true, "the line is thin (stroke-width <= 3 of a 200-unit mark)");
+const fa = css.match(/#swan-boot\.settled \.part,#swan-boot\.settled \.swan-fill\{opacity:([\d.]+)\}/);
+eq(!!fa && parseFloat(fa[1]) <= 0.6, true, "the fill stays behind the lines (<= 0.6): the lines are the mark, not a filled logo with outlines", fa && fa[1]);
 
 if (failures) {
   console.log(failures + " failure(s)");
