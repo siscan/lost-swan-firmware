@@ -1510,7 +1510,12 @@ on **every load of `terminal.html` while the station is SWAN**, in both content
 modes, always skippable, and never on the control panel — which does not load
 the script.  Deliberate replays: the strip's REPLAY LOGO, and `LOGO` at the Swan
 prompt.  It does **not** play on socket reconnect: a dropped socket is not a
-boot.  The Swan mark is the only one that ships; **Pearl and Flame marks are
+boot.  **It is drawn the way a vector CRT would draw it** (2026-10-04): one beam,
+vertex to vertex along every outline in the art, a bright head and a line that
+stays lit behind it, in the art's order; nothing fades in as a filled shape while
+the beam is drawing, and the fills settle in behind the finished lines at the very
+end.  `test_logo.js` pins that every outline in the art is traced from the art's
+own vertices.  The Swan mark is the only one that ships; **Pearl and Flame marks are
 optional future art** (parked 2026-08-25), and their absence is why the
 animation is Swan-only rather than per-station.  If art arrives it lands the
 way the Swan mark did — a fenced data block in its own
@@ -3522,6 +3527,10 @@ numbered section — if you find one that disagrees, fix the section.
     its endpoint widths and dash-drawn, then the spine group crossfades into
     the filled silhouette.  Measured on the board: 0 % at 1.6 s, 100 % at
     2.75 s, whole run 4.76 s, and the overlay leaves nothing in the DOM.
+    > **SUPERSEDED 2026-10-04.**  That draw stage rendered as blobs, a pen-line
+    > replacement was the wrong fix, and the mark is now a vector trace of every
+    > outline in the art — see the 2026-10-04 audit entry.  The spines and their
+    > widths are no longer drawn.  The run length (~4.8 s) did not change.
   - **A repair the delivery needed.**  The 25 per-vertex widths arrived wrapped
     in a numpy scalar constructor.  That form **parses** as JavaScript — it
     reads as a member call — and throws `ReferenceError` the instant the file
@@ -4515,14 +4524,24 @@ numbered section — if you find one that disagrees, fix the section.
     and DHARMA's counters were solid.  The R and the first A have their OUTLINES in the
     swan silhouette (its neck crosses them), so their counters are punched out of the
     swan fill.  Regrouped by containment in `compound()`.
-  - **The swan "drew" as blobs (`qa.js` K-1).**  23 round-capped capsules, 14 of them
-    wider than they were long, all inflating at once.  The draw stage is now a PEN: one
-    thin line per spine, one speed, body then neck, then the existing crossfade inks it.
-    This SUPERSEDES the 2026-08-25 description of per-segment widths: the per-vertex
-    widths stay in the art and are no longer used by the draw.  The neck centreline's
-    reversal spur is dropped from the pen's path (never from the silhouette).  The
-    overlay's mid tone is its own #43c25e; `terminal.css` defines no `--p-mid`, and
-    defining one would change three station-screen rules, so it was not touched.
+  - **The boot animation drew nothing: it faded filled shapes in** (`qa.js` K-1; and
+    Nico: "it should be like vertices drawn on a CRT, not blobs blobbing in").  My first
+    fix gave the swan a pen line and was the wrong answer: the frame, ring, disc and
+    letters still faded in as blobs.  The WHOLE MARK is now a VECTOR TRACE: one beam, one
+    speed, vertex to vertex along every closed outline in the art (48 outlines: 47
+    polygons with 421 vertices between them, and the disc; about 5,065 units of line),
+    blanked between outlines, with a bright head and a line that stays lit and cools, in
+    the art's own order - the frame, the ring clockwise from the top (each trigram's bars
+    inner to outer), the disc, the swan, the wordmark.  Nothing is a filled
+    shape while the beam is drawing; the fills settle in behind the finished lines at a
+    quarter strength (`FILL_A`: 0 is pure line art, 1 is the filled logo again and the
+    outlines vanish into it).  The beam speed is DERIVED from the budget (`TRACE_MS`, 3 s),
+    not written down.  The whole run is the same length as before (~4.8 s).  This
+    SUPERSEDES the 2026-08-25 description of "drawn, then inked" and of per-segment
+    widths: the swan's centrelines and per-vertex widths describe a brush and are no
+    longer used.  The overlay's mid tone is its own #43c25e; `terminal.css` defines no
+    `--p-mid`, and defining one would change three station-screen rules, so it was not
+    touched.
   - **The keyboard was dead after any click on the strip** (§10.2b rule 2, extended).
     Reproduced with real pointer events: after PROTOCOL then FLAME, Y did not open the
     board and ESC did not leave.  Almost certainly why the stations and chess felt broken.
