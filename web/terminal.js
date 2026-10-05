@@ -518,6 +518,10 @@ function onState(s) {
   const rigBits = [];
   if (m.maintenance) rigBits.push("MAINTENANCE");
   if (m.sim_columns > 0) rigBits.push("SIMULATED " + m.sim_columns + "/" + s.cols.length);
+  // An image that has lifted the dispatcher's ranges (motion/limits_policy.h) says
+  // so on its own face, for the same reason a simulated one does: a prop on a CRT
+  // in a corridor cannot be asked which image it is running.
+  if (m.unlimited) rigBits.push("UNLIMITED");
   if (m.disabled_columns > 0) rigBits.push(m.disabled_columns + " DISABLED");
   rig.style.display = rigBits.length ? "" : "none";
   rig.textContent = rigBits.join(" · ");

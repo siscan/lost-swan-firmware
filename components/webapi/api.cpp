@@ -8,6 +8,7 @@
 #include "modes/wear.h"
 #include "motion/axis_control.h"   // REHOME_RETRIES, published so the UI stops guessing
 #include "motion/bench_policy.h"   // the bench cap, so a refusal names the number
+#include "motion/limits_policy.h"  // this image's live ranges, and the flavour that widens them
 #include "ring/json_lite.h"
 #include "ring/json_write.h"
 
@@ -110,7 +111,10 @@ std::string build_state(Context& ctx, int64_t utc_ms) {
         .end_obj();
 
     // Device-wide honesty flags.  A simulated display must be impossible to
-    // mistake for a real one from any surface (spec 5.9).
+    // mistake for a real one from any surface (spec 5.9) - and neither may an
+    // image that has lifted the dispatcher's ranges (motion/limits_policy.h), which
+    // is `unlimited`.  It is ALWAYS present, so a page can tell "a normal image"
+    // from "an image too old to say".
     const ColumnConfig cols = ctx.motion.columns();
     w.key("motion").obj()
         .kv("simulated", cols.any(ColumnMode::Sim))
@@ -118,7 +122,28 @@ std::string build_state(Context& ctx, int64_t utc_ms) {
         .kv("disabled_columns", cols.count(ColumnMode::Disabled))
         .kv("maintenance", cols.maintenance)
         .kv("sim_available", ctx.motion.sim_available())
-        .end_obj();
+        .kv("unlimited", motion::UNLIMITED_BUILD);
+    // The ranges THIS image accepts live, published only when they differ from
+    // the markup's: web/index.html carries the NORMAL image's bounds as the control
+    // defaults (test_ui_ranges.js pins them to the sources), and an unlimited image
+    // says otherwise here.  So the UI follows the firmware instead of restating it,
+    // which is the class of drift that put hall_tol's slider at 400 while the load
+    // path discarded anything over 32.  The `persist_*` ceilings are what NVS will
+    // hold - the page says so, because everything past them is live-only.
+    if (motion::UNLIMITED_BUILD) {
+        w.key("ranges").obj()
+            .kv("flaps_s_min", motion::FLAPS_S_MIN)
+            .kv("flaps_s_max", motion::FLAPS_S_MAX)
+            .kv("accel_min", ACCEL_MIN)
+            .kv("accel_max", ACCEL_MAX)
+            .kv("hall_tol_min", HALL_TOL_MIN)
+            .kv("hall_tol_max", HALL_TOL_MAX)
+            .kv("persist_flaps_s_max", motion::FLAPS_S_MAX_NORMAL)
+            .kv("persist_accel_max", motion::ACCEL_MAX_NORMAL)
+            .kv("persist_hall_tol_max", motion::HALL_TOL_MAX_NORMAL)
+            .end_obj();
+    }
+    w.end_obj();
 
     // The external API's own state.  A display that thinks it is publishing
     // and is not looks identical to one nobody is listening to.
@@ -452,6 +477,53 @@ std::string do_display_frame(Context& ctx, const RingSet& ring, const json::Valu
     return result_of(ctx.modes.cmd_display_frame(f, utc_ms));
 }
 
+// "1..40 flaps/s" - THIS image's live speed range, said in every refusal because
+// the ceiling is not the same in every flavour and a message that only said
+// "out of range" made the reader go and find out which image they were talking to.
+std::string speed_range_text() {
+    return std::to_string(motion::FLAPS_S_MIN) + ".." + std::to_string(motion::FLAPS_S_MAX) +
+           " flaps/s";
+}
+
+// The ramp-power guard's refusal (motion/limits_policy.h), naming the numbers: the
+// speed, the accel it was asked to pair with, how long that ramp is, and the most
+// accel the guard allows at that speed.  Only the unlimited flavour can reach it.
+std::string ramp_refusal(const char* what, int32_t flaps_s, int64_t accel) {
+    const int64_t v = flaps_s_to_usteps_s(flaps_s);
+    const int64_t ramp_ms = accel > 0 ? (v * 1000) / accel : 0;
+    return std::string(what) + " " + std::to_string(flaps_s) + " flaps/s with accel " +
+           std::to_string(accel) + " ramps to speed in " + std::to_string(ramp_ms) +
+           " ms; the ramp-power guard allows accel up to " +
+           std::to_string(motion::ramp_accel_ceiling(flaps_s)) +
+           " at that speed (spec 17: the 2 s ramp floor at show speed, scaled by speed). "
+           "Lower the accel or the speed.";
+}
+
+// Why a value may be LIVE here and still not be SAVED.  The same sentence for both
+// save commands, so it cannot drift: NVS holds only what a NORMAL image accepts.
+std::string persist_refusal_text(const char* field) {
+    return std::string("not saved: ") + field + " is outside the range an image may boot with (" +
+           std::to_string(motion::FLAPS_S_MIN) + ".." + std::to_string(motion::FLAPS_S_MAX_NORMAL) +
+           " flaps/s, accel " + std::to_string(ACCEL_MIN) + ".." +
+           std::to_string(motion::ACCEL_MAX_NORMAL) + ", hall_tol " + std::to_string(HALL_TOL_MIN) +
+           ".." + std::to_string(motion::HALL_TOL_MAX_NORMAL) +
+           "). The unlimited image's extra range is live-only by design; set it back "
+           "to save, or reboot to discard it.";
+}
+
+// `motion.save` and `motion.cal` with save persist ONE record - calibration AND
+// speeds - so they share one answer.  The live params are checked against the
+// range NVS may hold (persist_refusal, motion_types.h) BEFORE the write, so the
+// refusal can name the field; config::save refuses the same values itself, which
+// is the backstop for every caller that does not come through here (the console).
+std::string save_motion_result(Context& ctx) {
+    const MotionParams live = ctx.motion.params();
+    if (const char* field = persist_refusal(live)) {
+        return err_result(persist_refusal_text(field));
+    }
+    return ctx.cfg.save_motion(live) ? ok_result() : err_result("save failed");
+}
+
 // Live motion parameters (the Calibrate sliders).  Applied immediately;
 // persistence is a separate command so the page can offer both.
 std::string do_motion_params(Context& ctx, const json::Value& p) {
@@ -462,34 +534,40 @@ std::string do_motion_params(Context& ctx, const json::Value& p) {
     // same values - this is not a second rule, it is the same rule said where a
     // caller can read it.  Leaving it to set_params alone would answer a
     // browser with a bare "refused" and no number.
-    const auto speed_ok = [](int32_t want, const char* which) -> const char* {
-        if (want < 1 || want > 40) return "out of range";
-        if (motion::bench_speed_refused(want)) return "over this image's bench cap";
-        (void)which;
-        return nullptr;
+    //
+    // The RANGE is this image's own (flaps_s_plausible), not a literal: it is 1..40
+    // in a normal image and 1..400 in the unlimited flavour, and test_ui_ranges.js
+    // pins the sliders to the normal one.
+    const auto speed_ok = [](int32_t want) -> std::string {
+        if (!motion::flaps_s_plausible(want)) return "out of range (" + speed_range_text() + ")";
+        if (motion::bench_speed_refused(want)) {
+            return "over this image's bench cap of " +
+                   std::to_string(motion::BENCH_MAX_FLAPS_S) + " flaps/s";
+        }
+        return {};
     };
     if (as_int_field(p, "flaps_s_normal", v)) {
-        if (const char* why = speed_ok(v, "flaps_s_normal")) {
-            return err_result(std::string("flaps_s_normal ") + why);
-        }
+        const std::string why = speed_ok(v);
+        if (!why.empty()) return err_result("flaps_s_normal " + why);
         mp.flaps_s_normal = v;
     }
     if (as_int_field(p, "flaps_s_alarm", v)) {
-        if (const char* why = speed_ok(v, "flaps_s_alarm")) {
-            return err_result(std::string("flaps_s_alarm ") + why);
-        }
+        const std::string why = speed_ok(v);
+        if (!why.empty()) return err_result("flaps_s_alarm " + why);
         mp.flaps_s_alarm = v;
     }
     if (as_int_field(p, "flaps_s_home", v)) {
-        if (const char* why = speed_ok(v, "flaps_s_home")) {
-            return err_result(std::string("flaps_s_home ") + why);
-        }
+        const std::string why = speed_ok(v);
+        if (!why.empty()) return err_result("flaps_s_home " + why);
         mp.flaps_s_home = v;
     }
     if (as_int_field(p, "accel", v)) {
         // The bound lives in motion_types.h so the load path, this check and the
         // web slider cannot drift apart.
-        if (!accel_plausible(static_cast<int32_t>(v))) return err_result("accel out of range");
+        if (!accel_plausible(static_cast<int32_t>(v))) {
+            return err_result("accel out of range (" + std::to_string(ACCEL_MIN) + ".." +
+                              std::to_string(ACCEL_MAX) + ")");
+        }
         mp.accel = v;
     }
     if (as_int_field(p, "hall_tol", v)) {
@@ -506,7 +584,12 @@ std::string do_motion_params(Context& ctx, const json::Value& p) {
         // accepts most of every real slip without a word.
         if (!hall_tol_plausible(static_cast<int32_t>(v))) {
             return err_result("hall_tol out of range (" + std::to_string(HALL_TOL_MIN) + ".." +
-                              std::to_string(HALL_TOL_MAX) + " usteps: half a flap at most)");
+                              std::to_string(HALL_TOL_MAX) + " usteps: " +
+                              (motion::UNLIMITED_BUILD
+                                   ? "one flap at most - past it, a slip that spec 5.4 says "
+                                     "must fault is accepted in silence"
+                                   : "half a flap at most") +
+                              ")");
         }
         mp.hall_tol = v;
     }
@@ -554,6 +637,23 @@ std::string do_motion_params(Context& ctx, const json::Value& p) {
                               "walk the drum backwards");
         }
         mp.dir_invert = di->boolean;
+    }
+    // THE RAMP-POWER GUARD (motion/limits_policy.h), judged on the FINAL set:
+    // accel and each speed are legal alone and it is the pair that is dangerous,
+    // so a request that moves only one of them is still checked against the other
+    // as it stands.  Constant false in a normal image.  Refused, never clamped,
+    // and nothing is applied - a partial apply would be a second answer.
+    {
+        const struct { const char* name; int32_t flaps; } speeds[] = {
+            {"flaps_s_normal", mp.flaps_s_normal},
+            {"flaps_s_alarm", mp.flaps_s_alarm},
+            {"flaps_s_home", mp.flaps_s_home},
+        };
+        for (const auto& s : speeds) {
+            if (motion::ramp_too_fast(mp.accel, s.flaps)) {
+                return err_result(ramp_refusal(s.name, s.flaps, mp.accel));
+            }
+        }
     }
     if (!ctx.motion.set_params(mp)) {
         // Belt and braces: the checks above should have caught every over-cap
@@ -906,15 +1006,12 @@ std::string dispatch_after_gates(Context& ctx, const RingSet& ring, std::string_
         }
         const json::Value* save = member(p, "save");
         if (save != nullptr && save->boolean) {
-            return ctx.cfg.save_motion(ctx.motion.params()) ? ok_result()
-                                                            : err_result("save failed");
+            return save_motion_result(ctx);
         }
         return err_result("need delta or save");
     }
     if (c == "motion.params") return do_motion_params(ctx, p);
-    if (c == "motion.save") {
-        return ctx.cfg.save_motion(ctx.motion.params()) ? ok_result() : err_result("save failed");
-    }
+    if (c == "motion.save") return save_motion_result(ctx);
     if (c == "motion.ramp") {
         int col = 0, from = 0, to = 0, step = 1, dwell = 1;
         if (!as_int_field(p, "column", col)) return err_result("need column");
@@ -990,13 +1087,35 @@ std::string dispatch_after_gates(Context& ctx, const RingSet& ring, std::string_
         if (!as_int_field(p, "column", col)) return err_result("need column");
         as_int_field(p, "flaps_s", flaps);
         as_int_field(p, "seconds", secs);
-        if (flaps < 1 || flaps > 40) return err_result("flaps_s out of range");
+        if (!motion::flaps_s_plausible(flaps)) {
+            return err_result("flaps_s out of range (" + speed_range_text() + ")");
+        }
         if (secs < 1 || secs > 60) return err_result("seconds out of range");
         // "bad column" covered three different refusals; a disabled column is by
         // far the likeliest and the only one a user can act on.
         if (col < 0 || col >= N_COLUMNS) return err_result("bad column");
         if (ctx.motion.columns().mode[static_cast<size_t>(col)] == ColumnMode::Disabled) {
             return err_result("that column is disabled - nothing would move");
+        }
+        // The two refusals that are about the SPEED, said here with the number.
+        // Both used to fall through to spin_open_loop returning false, and the
+        // reply to a spin over the bench cap was "will not accept an open-loop
+        // move right now (homing?)" - which sends a person looking for a column
+        // that is not homing.  motion::step_open_loop refuses the same values;
+        // this is the same rule said where a caller can read it.
+        if (motion::bench_speed_refused(flaps)) {
+            return err_result("flaps_s " + std::to_string(flaps) +
+                              " is over this image's bench cap of " +
+                              std::to_string(motion::BENCH_MAX_FLAPS_S) + " flaps/s");
+        }
+        {
+            // The ramp-power guard against the accel the display is running with
+            // NOW: an open-loop spin ramps at the live accel, whatever it was last
+            // set to.  Constant false in a normal image.
+            const int64_t live_accel = ctx.motion.params().accel;
+            if (motion::ramp_too_fast(live_accel, flaps)) {
+                return err_result(ramp_refusal("flaps_s", flaps, live_accel));
+            }
         }
         return ctx.motion.spin_open_loop(col, flaps, secs)
                    ? ok_result()

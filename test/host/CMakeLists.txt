@@ -91,7 +91,7 @@ endforeach()
 # suite's inputs and not a flag on the first.  One file, two builds: whatever
 # the flavour does not change is asserted identically in both, and the
 # expectations the flavour DOES change branch on the same macro the header reads.
-set(SWAN_UNLIMITED_TESTS test_limits_policy)
+set(SWAN_UNLIMITED_TESTS test_limits_policy test_api)
 foreach(t ${SWAN_UNLIMITED_TESTS})
     add_executable(${t}_unlimited ${t}.cpp ${SWAN_PURE_SRC})
     target_compile_definitions(${t}_unlimited PRIVATE SWAN_UNLIMITED=1)
@@ -137,4 +137,19 @@ target_include_directories(devserver PRIVATE ${SWAN_ROOT}/tools/devserver)
 target_link_libraries(devserver PRIVATE swan_test_cfg Threads::Threads)
 if(WIN32)
     target_link_libraries(devserver PRIVATE ws2_32)
+endif()
+
+# The same server compiled as the unlimited flavour, so the web UI's behaviour
+# against an unlimited image - the widened sliders, the strip and the chip - can
+# be looked at in a browser with no hardware and no flash:
+#   build_host/devserver_unlimited --port 8081 --root web --ring data/ring.json
+add_executable(devserver_unlimited
+    ${SWAN_ROOT}/tools/devserver/devserver.cpp
+    ${SWAN_ROOT}/tools/devserver/httpd.cpp
+    ${SWAN_PURE_SRC})
+target_compile_definitions(devserver_unlimited PRIVATE SWAN_UNLIMITED=1)
+target_include_directories(devserver_unlimited PRIVATE ${SWAN_ROOT}/tools/devserver)
+target_link_libraries(devserver_unlimited PRIVATE swan_test_cfg Threads::Threads)
+if(WIN32)
+    target_link_libraries(devserver_unlimited PRIVATE ws2_32)
 endif()

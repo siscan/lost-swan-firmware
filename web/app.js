@@ -225,6 +225,15 @@ function renderRig(s) {
     bits.push("SIMULATED MOTION on col " + which.join(", ") +
               " — not driving real hardware");
   }
+  // An image that has lifted the dispatcher's ranges (motion/limits_policy.h) must
+  // be as impossible to mistake for a normal one as a simulated display is for a
+  // real one: it accepts speeds, accel and a hall_tol that every other image
+  // refuses, and the only other thing that says so is a suffix on the version tag.
+  if (m.unlimited) {
+    const r = m.ranges || {};
+    bits.push("UNLIMITED IMAGE — ranges lifted to " + (r.flaps_s_max || "?") +
+              " flaps/s; live only, a reboot undoes it");
+  }
   if (m.disabled_columns > 0) {
     const which = s.cols.map((c, i) => (c.mode === "disabled" ? i + 1 : 0)).filter(Boolean);
     bits.push("col " + which.join(", ") + " DISABLED — parked, excluded from frames");
@@ -424,7 +433,68 @@ const SLIDERS = [
   ["p-halltol", "v-halltol", "hall_tol"],
 ];
 
+// THE RANGES COME FROM THE FIRMWARE, not from this file.  index.html carries the
+// NORMAL image's bounds as the controls' defaults - test_ui_ranges.js pins them
+// to the firmware sources - and an UNLIMITED image (motion/limits_policy.h) says
+// otherwise in `motion.ranges`.  A normal image publishes none: the markup is the
+// truth, and the document stays as small as it was.  This is the class of drift
+// that put hall_tol's slider at 400 while the load path discarded anything over 32:
+// the page follows the firmware instead of restating it.
+//
+// The markup's own bounds are remembered once and put back whenever the document
+// stops carrying ranges - the board can be reflashed under an open page, and a
+// slider left running to 400 on a normal image would be exactly that bug again.
+// test_ui_ranges.js runs this function, between these two markers, in a bare
+// context against both kinds of document.
+// <ranges>
+const RANGE_CONTROLS = [
+  ["p-normal", "flaps_s"], ["p-alarm", "flaps_s"], ["p-home", "flaps_s"],
+  ["spin-flaps", "flaps_s"], ["p-accel", "accel"], ["p-halltol", "hall_tol"],
+];
+
+function applyRanges(s) {
+  const m = s.motion || {};
+  const r = m.unlimited && m.ranges ? m.ranges : null;
+  RANGE_CONTROLS.forEach(([id, key]) => {
+    const n = $(id);
+    if (!n) return;
+    if (n.dataset.min0 === undefined) {
+      n.dataset.min0 = n.getAttribute("min");
+      n.dataset.max0 = n.getAttribute("max");
+    }
+    const lo = r && r[key + "_min"] !== undefined ? r[key + "_min"] : n.dataset.min0;
+    const hi = r && r[key + "_max"] !== undefined ? r[key + "_max"] : n.dataset.max0;
+    n.setAttribute("min", String(lo));
+    n.setAttribute("max", String(hi));
+  });
+  // The hall_tol hint says where the slider stops; on an unlimited image that is
+  // one flap, not half, and a page that says both is a page that is wrong once.
+  const stop = $("halltol-stop");
+  if (stop) {
+    if (stop.dataset.text0 === undefined) stop.dataset.text0 = stop.textContent;
+    stop.textContent = r ? "at one flap (" + r.hall_tol_max + ") on this image" : stop.dataset.text0;
+  }
+  const note = $("unlimited-note");
+  if (!note) return;
+  if (r) {
+    note.textContent =
+      "UNLIMITED IMAGE — these controls run to " + r.flaps_s_max + " flaps/s, accel " +
+      r.accel_max + " and hall_tol " + r.hall_tol_max + " on this display. Past " +
+      r.persist_flaps_s_max + " flaps/s, accel " + r.persist_accel_max + " or hall_tol " +
+      r.persist_hall_tol_max + " a value applies live and is NOT saved: a reboot returns to " +
+      "the normal ranges. An accel that would ramp to a fast speed too quickly is refused " +
+      "(the ramp-power guard, spec 17), and hall_tol stops at one flap, because past it a " +
+      "slip the firmware must fault on would be accepted in silence.";
+    note.style.display = "";
+  } else {
+    note.style.display = "none";
+  }
+}
+// </ranges>
+
 function renderSettings(s) {
+  // Before any value is written: a value past the old max is clamped by the browser.
+  applyRanges(s);
   // Every field guarded the same way: the one being edited is left alone, the
   // rest track the device.  Uniform on purpose - the old mixture of guarded and
   // unguarded fields is why a page-global latch was needed to cover the gaps.
