@@ -311,8 +311,9 @@ Two USB-C ports (native USB-Serial-JTAG and a USB-to-UART bridge); either
 works for the console. PCB antenna on the module (the `U` variant has u.FL).
 
 **EN is ganged and cannot be split.**  One GPIO (6) drives all five TMC2209 EN
-pins, and the only spare non-strapping GPIO on this map is **24** - one, not
-four.  So there is no per-column de-energize and there will not be one:
+pins.  Splitting it would need four more, and this map never had them: it had
+ONE spare non-strapping GPIO (24), and DIR took that on 2026-09-06, so it has
+none.  So there is no per-column de-energize and there will not be one:
 stopping a column stops it *stepping*, while its coils keep holding TMC2209
 standstill current.  Releasing EN is the only true de-energize and it takes the
 whole display with it.  The fault escalation in §5.8 is written around that
@@ -674,10 +675,12 @@ display policy `[Q5]`, publish via MQTT, set LED pattern, show a UI banner.
 Boot homes all five columns staggered by `HOME_STAGGER_MS = 250` to limit
 inrush. `EN` is asserted only after the drivers have had VM for ≥100 ms.
 
-Note on the wifi glyph: index 49 sits one flap *before* blank, i.e. before the
-edge, so it cannot be reached on the homing pass; showing it after boot costs
-49 flips (~2.5 s). If the magnet happened to be placed ≥1.5 flaps ahead of
-blank this would change, but it is not worth touching the mechanics for.
+Note on the wifi glyph: ring A carries it at slot 1, one flap AFTER blank, so
+showing it from the home slot costs a single flip (§3's "blank → wifi glyph"
+row).  This note used to say it sat at index 49, one flap *before* blank and
+therefore unreachable on the homing pass, costing 49 flips (~2.5 s) to show
+after boot.  That was the ascending ring; it stopped being true when the rings
+were reversed (2026-08-22, §4).
 
 ### 5.6 Calibration
 
@@ -811,9 +814,10 @@ driving: five drums at 25 flaps/s can turn a fixable problem into a broken
 gear, and the display is worth less than the mechanism.
 
 **Hardware limit - EN is ganged.**  All five TMC2209 EN pins are on one GPIO
-(§ 2.2), and the pin map has exactly **one** spare non-strapping GPIO
-(GPIO24), so per-column de-energize is not possible and adding it would need
-four more pins that do not exist.  Consequences, which are real:
+(§ 2.2), and the pin map has no spare non-strapping GPIO left (GPIO24
+was the last, and DIR took it on 2026-09-06), so per-column de-energize is not
+possible and adding it would need four more pins that do not exist.
+Consequences, which are real:
 
 - `park_column` and `stop_column` stop **stepping** a column.  Its coils still
   hold TMC2209 standstill current, so a jammed column is still energised
@@ -847,8 +851,9 @@ command or by leaving maintenance mode.  Nothing times it out.
 `disabled` is **set by the user and never inferred**.  No fault, timeout or
 escalation writes it - a fault is a fault and stays visible until cleared;
 turning it into configuration would silently hide a broken column for ever.
-Set from the console (`col <n> real|sim|disabled`) or Settings -> Columns, both
-through the one dispatcher (`motion.column`).
+Set from Settings -> Columns through the dispatcher (`motion.column`), or from
+the serial console (`col <n> real|sim|disabled`), which sits BELOW the dispatcher
+by design (§10.2a) and drives `motion::` directly.
 
 **Frames with a missing column: keep the mode running, leave the hole.**  A
 clock missing one digit tells you more than a dark display, and halting the
@@ -908,12 +913,14 @@ real 50 kHz step ISR; only the Hall input is substituted, by a modelled drum
 which is the point - modes, frames, ring, countdown, scheduler and the whole
 web UI are the same code on the same path.
 
-The model is honest where it matters: 272000/33 usteps per revolution as an
-integer DDA — 3200 exactly at the 1:1 direct drive, where the residue is zero.
-The fractional carry is kept rather than deleted so a non-integral geometry does
-not land on a path nothing has ever executed, the Hall window at the correct position, edge jitter, and therefore
-a homing pass that takes the real ~7.5 s at homing speed.  It is division-free
-so it is safe to call from the IRAM ISR.  Fault injection - `sim <col> slip
+The model is honest where it matters: one revolution is 3200 µsteps, exactly,
+at the 1:1 direct drive, stepped by an integer DDA whose fractional carry is
+KEPT rather than deleted - the residue is zero today, but a non-integral
+geometry must not land on a path nothing has ever executed (the old 272000/33
+rim-gear ratio survives in the two host tests that keep that path exercised).
+The Hall window sits at the correct position, with edge jitter, and therefore a
+homing pass takes the real ~7.5 s at homing speed.  It is division-free so it
+is safe to call from the IRAM ISR.  Fault injection - `sim <col> slip
 <+-usteps>`, `sim <col> miss <n edges>`, `sim <col> clear`, or
 `motion.sim_fault` - exercises slip, missed edges, the classification above and
 the recovery, on demand (the console spelling is `sim fault <col> slip <n>`).
@@ -1408,6 +1415,17 @@ normative and each has a test or a stated verification:
    **ESC** leaves the station screen.  **PANEL** typed at any idle prompt goes
    to the control panel.  A persisted mode with no way out is a trap, and this
    is a web page: a PC with only a mouse must always be able to leave.
+
+   **A click must never leave the keyboard dead** (2026-10-04).  The strip's
+   buttons are the only way to reach PROTOCOL, PEARL and FLAME without typing
+   the name, and a click used to park focus on the button; every key handler
+   then stood aside for a focused control and ESC itself did nothing.  So: a
+   focused button or link keeps ENTER and SPACE - the keys whose default action
+   activates it - and NO other key; a text field keeps everything; and a pointer
+   click (`event.detail > 0`) blurs the control it hit, while a keyboard-activated
+   click keeps its focus ring.  Any new key handler follows the same split.  A
+   script-dispatched `.click()` does not move focus, so a check that clicks that
+   way cannot see this class of bug; use real pointer events.
 3. **Accepted input echoes.**  Wherever input is taken it appears at the `>:`
    caret, with working DEL and CLEAR.  Inert-with-no-echo applies to **exactly
    one state**: a countdown running above the `countdown.seconds_live_s` mark,
@@ -1549,7 +1567,7 @@ set, which was implemented across Phases 3–5 and never written down here; the
 | `wifi.provision` | `true` \| `false` | the captive portal, explicitly only |
 | `mqtt.config` | `{enabled, uri?, user?, pass?, base?, ha_prefix?}` | **absent field = keep**; present-and-empty = clear |
 | `motion.spin` | `{column, flaps_s?, seconds?}` | the Calibrate page's test spin; open loop, so the index becomes unknown |
-| `motion.enable` | `true` or `false` | EN, **ganged across all five drivers** (§2.2) — the recovery from an escalation that dropped it. Re-asserting it after an escalation **re-homes every non-disabled column**, because the drums have been sitting de-energized. While EN is down the dispatcher refuses `mode.set`, `message.set`, `preset.set`, `display.frame`, `motion.rehome`, `motion.spin` and `motion.ramp` — a de-energized display must not answer `ok` to a command it cannot obey |
+| `motion.enable` | `true` or `false` | EN, **ganged across all five drivers** (§2.2) — the recovery from an escalation that dropped it. Re-asserting it after an escalation **re-homes every non-disabled column**, because the drums have been sitting de-energized. While EN is down the dispatcher refuses `mode.set`, `message.set`, `preset.set`, `display.frame`, `motion.rehome`, `motion.spin`, `motion.ramp` and `motion.cal` (a nudge issues a move) — a de-energized display must not answer `ok` to a command it cannot obey.  `motion.column` is deliberately NOT refused: it is configuration, and disabling a column in order to work on it is a normal thing to do with the drivers off |
 | `ota.confirm` / `ota.rollback` | — | the §10.4 decision, by hand |
 
 **Deliberately not on the web UI**, and why — so their absence is a decision
@@ -1634,7 +1652,9 @@ empty room.
 
 Discovery under `homeassistant/<component>/swan/<object_id>/config`, one device
 ("LOST Swan Timer").  The `homeassistant/` prefix is configurable
-(`mqtt.ha_prefix`) because HA's own `discovery_prefix` is. Proposed entities:
+(`mqtt.ha_prefix`) because HA's own `discovery_prefix` is.  The entities that
+ship are the table in `components/webapi/ha_discovery.cpp` - nineteen of them,
+and `test_ha_discovery.cpp` pins the count:
 
 | entity | type |
 |---|---|
@@ -1643,9 +1663,12 @@ Discovery under `homeassistant/<component>/swan/<object_id>/config`, one device
 | execute / cancel / rehome | button |
 | volume | number 0–100 |
 | mute, 24h | switch |
-| state, remaining_s | sensor |
-| fault, time_valid | binary_sensor |
-| resync_minor/major per column, flips_total | sensor (diagnostic) |
+| state, remaining, deadline | sensor |
+| fault, time_valid, simulated, maintenance | binary_sensor |
+| rssi, heap, uptime, dropped | sensor (diagnostic) |
+
+The per-column resync counters and `flips_total` this section once proposed were
+never built; they are on Diagnostics and in the state document, not in HA.
 
 ### 10.4 OTA
 Upload page → `esp_ota` with rollback enabled
@@ -1697,7 +1720,10 @@ opposite, correctly, before the flag was turned on.)  The watched tasks are the
 
 ```
 wifi.ssid / wifi.pass
-mqtt.host / mqtt.port / mqtt.user / mqtt.pass / mqtt.base / mqtt.enabled
+mqtt.uri / mqtt.user / mqtt.pass / mqtt.base / mqtt.ha_prefix / mqtt.enabled
+                         (one `uri`, e.g. mqtt://host:1883 - not a host and a
+                         port; `mqtt.config` takes absent = keep, present and
+                         empty = clear, §10.2a)
 time.tz                  default PST8PDT,M3.2.0,M11.1.0
 time.ntp                 default pool.ntp.org
 ring                     ring.json in LittleFS (not NVS); compiled fallback,
@@ -1710,7 +1736,7 @@ motion.cal[5]            int32 µsteps
 motion.flaps_s_normal    default 15
 motion.flaps_s_alarm     default 25
 motion.flaps_s_home      default 8
-motion.accel             default 14000, range 1000..60000 (ACCEL_MIN/MAX in
+motion.accel             default 12000, range 1000..60000 (ACCEL_MIN/MAX in
                          motion_types.h, shared by the load path, the API and the
                          web slider).  Derived from the drum at 1:1, not inherited
                          from the rim gear - 82000 stalled it (5.2, 17)
@@ -2030,6 +2056,12 @@ Standing defaults, all accepted: moves start on the tick, staggered boot
 homing, 10-minute message dwell, 15/25 flaps/s, drivers enabled at rest until
 the bench test, ¼-flap Hall tolerance, `swan/` base topic, `lost.local`, DIR
 tied at each driver.
+
+*(Two of those were later overturned, and §17 records both.  The coils are held
+at rest permanently, with no bench test to wait for: the direct-drive drum is
+unbalanced past its detent, so a released drum slews (§5.7, 2026-09-06).  And
+DIR is a ganged GPIO on the DevKitC-1, GPIO24, tied at the drivers only on the
+XIAO (§2.2, 2026-09-06).  The rest stand.)*
 
 ---
 
@@ -4464,3 +4496,82 @@ numbered section — if you find one that disagrees, fix the section.
   ~0.14 A, the motor would have skipped under load, and the natural conclusion
   would have been that the drive is inadequate — a wrong number that produces a
   plausible wrong diagnosis is worse than one that produces an obvious failure.
+
+- 2026-10-04 — **THE INTENT AUDIT** (branch `audit/intent-review-2026-10-04`).  Nico:
+  "make sure what I am aiming to do is correct ... the swan animation and games and
+  rest are not working right."  Five read-only audits ran in parallel - the boot
+  animation, chess, the station screen / chat / Pearl, the core firmware against this
+  spec, and the firmware's limits - and every defect below was REPRODUCED BY EXECUTION
+  before it was fixed.  The baseline was green throughout (20 C++ suites, jscheck,
+  wiringgen, four JS suites), and that is the finding that matters: **every one of
+  them passed CI**, because the web pack's tests read data and preferences and never
+  drew a frame or routed a key.  `test_stations.js` and the rewritten `test_logo.js`
+  exist to close that gap; each fails against the code it replaced.
+
+  - **The Swan mark was a flat green stop sign from 2026-08-25 until now.**
+    `svgMarkup()` emitted one `<path>` per data entry, and fill-rule evenodd only punches
+    a hole between subpaths of ONE element: the inner octagon was painted back over the
+    outer, so the trigram ring and the disc - the same colour - were simply not there,
+    and DHARMA's counters were solid.  The R and the first A have their OUTLINES in the
+    swan silhouette (its neck crosses them), so their counters are punched out of the
+    swan fill.  Regrouped by containment in `compound()`.
+  - **The swan "drew" as blobs (`qa.js` K-1).**  23 round-capped capsules, 14 of them
+    wider than they were long, all inflating at once.  The draw stage is now a PEN: one
+    thin line per spine, one speed, body then neck, then the existing crossfade inks it.
+    This SUPERSEDES the 2026-08-25 description of per-segment widths: the per-vertex
+    widths stay in the art and are no longer used by the draw.  The neck centreline's
+    reversal spur is dropped from the pen's path (never from the silhouette).  The
+    overlay's mid tone is its own #43c25e; `terminal.css` defines no `--p-mid`, and
+    defining one would change three station-screen rules, so it was not touched.
+  - **The keyboard was dead after any click on the strip** (§10.2b rule 2, extended).
+    Reproduced with real pointer events: after PROTOCOL then FLAME, Y did not open the
+    board and ESC did not leave.  Almost certainly why the stations and chess felt broken.
+  - A pending Y/N ate the N of PANEL and SWAN (`PAEL`).  ESC closed the Pearl printout AND
+    left protocol mode, and `c` / Enter pressed in the open printout sent a real
+    `countdown.cancel` over the websocket.  The failure line said SEALING for ever on a
+    page opened after the finale.  The asleep screen kept its hint and ACCEPTED.  The
+    chat stayed open over another station and over the finale.  The docked MIRROR did
+    nothing in protocol mode (a stacking context; `qa.js` P-6).  Typed LOGO did nothing in
+    the friendly terminal, and in the station screen the Enter after it skipped the
+    animation it had just started.  The Pearl printed at 250 c/s against the table's 220,
+    counted raw lines in its footer, and printed "NO ENTRIES" over an unreadable journal.
+  - **Chess: the engine is correct** (perft matches the published counts for six
+    positions to depth 4-5; castling, en passant, promotion, mate and stalemate verified)
+    and **the UI was not**: NEW GAME / TAKE BACK did not cancel the previous game's timers,
+    so the stale engine reply played a white move on the fresh board, the Flame menu
+    opened over a live game, and two menu codes interleaved.  Fixed.  The engine's
+    STRENGTH was not touched - see below.
+  - **`hall_tol`: the dispatcher accepted 1..400, the boot path discarded anything over
+    32.**  Probed on the real control core: at 400, slips of 1.6-4.7 flaps raised no
+    fault and no re-home.  `motion.params` uses `hall_tol_plausible` now, and
+    `test_ui_ranges.js` reads the firmware's bounds out of the sources and fails when
+    a control's min/max disagrees (fifteen controls checked; only this one had drifted).
+  - **`motion.accel`'s default went 82000 -> 12000 on 2026-09-12 with no entry here.**
+    Recorded now: the derivation is §5.2 and `motion_types.h`; the 2 s ramp floor picks
+    12000 over ~14000.  §11 and a code comment still said 14000, `FrameScheduler`'s
+    lead model still defaulted to 82000 (overridden every tick in the firmware, but a
+    trap for any other construction site; it names `MotionParams{}` now).
+  - **Documents brought back to what exists:** CLAUDE.md's layout list (it omitted the
+    whole web pack and eight files under docs/), the spare-GPIO statements that survived DIR taking
+    GPIO24, the wifi glyph's slot, the README's status block and DIR row, BRINGUP's first-
+    flash steps (which told an operator an 8242 drum meant "nothing to change" - this
+    firmware FAULTS on it), "~3.1 s at 15 flaps/s" (25 flaps is 1.7 s at 15, 3.1 s at 8),
+    §5.10's spliced sentence, §10.2a's EN-down list (`motion.cal`), §10.3's HA table
+    (nineteen shipped), §11's `mqtt.uri`, and a note under §16.
+  - **Raised and deliberately NOT changed**, so none of it is rediscovered as a defect:
+    the chess engine beats a random mover 119 games in 120 though its header says
+    checkmate must be reachable by somebody who does not play chess; chess has no
+    keyboard play and cannot be launched by touch; threefold repetition; chess, Pearl
+    and the boot overlay sit outside the CRT layer; the friendly `c` cancels with no
+    confirm at idle; Pearl prints the newest 200 of the journal's 400; the station
+    screen's prompt sits mid-screen where its comment says upper left (`.pr-out` and
+    `.pr-flood` are both `flex: 1 1 auto`); both terminals drop `res.note`; §5.8's second
+    jam signature (a homing timeout on a column that HAD seen an edge) never fires,
+    because `begin_home` clears `hall_valid` first - a hall unplugged mid-run retries
+    three times into whatever stopped the drum; the status LED ignores column mode, so a
+    disabled column holds it on boot-violet; §5.9's "go from FAULT is permitted in
+    maintenance" is masked by the shell's own gate; the console's display commands skip
+    the dispatcher's maintenance / EN / OTA gates; `config::load_app` takes NVS values the
+    API would refuse (granularity, dwell, hold, spin); the OTA `LosesSimulation` gate keys
+    on flavour `rel` only.  The "remove limits" mode was not built.  CI runs on pushes to
+    `master` and on pull requests only, so a bare push of a branch runs nothing.
